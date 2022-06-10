@@ -42,6 +42,7 @@ static bool obj_is_valid(u32 obj)
 {
 	switch (obj) {
 	case P4TC_OBJ_PIPELINE:
+	case P4TC_OBJ_META:
 		return true;
 	default:
 		return false;
@@ -50,6 +51,7 @@ static bool obj_is_valid(u32 obj)
 
 static const struct p4tc_template_ops *p4tc_ops[P4TC_OBJ_MAX] = {
 	[P4TC_OBJ_PIPELINE] = &p4tc_pipeline_ops,
+	[P4TC_OBJ_META] = &p4tc_meta_ops,
 };
 
 int tcf_p4_tmpl_generic_dump(struct sk_buff *skb, struct p4tc_dump_ctx *ctx,
@@ -125,11 +127,15 @@ static int tc_ctl_p4_tmpl_gd_1(struct net *net, struct sk_buff *skb,
 	ids[P4TC_PID_IDX] = t->pipeid;
 
 	if (tb[P4TC_PATH]) {
+		const u32 *arg_ids = nla_data(tb[P4TC_PATH]);
+
 		if ((nla_len(tb[P4TC_PATH])) >
 		    (P4TC_PATH_MAX - 1) * sizeof(u32)) {
 			NL_SET_ERR_MSG(extack, "Path is too big");
 			return -E2BIG;
 		}
+
+		memcpy(&ids[P4TC_MID_IDX], arg_ids, nla_len(tb[P4TC_PATH]));
 	}
 
 	op = (struct p4tc_template_ops *)p4tc_ops[t->obj];
@@ -309,12 +315,17 @@ tcf_p4_tmpl_cu_1(struct sk_buff *skb, struct net *net, struct nlmsghdr *n,
 	ids[P4TC_PID_IDX] = t->pipeid;
 
 	if (p4tc_attr[P4TC_PATH]) {
+		const u32 *arg_ids = nla_data(p4tc_attr[P4TC_PATH]);
+
 		if ((nla_len(p4tc_attr[P4TC_PATH])) >
 		    (P4TC_PATH_MAX - 1) * sizeof(u32)) {
 			NL_SET_ERR_MSG(extack, "Path is too big");
 			ret = -E2BIG;
 			goto out;
 		}
+
+		memcpy(&ids[P4TC_MID_IDX], arg_ids,
+		       nla_len(p4tc_attr[P4TC_PATH]));
 	}
 
 	op = (struct p4tc_template_ops *)p4tc_ops[t->obj];
@@ -504,11 +515,15 @@ static int tc_ctl_p4_tmpl_dump_1(struct sk_buff *skb, struct nlattr *arg,
 
 	ids[P4TC_PID_IDX] = t->pipeid;
 	if (tb[P4TC_PATH]) {
+		const u32 *arg_ids = nla_data(tb[P4TC_PATH]);
+
 		if ((nla_len(tb[P4TC_PATH])) >
 		    (P4TC_PATH_MAX - 1) * sizeof(u32)) {
 			NL_SET_ERR_MSG(extack, "Path is too big");
 			return -E2BIG;
 		}
+
+		memcpy(&ids[P4TC_MID_IDX], arg_ids, nla_len(tb[P4TC_PATH]));
 	}
 
 	op = (struct p4tc_template_ops *)p4tc_ops[t->obj];

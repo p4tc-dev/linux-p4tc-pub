@@ -80,6 +80,8 @@ static const struct nla_policy tc_pipeline_policy[P4TC_PIPELINE_MAX + 1] = {
 static void tcf_pipeline_destroy(struct p4tc_pipeline *pipeline,
 				 bool free_pipeline)
 {
+	idr_destroy(&pipeline->p_meta_idr);
+
 	if (free_pipeline)
 		kfree(pipeline);
 }
@@ -104,6 +106,8 @@ static int tcf_pipeline_put(struct net *net,
 	struct p4tc_pipeline_net *pipe_net = net_generic(net, pipeline_net_id);
 	struct p4tc_pipeline *pipeline = to_pipeline(template);
 	struct net *pipeline_net = maybe_get_net(net);
+	struct p4tc_metadata *meta;
+	unsigned long m_id, tmp;
 
 	if (pipeline_net && !refcount_dec_if_one(&pipeline->p_ref)) {
 		NL_SET_ERR_MSG(extack, "Can't delete referenced pipeline");
@@ -111,6 +115,9 @@ static int tcf_pipeline_put(struct net *net,
         }
 
 	idr_remove(&pipe_net->pipeline_idr, pipeline->common.p_id);
+
+	idr_for_each_entry_ul(&pipeline->p_meta_idr, meta, tmp, m_id)
+		meta->common.ops->put(net, &meta->common, true, extack);
 
 	/* XXX: The action fields are only accessed in the control path
 	 * since they will be copied to the filter, where the data path
@@ -152,11 +159,6 @@ static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 
 	pipeline->p_state = P4TC_STATE_READY;
 	return true;
-}
-
-static inline bool pipeline_sealed(struct p4tc_pipeline *pipeline)
-{
-	return pipeline->p_state == P4TC_STATE_READY;
 }
 
 static int p4tc_action_init(struct net *net, struct nlattr *nla,
@@ -316,6 +318,9 @@ static struct p4tc_pipeline *tcf_pipeline_create(struct net *net,
 		pipeline->postacts = NULL;
 		pipeline->num_postacts = 0;
 	}
+
+	idr_init(&pipeline->p_meta_idr);
+	pipeline->p_meta_offset = 0;
 
 	pipeline->p_state = P4TC_STATE_NOT_READY;
 
@@ -508,6 +513,7 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 		ret = pipeline_try_set_state_ready(pipeline, extack);
 		if (ret < 0)
 			goto postactions_destroy;
+		tcf_meta_fill_user_offsets(pipeline);
 	}
 
 	if (max_rules)
@@ -724,12 +730,16 @@ static void __tcf_pipeline_init(void)
 
 	strscpy(root_pipeline->common.name, "kernel", PIPELINENAMSIZ);
 
+	idr_init(&root_pipeline->p_meta_idr);
+
 	root_pipeline->common.ops =
 		(struct p4tc_template_ops *)&p4tc_pipeline_ops;
 
 	root_pipeline->common.p_id = pipeid;
 
 	root_pipeline->p_state = P4TC_STATE_READY;
+
+	tcf_meta_init(root_pipeline);
 }
 
 static void tcf_pipeline_init(void)
