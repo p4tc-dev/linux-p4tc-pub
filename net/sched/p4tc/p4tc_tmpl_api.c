@@ -42,6 +42,7 @@ static bool obj_is_valid(u32 obj)
 {
 	switch (obj) {
 	case P4TC_OBJ_PIPELINE:
+	case P4TC_OBJ_META:
 		return true;
 	default:
 		return false;
@@ -50,6 +51,7 @@ static bool obj_is_valid(u32 obj)
 
 static const struct p4tc_template_ops *p4tc_ops[P4TC_OBJ_MAX] = {
 	[P4TC_OBJ_PIPELINE] = &p4tc_pipeline_ops,
+	[P4TC_OBJ_META] = &p4tc_meta_ops,
 };
 
 int tcf_p4_tmpl_generic_dump(struct sk_buff *skb,
@@ -108,6 +110,7 @@ static int tc_ctl_p4_tmpl_gd_1(struct sk_buff *skb, struct nlmsghdr *n,
 			       struct netlink_ext_ack *extack)
 {
 	struct p4tcmsg *t = (struct p4tcmsg *)nlmsg_data(n);
+	u32 ids[P4TC_PATH_MAX] = {};
 	struct nlattr *tb[P4TC_MAX + 1];
 	struct p4tc_template_ops *op;
 	int ret;
@@ -121,9 +124,29 @@ static int tc_ctl_p4_tmpl_gd_1(struct sk_buff *skb, struct nlmsghdr *n,
 	if (ret < 0)
 		return ret;
 
+	ids[P4TC_PID_IDX] = t->pipeid;
+
+	if (tb[P4TC_PATH]) {
+		const u32 *arg_ids = nla_data(tb[P4TC_PATH]);
+
+		if ((nla_len(tb[P4TC_PATH])) > (P4TC_PATH_MAX - 1) * sizeof(u32)) {
+			NL_SET_ERR_MSG(extack, "Path is too big");
+			return -E2BIG;
+		}
+
+		memcpy(&ids[P4TC_MID_IDX], arg_ids, nla_len(tb[P4TC_PATH]));
+	}
+
 	op = (struct p4tc_template_ops *)p4tc_ops[t->obj];
 
-	return op->gd(skb, n, p_name, &t->pipeid, extack);
+	ret = op->gd(skb, n, tb[P4TC_PARAMS], p_name, ids, extack);
+	if (ret < 0)
+		return ret;
+
+	if (!t->pipeid)
+		t->pipeid = ids[P4TC_PID_IDX];
+
+	return ret;
 }
 
 static int tc_ctl_p4_tmpl_gd_n(struct sk_buff *skb, struct nlmsghdr *n,
@@ -187,8 +210,13 @@ static int tc_ctl_p4_tmpl_gd_n(struct sk_buff *skb, struct nlmsghdr *n,
 
 		ret = tc_ctl_p4_tmpl_gd_1(new_skb, nlh, tb[i], &p_name_out,
 					  extack);
-		if (ret < 0)
-			goto out;
+		if (n->nlmsg_flags & NLM_F_ROOT && event == RTM_DELP4TEMPLATE) {
+			if (ret <= 0)
+				goto out;
+		} else {
+			if (ret < 0)
+				goto out;
+		}
 		nla_nest_end(new_skb, nest);
 	}
 	nla_nest_end(new_skb, root);
@@ -271,6 +299,7 @@ tcf_p4_tmpl_cu_1(struct sk_buff *skb, struct net *net,
 		 struct nlattr *nla, struct netlink_ext_ack *extack)
 {
 	struct p4tcmsg *t = (struct p4tcmsg *)nlmsg_data(n);
+	u32 ids[P4TC_PATH_MAX] = {};
 	struct nlattr *p4tc_attr[P4TC_MAX + 1];
 	struct p4tc_template_common *tmpl;
 	struct p4tc_template_ops *op;
@@ -292,15 +321,32 @@ tcf_p4_tmpl_cu_1(struct sk_buff *skb, struct net *net,
 		goto out;
 	}
 
+	ids[P4TC_PID_IDX] = t->pipeid;
+
+	if (p4tc_attr[P4TC_PATH]) {
+		const u32 *arg_ids = nla_data(p4tc_attr[P4TC_PATH]);
+
+		if ((nla_len(p4tc_attr[P4TC_PATH])) > (P4TC_PATH_MAX - 1) * sizeof(u32)) {
+			NL_SET_ERR_MSG(extack, "Path is too big");
+			ret = -E2BIG;
+			goto out;
+		}
+
+		memcpy(&ids[P4TC_MID_IDX], arg_ids,
+		       nla_len(p4tc_attr[P4TC_PATH]));
+	}
+
 	op = (struct p4tc_template_ops *)p4tc_ops[t->obj];
-	tmpl = op->cu(net, n, p4tc_attr[P4TC_PARAMS], p_name,
-		      &t->pipeid, extack);
+	tmpl = op->cu(net, n, p4tc_attr[P4TC_PARAMS], p_name, ids, extack);
 	if (IS_ERR(tmpl))
 		return tmpl;
 
 	ret = op->fill_nlmsg(skb, tmpl, extack);
 	if (ret < 0)
 		goto put;
+
+	if (!t->pipeid)
+		t->pipeid = ids[P4TC_PID_IDX];
 
 	return tmpl;
 
@@ -449,19 +495,26 @@ static int tc_ctl_p4_tmpl_cu(struct sk_buff *skb,
 }
 
 static int tc_ctl_p4_tmpl_dump_1(struct sk_buff *skb, struct nlattr *arg,
-				 const char *p_name, struct netlink_callback *cb)
+				 char *p_name, struct netlink_callback *cb)
 {
 	struct p4tc_dump_ctx *ctx = (void *)cb->ctx;
 	struct netlink_ext_ack *extack = cb->extack;
 	unsigned char *b = skb_tail_pointer(skb);
 	u32 portid = NETLINK_CB(cb->skb).portid;
 	const struct nlmsghdr *n = cb->nlh;
+	u32 ids[P4TC_PATH_MAX] = {};
+	struct nlattr *tb[P4TC_MAX + 1];
 	struct p4tc_template_ops *op;
 	struct p4tcmsg *t_new;
 	struct nlmsghdr *nlh;
 	struct nlattr *root;
 	struct p4tcmsg *t;
 	int ret;
+
+	ret = nla_parse_nested_deprecated(tb, P4TC_MAX, arg, p4tc_policy,
+					  extack);
+	if (ret < 0)
+		return ret;
 
 	t = (struct p4tcmsg *)nlmsg_data(n);
 	if (!obj_is_valid(t->obj)) {
@@ -482,11 +535,22 @@ static int tc_ctl_p4_tmpl_dump_1(struct sk_buff *skb, struct nlattr *arg,
 
 	root = nla_nest_start(skb, P4TC_ROOT);
 
+	ids[P4TC_PID_IDX] = t->pipeid;
+	if (tb[P4TC_PATH]) {
+		const u32 *arg_ids = nla_data(tb[P4TC_PATH]);
+
+		if ((nla_len(tb[P4TC_PATH])) > (P4TC_PATH_MAX - 1) * sizeof(u32)) {
+			NL_SET_ERR_MSG(extack, "Path is too big");
+			return -E2BIG;
+		}
+
+		memcpy(&ids[P4TC_MID_IDX], arg_ids, nla_len(tb[P4TC_PATH]));
+	}
+
 	op = (struct p4tc_template_ops *)p4tc_ops[t->obj];
-	ret = op->dump(skb, ctx, extack);
+	ret = op->dump(skb, ctx, tb[P4TC_PARAMS], &p_name, ids, extack);
 	if (ret <= 0)
 		goto out;
-
 	nla_nest_end(skb, root);
 
 	if (p_name) {
@@ -496,15 +560,10 @@ static int tc_ctl_p4_tmpl_dump_1(struct sk_buff *skb, struct nlattr *arg,
 		}
 	}
 
-	root = nla_nest_start(skb, P4TC_ROOT);
-
-	op = (struct p4tc_template_ops *)p4tc_ops[t->obj];
-	ret = op->dump(skb, ctx, extack);
-	if (ret <= 0)
-		goto out;
-	nla_nest_end(skb, root);
-
 	nlh->nlmsg_len = skb_tail_pointer(skb) - b;
+
+	if (!t_new->pipeid)
+		t_new->pipeid = ids[P4TC_PID_IDX];
 
 	return ret;
 
