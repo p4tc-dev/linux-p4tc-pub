@@ -12,9 +12,11 @@
 
 #define P4TC_DEFAULT_NUM_TCLASSES 1
 #define P4TC_DEFAULT_MAX_RULES 1
+#define P4TC_MAXMETA_OFFSET 256
 #define P4TC_PATH_MAX 3
 
 #define P4TC_PID_IDX 0
+#define P4TC_MID_IDX 1
 
 extern struct idr pipeline_idr;
 
@@ -48,11 +50,12 @@ struct p4tc_template_ops {
 	int (*put)(struct p4tc_template_common *tmpl,
 		   struct netlink_ext_ack *extack);
 	/* XXX: Triple check to see if it's really ok not to have net as an argument */
-	int (*gd)(struct sk_buff *skb, struct nlmsghdr *n, char **p_name,
-		  u32 *ids, struct netlink_ext_ack *extack);
+	int (*gd)(struct sk_buff *skb, struct nlmsghdr *n, struct nlattr *nla,
+		  char **p_name, u32 *ids, struct netlink_ext_ack *extack);
 	int (*fill_nlmsg)(struct sk_buff *skb, struct p4tc_template_common *tmpl,
 			  struct netlink_ext_ack *extack);
-	int (*dump)(struct sk_buff *skb, struct p4tc_dump_ctx *ctx, struct netlink_ext_ack *extack);
+	int (*dump)(struct sk_buff *skb, struct p4tc_dump_ctx *ctx,
+		    char **p_name, u32 *ids, struct netlink_ext_ack *extack);
 	int (*dump_1)(struct sk_buff *skb, struct p4tc_template_common *common);
 };
 
@@ -67,10 +70,12 @@ extern const struct p4tc_template_ops p4tc_pipeline_ops;
 
 struct p4tc_pipeline {
 	struct p4tc_template_common common;
+	struct idr                  p_meta_idr;
 	struct rcu_head             rcu;
 	struct tc_action            **preacts;
 	struct tc_action            **postacts;
 	u32                         max_rules;
+	u32                         p_meta_offset;
 	refcount_t                  p_ref;
 	u16                         num_table_classes;
 	u16                         curr_table_classes;
@@ -82,6 +87,34 @@ int tcf_p4_tmpl_generic_dump(struct sk_buff *skb,
 			     struct idr *idr, int idx,
 			     struct netlink_ext_ack *extack);
 
+struct p4tc_metadata {
+	struct p4tc_template_common common;
+	struct rcu_head             rcu;
+	u32                         m_id;
+	refcount_t                  m_ref;
+	u16                         m_sz;
+	u16                         m_startbit; /* Relative to its container */
+	u16                         m_endbit; /* Relative to its container */
+	u8                          m_datatype; /* T_XXX */
+	u32                         PAD0;
+};
+
+extern const struct p4tc_template_ops p4tc_meta_ops;
+
+struct p4tc_pipeline *
+pipeline_find(const char *p_name, const u32 pipeid,
+	      struct netlink_ext_ack *extack);
+
+struct p4tc_pipeline *
+pipeline_find_unsealed(const char *p_name, const u32 pipeid,
+	      struct netlink_ext_ack *extack);
+
+static inline bool pipeline_sealed(struct p4tc_pipeline *pipeline)
+{
+	return pipeline->p_state == P4TC_STATE_READY;
+}
+
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
+#define to_meta(t) ((struct p4tc_metadata *)t)
 
 #endif

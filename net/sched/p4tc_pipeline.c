@@ -43,6 +43,8 @@ static void tcf_pipeline_destroy(struct rcu_head *head)
 
 	pipeline = container_of(head, struct p4tc_pipeline, rcu);
 
+	idr_destroy(&pipeline->p_meta_idr);
+
 	kfree(pipeline);
 }
 
@@ -50,12 +52,17 @@ static int tcf_pipeline_put(struct p4tc_template_common *template,
 			    struct netlink_ext_ack *extack)
 {
 	struct p4tc_pipeline *pipeline = to_pipeline(template);
+	struct p4tc_metadata *meta;
+	unsigned long m_id, tmp;
 
 	if (!refcount_dec_if_one(&pipeline->p_ref)) {
 		NL_SET_ERR_MSG(extack,
 			       "Can't delete referenced pipeline");
 		return -EBUSY;
 	}
+
+	idr_for_each_entry_ul(&pipeline->p_meta_idr, meta, tmp, m_id)
+		meta->common.ops->put(&meta->common, extack);
 
 	idr_remove(&pipeline_idr, pipeline->common.p_id);
 
@@ -82,11 +89,6 @@ static inline bool pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline)
 
 	pipeline->p_state = P4TC_STATE_READY;
 	return true;
-}
-
-static inline bool pipeline_sealed(struct p4tc_pipeline *pipeline)
-{
-	return pipeline->p_state == P4TC_STATE_READY;
 }
 
 static int p4tc_action_init(struct net *net, struct nlattr *nla,
@@ -232,6 +234,9 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 
 	pipeline->curr_table_classes = 0;
 
+	idr_init(&pipeline->p_meta_idr);
+	pipeline->p_meta_offset = 0;
+
 	pipeline->p_state = P4TC_STATE_NOT_READY;
 
 	refcount_set(&pipeline->p_ref, 1);
@@ -283,7 +288,7 @@ out:
 	return ERR_PTR(err);
 }
 
-static struct p4tc_pipeline *
+struct p4tc_pipeline *
 pipeline_find(const char *p_name, const u32 pipeid,
 	      struct netlink_ext_ack *extack)
 {
@@ -297,7 +302,7 @@ pipeline_find(const char *p_name, const u32 pipeid,
 	return pipeline;
 }
 
-static struct p4tc_pipeline *
+struct p4tc_pipeline *
 pipeline_find_unsealed(const char *p_name, const u32 pipeid,
 		       struct netlink_ext_ack *extack)
 {
@@ -502,8 +507,8 @@ static int tcf_pipeline_del_one(struct p4tc_template_common *tmpl,
 }
 
 static int tcf_pipeline_gd(struct sk_buff *skb, struct nlmsghdr *n,
-			   char **p_name, u32 *ids,
-			   struct netlink_ext_ack *extack)
+			   struct nlattr *nla, char **p_name,
+			   u32 *ids, struct netlink_ext_ack *extack)
 {
 	unsigned char *b = skb_tail_pointer(skb);
 	u32 pipeid = ids[P4TC_PID_IDX];
@@ -544,7 +549,9 @@ out_nlmsg_trim:
 	return ret;
 }
 
-static int tcf_pipeline_dump(struct sk_buff *skb, struct p4tc_dump_ctx *ctx,
+static int tcf_pipeline_dump(struct sk_buff *skb,
+			     struct p4tc_dump_ctx *ctx,
+			     char **p_name, u32 *ids,
 			     struct netlink_ext_ack *extack)
 {
 	return tcf_p4_tmpl_generic_dump(skb, ctx, &pipeline_idr,
