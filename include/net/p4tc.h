@@ -12,11 +12,23 @@
 
 #define P4TC_DEFAULT_NUM_TABLES P4TC_MINTABLES_COUNT
 #define P4TC_DEFAULT_MAX_RULES 1
+#define P4TC_MAXMETA_OFFSET 512
 #define P4TC_PATH_MAX 3
 
 #define P4TC_KERNEL_PIPEID 0
 
 #define P4TC_PID_IDX 0
+#define P4TC_MID_IDX 1
+
+struct p4tc_percpu_scratchpad {
+	u32 keysz;
+	u32 maskid;
+	u8 key[BITS_TO_BYTES(P4TC_MAX_KEYSZ)];
+	u8 hdrs[BITS_TO_BYTES(HEADER_MAX_LEN)];
+	u8 metadata[BITS_TO_BYTES(META_MAX_LEN)];
+};
+
+DECLARE_PER_CPU(struct p4tc_percpu_scratchpad, p4tc_percpu_scratchpad);
 
 struct p4tc_dump_ctx {
 	u32 ids[P4TC_PATH_MAX];
@@ -78,6 +90,7 @@ extern const struct p4tc_template_ops p4tc_pipeline_ops;
 
 struct p4tc_pipeline {
 	struct p4tc_template_common common;
+	struct idr                  p_meta_idr;
 	struct rcu_head             rcu;
 	struct net                  *net;
 	struct tc_action            **preacts;
@@ -85,6 +98,7 @@ struct p4tc_pipeline {
 	struct tc_action            **postacts;
 	int                         num_postacts;
 	u32                         max_rules;
+	u32                         p_meta_offset;
 	refcount_t                  p_ref;
 	refcount_t                  p_ctrl_ref;
 	u16                         num_tables;
@@ -126,6 +140,36 @@ static inline int p4tc_action_destroy(struct tc_action **acts)
 	return ret;
 }
 
+static inline bool pipeline_sealed(struct p4tc_pipeline *pipeline)
+{
+	return pipeline->p_state == P4TC_STATE_READY;
+}
+
+struct p4tc_metadata {
+	struct p4tc_template_common common;
+	struct rcu_head             rcu;
+	u32                         m_id;
+	u32                         m_skb_off;
+	refcount_t                  m_ref;
+	u16                         m_sz;
+	u16                         m_startbit; /* Relative to its container */
+	u16                         m_endbit; /* Relative to its container */
+	u8                          m_datatype; /* T_XXX */
+	bool                        m_read_only;
+};
+
+extern const struct p4tc_template_ops p4tc_meta_ops;
+
+struct p4tc_metadata *tcf_meta_find_byid(struct p4tc_pipeline *pipeline,
+					 u32 m_id);
+void tcf_meta_fill_user_offsets(struct p4tc_pipeline *pipeline);
+void tcf_meta_init(struct p4tc_pipeline *root_pipe);
+struct p4tc_metadata *tcf_meta_get(struct p4tc_pipeline *pipeline,
+				   const char *mname, const u32 m_id,
+				   struct netlink_ext_ack *extack);
+void tcf_meta_put_ref(struct p4tc_metadata *meta);
+
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
+#define to_meta(t) ((struct p4tc_metadata *)t)
 
 #endif
