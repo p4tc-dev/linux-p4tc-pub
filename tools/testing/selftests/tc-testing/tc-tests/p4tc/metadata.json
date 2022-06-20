@@ -1,0 +1,2652 @@
+[
+    {
+        "id": "62e5",
+        "name": "Create valid metadatum",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname mid 42 type bit8",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 42,
+                        "mname": "cb/mname",
+                        "mtype": "bit",
+                        "msize": 8
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "40e3",
+        "name": "Try to create metadatum without specifying pipeline name or id",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ mid 42 type bit8",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchPattern": "Error: Metadatum name not found.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "b2e7",
+        "name": "Try to create metadata without name",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/ mid 42 type bit8",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchPattern": "Error: Metadatum name not found.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "7dbc",
+        "name": "Try to create metadata without size",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname mid 42",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchPattern": "Error: Metadatum name not found.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "4c52",
+        "name": "Try to create metadata with size 0",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname mid 42 type bit0",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchPattern": "Error: Metadatum name not found.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "4999",
+        "name": "Try to create metadata with size > 128",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname mid 42 type bit129",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchPattern": "Error: Metadatum name not found.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "b738",
+        "name": "Create metadata with size = 128",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/mname mid 42 type bit128",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ pipeid 22 mid 42",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 42,
+                        "mname": "mname",
+                        "mtype": "bit",
+                        "msize": 128
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "2deb",
+        "name": "Create metadata of signed type",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname mid 42 type int33",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ pipeid 22 mid 42",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 42,
+                        "mname": "cb/mname",
+                        "mtype": "int",
+                        "msize": 33
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "0ddc",
+        "name": "Create metadata of type int128",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname mid 42 type int128",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ pipeid 22 mid 42",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 42,
+                        "mname": "cb/mname",
+                        "mtype": "int",
+                        "msize": 128
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "be48",
+        "name": "Try to create metadata of type int129",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname mid 42 type int129",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ pipeid 22 mid 42",
+        "matchCount": "1",
+        "matchPattern": "Error: Unable to find metadatum by id.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "054c",
+        "name": "Try to create metadatum with same name twice",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/mname mid 42 type bit8",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/mname type bit13",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/mname",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 42,
+                        "mname": "mname",
+                        "mtype": "bit",
+                        "msize": 8
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "3088",
+        "name": "Try to create metadatum with same id twice",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname mid 42 type bit8",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname2 mid 42 type bit13",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/ mid 42",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 42,
+                        "mname": "cb/mname",
+                        "mtype": "bit",
+                        "msize": 8
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "ad42",
+        "name": "Create metadatum without assigning mid",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname type bit27",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 1,
+                        "mname": "cb/mname",
+                        "mtype": "bit",
+                        "msize": 27
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "1805",
+        "name": "Update metadatum's size specifying metadatum name",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname mid 42 type bit8",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update metadata/ptables/cb/mname type bit13",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 42,
+                        "mname": "cb/mname",
+                        "mtype": "bit",
+                        "msize": 13
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "51a3",
+        "name": "Update metadatum's size specifying metadatum id",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname mid 42 type bit8",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update metadata/ptables/ mid 42 type bit13",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/ mid 42",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 42,
+                        "mname": "cb/mname",
+                        "mtype": "bit",
+                        "msize": 13
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "db7d",
+        "name": "Try to update metadatum without specifying pipeline name or id",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname mid 42 type bit4",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update metadata/ type bit8",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 42,
+                        "mname": "cb/mname",
+                        "mtype": "bit",
+                        "msize": 4
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "d525",
+        "name": "Try to update metadatum without specifying metadatum name or id",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname mid 42 type bit4",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update metadata/ptables/ type bit8",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 42,
+                        "mname": "cb/mname",
+                        "mtype": "bit",
+                        "msize": 4
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "6853",
+        "name": "Try to update metadatum's size with zero",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname mid 42 type bit8",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update metadata/ptables/cb/mname mid 42 type bit0",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 42,
+                        "mname": "cb/mname",
+                        "mtype": "bit",
+                        "msize": 8
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "514f",
+        "name": "Try to update metadatum's size with 129",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname mid 42 type bit8",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update metadata/ptables/cb/mname mid 42 type bit129",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 42,
+                        "mname": "cb/mname",
+                        "mtype": "bit",
+                        "msize": 8
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "c9d4",
+        "name": "Update metadata with size = 128",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname mid 42 type bit64",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update metadata/ pipeid 22 mid 42 type bit128",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 42,
+                        "mname": "cb/mname",
+                        "mtype": "bit",
+                        "msize": 128
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "0a2d",
+        "name": "Dump metadata using pname to find pipeline",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname type bit8",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname2 type bit27",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mname": "cb/mname"
+                    },
+                    {
+                        "mname": "cb/mname2"
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "380d",
+        "name": "Dump metadata using pipeid to find pipeline",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname type bit8",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname2 type bit27",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ pipeid 22",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mname": "cb/mname"
+                    },
+                    {
+                        "mname": "cb/mname2"
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "c0ee",
+        "name": "Try to dump metadata without supplying pipeline name or id",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname type bit8",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname2 type bit27",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/",
+        "matchCount": "1",
+        "matchPattern": "Must specify pipeline name or id.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "a45b",
+        "name": "Delete specific metadatum by name",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname type bit8",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template del metadata/ptables/cb/mname",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchPattern": "Error: Metadatum name not found.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "fe8d",
+        "name": "Delete specific metadatum by id",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname mid 1 type bit8",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template del metadata/ptables/ mid 1",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/ mid 1",
+        "matchCount": "1",
+        "matchPattern": "Error: Unable to find metadatum by id.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "bf02",
+        "name": "Try to delete inexistent metadatum by name",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template del metadata/ptables/cb/mname",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchPattern": "Error: Metadatum name not found.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "253c",
+        "name": "Try to delete inexistent metadatum by id",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template del metadata/ptables/ mid 1",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/ mid 1",
+        "matchCount": "1",
+        "matchPattern": "Unable to find metadatum by id.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "deca",
+        "name": "Try to delete specific metadatum without supplying pipeline name or id",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname type bit8",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template del metadata/",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 1,
+                        "mname": "cb/mname",
+                        "mtype": "bit",
+                        "msize": 8
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "b331",
+        "name": "Flush metadata",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname type bit8",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template del metadata/ptables/",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/",
+        "matchCount": "1",
+        "matchJSON": [],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "1456",
+        "name": "Try to flush metadata without specifying pipeline name or id",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname type bit8",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template del metadata/",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 1,
+                        "mname": "cb/mname",
+                        "mtype": "bit",
+                        "msize": 8
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "3a84",
+        "name": "Try to exceed max metadata offset on create",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname type bit64",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname2 type bit64",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname3 type bit128",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname4 type bit1",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname4",
+        "matchCount": "1",
+        "matchPattern": "Error: Metadatum name not found.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "2f62",
+        "name": "Try to exceed max metadata offset on update",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname type bit64",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname2 mid 22 type bit64",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname3 type bit64",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname4 type bit32",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update metadata/ptables/cb/mname2 mid 22 type bit128",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname2",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 22,
+                        "mname": "cb/mname2",
+                        "mtype": "bit",
+                        "msize": 64
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "8624",
+        "name": "Create metadatum with mid of 4 bytes",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname mid 2147483647 type bit128",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mid": 2147483647,
+                        "mname": "cb/mname",
+                        "mtype": "bit",
+                        "msize": 128
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "e8ae",
+        "name": "Dump pipeline with amount of metadata > P4TC_MSGBATCH_SIZE",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname type bit8",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname2 type bit4",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname3 type bit4",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname4 type bit8",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname5 type bit4",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname6 type bit4",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname7 type bit8",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname8 type bit4",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname9 type bit4",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname10 type bit8",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname11 type bit4",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname12 type bit4",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname13 type bit3",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname14 type bit8",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname15 type bit1",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname16 type bit7",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname17 mid 2147483647 type bit5",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mname": "cb/mname"
+                    },
+                    {
+                        "mname": "cb/mname2"
+                    },
+                    {
+                        "mname": "cb/mname3"
+                    },
+                    {
+                        "mname": "cb/mname4"
+                    },
+                    {
+                        "mname": "cb/mname5"
+                    },
+                    {
+                        "mname": "cb/mname6"
+                    },
+                    {
+                        "mname": "cb/mname7"
+                    },
+                    {
+                        "mname": "cb/mname8"
+                    },
+                    {
+                        "mname": "cb/mname9"
+                    },
+                    {
+                        "mname": "cb/mname10"
+                    },
+                    {
+                        "mname": "cb/mname11"
+                    },
+                    {
+                        "mname": "cb/mname12"
+                    },
+                    {
+                        "mname": "cb/mname13"
+                    },
+                    {
+                        "mname": "cb/mname14"
+                    },
+                    {
+                        "mname": "cb/mname15"
+                    },
+                    {
+                        "mname": "cb/mname16"
+                    }
+                ]
+            },
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "metadata"
+            },
+            {
+                "templates": [
+                    {
+                        "mname": "cb/mname17"
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "56ef",
+        "name": "Flush metadata where one metadatum has mid of 4 bytes",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname type bit8",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname2 mid 2147483647 type bit128",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template del metadata/ptables/ ",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/",
+        "matchCount": "1",
+        "matchJSON": [],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "1a02",
+        "name": "Flush empty metadata list",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template del metadata/ptables/",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/",
+        "matchCount": "1",
+        "matchJSON": [],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "3a0e",
+        "name": "Delete specific metadatum by pipelne id and metadatum by id",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname mid 1 type bit8",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template del metadata/ pipeid 22 mid 1",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/ pipeid 22 mid 1",
+        "matchCount": "1",
+        "matchPattern": "Error: Unable to find metadatum by id.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "b69c",
+        "name": "Try to create metadatum without name or id",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/ mid 1 type bit8",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ pipeid 22 mid 1",
+        "matchCount": "1",
+        "matchPattern": "Error: Unable to find metadatum by id.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "287c",
+        "name": "Try to get metadata without supplying pipeline name or id",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname type bit8",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname2 type bit8",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get metadata/",
+        "matchCount": "1",
+        "matchPattern": "Must specify pipeline name or id.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "528d",
+        "name": "Try to create metadatum with name length > METANAMSIZ",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create metadata/ptables/7eozFYyaqVCD7H0xS3M5sMnluUqPgZewfSLnYPf4s3k0lbx8lKoR32zSqiGsh84qJ32vnLPdl7f2XcUh5yIdEP7uJy2C3iPtyU7159s9CMB0EtTAlWTVz4U1jkQ5h2advwp3KCVsZ1jlGgStoJL2op5ZxoThTSUQLR61a5RNDovoSFcq86Brh6oW9DSmTbN6SYygbG3JLnEHzRC5hh0jGmJKHq5ivBK9Y9FlNZQXC9wVwX4qTFAd8ITUTj2Au2Jg1 mid 42 type bit8",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/ mid 42",
+        "matchCount": "1",
+        "matchPattern": "Unable to find metadatum by id.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    }
+]
