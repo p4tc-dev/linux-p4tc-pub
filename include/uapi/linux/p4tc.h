@@ -22,6 +22,7 @@ struct p4tcmsg {
 #define PIPELINENAMSIZ TEMPLATENAMSZ
 #define METANAMSIZ TEMPLATENAMSZ
 #define TCLASSNAMSIZ TEMPLATENAMSZ
+#define TINSTNAMSIZ TEMPLATENAMSZ
 
 #define P4TC_TCLASS_FLAGS_KEYSZ 0x01
 #define P4TC_TCLASS_FLAGS_COUNT 0x02
@@ -66,6 +67,7 @@ enum {
 	P4TC_OBJ_PIPELINE,
 	P4TC_OBJ_META,
 	P4TC_OBJ_TABLE_CLASS,
+	P4TC_OBJ_TABLE_INST,
 	__P4TC_OBJ_MAX,
 };
 #define P4TC_OBJ_MAX __P4TC_OBJ_MAX
@@ -154,6 +156,17 @@ enum {
 	__P4TC_TCLASS_MAX
 };
 #define P4TC_TCLASS_MAX __P4TC_TCLASS_MAX
+
+/* Table instance attributes */
+enum {
+	P4TC_TINST_UNSPEC,
+	P4TC_TINST_CLASS, /* string */
+	P4TC_TINST_NAME, /* string */
+	P4TC_TINST_CUR_ENTRIES, /* u32 */
+	P4TC_TINST_MAX_ENTRIES, /* u32 */
+	__P4TC_TINST_MAX
+};
+#define P4TC_TINST_MAX __P4TC_TINST_MAX
 
 #define P4TC_RTA(r)  ((struct rtattr *)(((char *)(r)) + NLMSG_ALIGN(sizeof(struct p4tcmsg))))
 

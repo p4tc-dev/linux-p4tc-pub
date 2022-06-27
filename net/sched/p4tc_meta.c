@@ -508,6 +508,7 @@ out_nlmsg_trim:
 
 static int tcf_meta_dump(struct sk_buff *skb,
 			 struct p4tc_dump_ctx *ctx,
+			 struct nlattr *nla,
 			 char **p_name, u32 *ids,
 			 struct netlink_ext_ack *extack)
 {

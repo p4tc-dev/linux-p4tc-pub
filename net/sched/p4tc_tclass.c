@@ -188,8 +188,9 @@ static inline int _tcf_tclass_put(struct p4tc_pipeline *pipeline,
 				  struct p4tc_table_class *tclass,
 				  struct netlink_ext_ack *extack)
 {
+	struct p4tc_table_instance *tinst;
+	unsigned long tmp, tbc_id, ti_id;
 	struct p4tc_table_key *key;
-	unsigned long tmp, tbc_id;
 
 	if (!refcount_dec_if_one(&tclass->tbc_ref))
 		return -EBUSY;
@@ -199,6 +200,9 @@ static inline int _tcf_tclass_put(struct p4tc_pipeline *pipeline,
 		idr_remove(&tclass->tbc_keys_idr, tbc_id);
 	}
 
+	idr_for_each_entry_ul(&tclass->tbc_ti_idr, tinst, tmp, ti_id)
+		tinst->common.ops->put(&tinst->common, extack);
+
 	if (tclass->tbc_preacts) {
 		tcf_action_destroy(tclass->tbc_preacts, TCA_ACT_UNBIND);
 		kfree(tclass->tbc_preacts);
@@ -207,6 +211,7 @@ static inline int _tcf_tclass_put(struct p4tc_pipeline *pipeline,
 	kfree(tclass->tbc_postacts);
 
 	idr_destroy(&tclass->tbc_keys_idr);
+	idr_destroy(&tclass->tbc_ti_idr);
 
 	idr_remove(&pipeline->p_tbc_idr, tclass->tbc_id);
 	pipeline->curr_table_classes -= 1;
@@ -734,11 +739,48 @@ tcf_tclass_create(struct net *net, struct nlmsghdr *n,
 		tclass->tbc_default_key = 1;
 	}
 
+	idr_init(&tclass->tbc_ti_idr);
+	tclass->tbc_curr_used_entries = 0;
+	tclass->tbc_curr_count = 0;
+	/* Create table instance with name of table class */
+	if (tclass->tbc_count == 1) {
+		struct p4tc_table_instance *tinst;
+
+		tinst = kmalloc(sizeof(*tinst), GFP_KERNEL);
+		if (!tinst) {
+			NL_SET_ERR_MSG(extack, "Unable to create table instance");
+			ret = -ENOMEM;
+			goto keys_put;
+		}
+
+		tinst->ti_id = 1;
+
+		ret = idr_alloc_u32(&tclass->tbc_ti_idr, tinst, &tinst->ti_id,
+				    tinst->ti_id, GFP_KERNEL);
+		if (ret < 0) {
+			kfree(tinst);
+			goto keys_put;
+		}
+
+		ret = p4tc_tinst_init(tinst, pipeline, tbcname,
+				      tclass, P4TC_DEFAULT_TIENTRIES);
+		if (ret < 0) {
+			tinst->common.ops->put(&tinst->common, extack);
+			goto keys_put;
+		}
+	}
+
 	pipeline->curr_table_classes += 1;
 
 	tclass->common.ops = (struct p4tc_template_ops *)&p4tc_tclass_ops;
 
 	return tclass;
+
+keys_put:
+	if (num_keys)
+		tcf_tclass_key_put_many(keys, tclass, cu_res, num_keys);
+
+	idr_destroy(&tclass->tbc_ti_idr);
 
 idr_dest:
 	idr_destroy(&tclass->tbc_keys_idr);
@@ -1099,6 +1141,7 @@ out_nlmsg_trim:
 
 static int tcf_tclass_dump(struct sk_buff *skb,
 			   struct p4tc_dump_ctx *ctx,
+			   struct nlattr *nla,
 			   char **p_name, u32 *ids,
 			   struct netlink_ext_ack *extack)
 {
