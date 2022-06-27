@@ -44,6 +44,7 @@ static bool obj_is_valid(u32 obj)
 	case P4TC_OBJ_PIPELINE:
 	case P4TC_OBJ_META:
 	case P4TC_OBJ_TABLE_CLASS:
+	case P4TC_OBJ_TABLE_INST:
 		return true;
 	default:
 		return false;
@@ -54,6 +55,7 @@ static const struct p4tc_template_ops *p4tc_ops[P4TC_OBJ_MAX] = {
 	[P4TC_OBJ_PIPELINE] = &p4tc_pipeline_ops,
 	[P4TC_OBJ_META] = &p4tc_meta_ops,
 	[P4TC_OBJ_TABLE_CLASS] = &p4tc_tclass_ops,
+	[P4TC_OBJ_TABLE_INST] = &p4tc_tinst_ops,
 };
 
 int tcf_p4_tmpl_generic_dump(struct sk_buff *skb,
@@ -530,7 +532,7 @@ static int tc_ctl_p4_tmpl_dump_1(struct sk_buff *skb, struct nlattr *arg,
 	}
 
 	op = (struct p4tc_template_ops *)p4tc_ops[t->obj];
-	ret = op->dump(skb, ctx, &p_name, ids, extack);
+	ret = op->dump(skb, ctx, tb[P4TC_PARAMS], &p_name, ids, extack);
 	if (ret <= 0)
 		goto out;
 	nla_nest_end(skb, root);

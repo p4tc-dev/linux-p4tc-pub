@@ -22,12 +22,15 @@
 #define P4TC_DEFAULT_TENTRIES 256
 #define P4TC_MAX_TMASKS 128
 #define P4TC_DEFAULT_TMASKS 8
+#define P4TC_MAX_TIENTRIES 512
+#define P4TC_DEFAULT_TIENTRIES 128
 
 #define P4TC_KERNEL_PIPEID 0
 
 #define P4TC_PID_IDX 0
 #define P4TC_MID_IDX 1
 #define P4TC_TBCID_IDX 1
+#define P4TC_TIID_IDX 2
 
 struct p4tc_dump_ctx {
 	u32 ids[P4TC_PATH_MAX];
@@ -65,7 +68,8 @@ struct p4tc_template_ops {
 	int (*fill_nlmsg)(struct sk_buff *skb, struct p4tc_template_common *tmpl,
 			  struct netlink_ext_ack *extack);
 	int (*dump)(struct sk_buff *skb, struct p4tc_dump_ctx *ctx,
-		    char **p_name, u32 *ids, struct netlink_ext_ack *extack);
+		    struct nlattr *nla, char **p_name,
+		    u32 *ids, struct netlink_ext_ack *extack);
 	int (*dump_1)(struct sk_buff *skb, struct p4tc_template_common *common);
 };
 
@@ -144,22 +148,43 @@ struct p4tc_table_key {
 struct p4tc_table_class {
 	struct p4tc_template_common common;
 	struct idr                  tbc_keys_idr;
+	struct idr                  tbc_ti_idr;
 	struct tca_meta_value_ops   tbc_value_ops;
 	struct tc_action            **tbc_preacts;
 	int                         tbc_num_preacts;
 	struct tc_action            **tbc_postacts;
 	int                         tbc_num_postacts;
 	u32                         tbc_count;
+	u32                         tbc_curr_count;
 	u32                         tbc_keysz;
 	u32                         tbc_id;
 	u32                         tbc_keys_count;
 	u32                         tbc_max_entries;
 	u32                         tbc_max_masks;
+	u32                         tbc_curr_used_entries;
 	u32                         tbc_default_key;
 	refcount_t                  tbc_ref;
 };
 
 extern const struct p4tc_template_ops p4tc_tclass_ops;
+
+struct p4tc_table_instance {
+	struct p4tc_template_common common;
+	struct rhash_head ht_node;
+	u32               tbc_id;
+	u32               ti_id;
+	u32               ti_max_entries;
+	refcount_t        ti_ref;
+};
+
+extern struct p4tc_table_instance *
+tcf_tinst_find_byany(struct nlattr *name_attr,
+	   const u32 ti_id,
+	   struct p4tc_pipeline *pipeline,
+	   struct p4tc_table_class *tclass,
+	   struct netlink_ext_ack *extack);
+
+extern const struct p4tc_template_ops p4tc_tinst_ops;
 
 struct p4tc_metadata *
 tcf_meta_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
@@ -194,8 +219,15 @@ struct p4tc_table_key *tcf_table_key_find(struct p4tc_table_class *tclass,
 					  const u32 key_id);
 void *tcf_tclass_fetch(struct sk_buff *skb, void *tbc_value_ops);
 
+int p4tc_tinst_init(struct p4tc_table_instance *tinst,
+		    struct p4tc_pipeline *pipeline,
+		    const char *ti_name,
+		    struct p4tc_table_class *tclass,
+		    u32 max_entries);
+
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
 #define to_meta(t) ((struct p4tc_metadata *)t)
 #define to_tclass(t) ((struct p4tc_table_class *)t)
+#define to_tinst(t) ((struct p4tc_table_instance *)t)
 
 #endif
