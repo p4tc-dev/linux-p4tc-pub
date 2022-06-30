@@ -31,6 +31,61 @@ struct p4tcmsg {
 #define PARSERNAMSIZ TEMPLATENAMSZ
 #define HDRFIELDNAMSIZ TEMPLATENAMSZ
 #define ACTPARAMNAMSIZ TEMPLATENAMSZ
+#define TABLENAMSIZ TEMPLATENAMSZ
+
+#define P4TC_TABLE_FLAGS_KEYSZ 0x01
+#define P4TC_TABLE_FLAGS_MAX_ENTRIES 0x02
+#define P4TC_TABLE_FLAGS_MAX_MASKS 0x04
+#define P4TC_TABLE_FLAGS_DEFAULT_KEY 0x08
+#define P4TC_TABLE_FLAGS_PERMISSIONS 0x10
+
+#define P4TC_CTRL_PERM_C_BIT 9
+#define P4TC_CTRL_PERM_R_BIT 8
+#define P4TC_CTRL_PERM_U_BIT 7
+#define P4TC_CTRL_PERM_D_BIT 6
+#define P4TC_CTRL_PERM_X_BIT 5
+
+#define P4TC_DATA_PERM_C_BIT 4
+#define P4TC_DATA_PERM_R_BIT 3
+#define P4TC_DATA_PERM_U_BIT 2
+#define P4TC_DATA_PERM_D_BIT 1
+#define P4TC_DATA_PERM_X_BIT 0
+
+#define P4TC_PERM_MAX_BIT P4TC_CTRL_PERM_C_BIT
+
+#define P4TC_CTRL_PERM_C (1 << P4TC_CTRL_PERM_C_BIT)
+#define P4TC_CTRL_PERM_R (1 << P4TC_CTRL_PERM_R_BIT)
+#define P4TC_CTRL_PERM_U (1 << P4TC_CTRL_PERM_U_BIT)
+#define P4TC_CTRL_PERM_D (1 << P4TC_CTRL_PERM_D_BIT)
+#define P4TC_CTRL_PERM_X (1 << P4TC_CTRL_PERM_X_BIT)
+
+#define P4TC_DATA_PERM_C (1 << P4TC_DATA_PERM_C_BIT)
+#define P4TC_DATA_PERM_R (1 << P4TC_DATA_PERM_R_BIT)
+#define P4TC_DATA_PERM_U (1 << P4TC_DATA_PERM_U_BIT)
+#define P4TC_DATA_PERM_D (1 << P4TC_DATA_PERM_D_BIT)
+#define P4TC_DATA_PERM_X (1 << P4TC_DATA_PERM_X_BIT)
+
+#define p4tc_ctrl_create_ok(perm)   (perm & P4TC_CTRL_PERM_C)
+#define p4tc_ctrl_read_ok(perm)     (perm & P4TC_CTRL_PERM_R)
+#define p4tc_ctrl_update_ok(perm)   (perm & P4TC_CTRL_PERM_U)
+#define p4tc_ctrl_delete_ok(perm)   (perm & P4TC_CTRL_PERM_D)
+#define p4tc_ctrl_exec_ok(perm)     (perm & P4TC_CTRL_PERM_X)
+
+#define p4tc_data_create_ok(perm)   (perm & P4TC_DATA_PERM_C)
+#define p4tc_data_read_ok(perm)     (perm & P4TC_DATA_PERM_R)
+#define p4tc_data_update_ok(perm)   (perm & P4TC_DATA_PERM_U)
+#define p4tc_data_delete_ok(perm)   (perm & P4TC_DATA_PERM_D)
+#define p4tc_data_exec_ok(perm)     (perm & P4TC_DATA_PERM_X)
+
+struct p4tc_table_parm {
+	__u32 tbl_keysz;
+	__u32 tbl_max_entries;
+	__u32 tbl_max_masks;
+	__u32 tbl_flags;
+	__u32 tbl_num_entries;
+	__u16 tbl_permissions;
+	__u16 PAD0;
+};
 
 #define LABELNAMSIZ 32
 
@@ -63,6 +118,7 @@ enum {
 	P4TC_OBJ_META,
 	P4TC_OBJ_HDR_FIELD,
 	P4TC_OBJ_ACT,
+	P4TC_OBJ_TABLE,
 	__P4TC_OBJ_MAX,
 };
 #define P4TC_OBJ_MAX __P4TC_OBJ_MAX
@@ -160,6 +216,53 @@ enum {
 	__P4TC_KERNEL_META_MAX
 };
 #define P4TC_KERNEL_META_MAX (__P4TC_KERNEL_META_MAX - 1)
+
+/* Table key attributes */
+enum {
+	P4TC_KEY_UNSPEC,
+	P4TC_KEY_ACT, /* nested key actions */
+	__P4TC_TKEY_MAX
+};
+#define P4TC_TKEY_MAX __P4TC_TKEY_MAX
+
+enum {
+	P4TC_TABLE_DEFAULT_UNSPEC,
+	P4TC_TABLE_DEFAULT_ACTION,
+	P4TC_TABLE_DEFAULT_PERMISSIONS,
+	__P4TC_TABLE_DEFAULT_MAX
+};
+#define P4TC_TABLE_DEFAULT_MAX (__P4TC_TABLE_DEFAULT_MAX - 1)
+
+enum {
+	P4TC_TABLE_ACTS_DEFAULT_ONLY,
+	P4TC_TABLE_ACTS_TABLE_ONLY,
+	__P4TC_TABLE_ACTS_FLAGS_MAX,
+};
+#define P4TC_TABLE_ACTS_FLAGS_MAX (__P4TC_TABLE_ACTS_FLAGS_MAX - 1)
+
+enum {
+	P4TC_TABLE_ACT_UNSPEC,
+	P4TC_TABLE_ACT_FLAGS, /* u8 */
+	P4TC_TABLE_ACT_NAME, /* string */
+	__P4TC_TABLE_ACT_MAX
+};
+#define P4TC_TABLE_ACT_MAX (__P4TC_TABLE_ACT_MAX - 1)
+
+/* Table type attributes */
+enum {
+	P4TC_TABLE_UNSPEC,
+	P4TC_TABLE_NAME, /* string */
+	P4TC_TABLE_INFO, /* struct tc_p4_table_type_parm */
+	P4TC_TABLE_PREACTIONS, /* nested table preactions */
+	P4TC_TABLE_KEY, /* nested table key */
+	P4TC_TABLE_POSTACTIONS, /* nested table postactions */
+	P4TC_TABLE_DEFAULT_HIT, /* nested default hit action attributes */
+	P4TC_TABLE_DEFAULT_MISS, /* nested default miss action attributes */
+	P4TC_TABLE_OPT_ENTRY, /* nested const table entry*/
+	P4TC_TABLE_ACTS_LIST, /* nested table actions list */
+	__P4TC_TABLE_MAX
+};
+#define P4TC_TABLE_MAX __P4TC_TABLE_MAX
 
 struct p4tc_hdrfield_ty {
 	__u16 startbit;
