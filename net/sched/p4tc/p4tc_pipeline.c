@@ -297,6 +297,7 @@ static void tcf_pipeline_destroy(struct p4tc_pipeline *pipeline,
 {
 	idr_destroy(&pipeline->p_meta_idr);
 	idr_destroy(&pipeline->p_act_idr);
+	idr_destroy(&pipeline->p_tbl_idr);
 
 	if (free_pipeline)
 		kfree(pipeline);
@@ -323,8 +324,9 @@ static int tcf_pipeline_put(struct net *net,
 	struct p4tc_pipeline *pipeline = to_pipeline(template);
 	struct net *pipeline_net = maybe_get_net(net);
 	struct p4tc_act_dep_node *act_node, *node_tmp;
-	unsigned long m_id, tmp;
+	unsigned long tbl_id, m_id, tmp;
 	struct p4tc_metadata *meta;
+	struct p4tc_table *table;
 
 	if (pipeline_net && !refcount_dec_if_one(&pipeline->p_ref)) {
 		NL_SET_ERR_MSG(extack, "Can't delete referenced pipeline");
@@ -338,6 +340,9 @@ static int tcf_pipeline_put(struct net *net,
 	 */
 	p4tc_action_destroy(pipeline->preacts);
 	p4tc_action_destroy(pipeline->postacts);
+
+	idr_for_each_entry_ul(&pipeline->p_tbl_idr, table, tmp, tbl_id)
+		table->common.ops->put(net, &table->common, true, extack);
 
 	act_dep_graph_free(&pipeline->act_dep_graph);
 
@@ -371,6 +376,8 @@ static int tcf_pipeline_put(struct net *net,
 static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 					       struct netlink_ext_ack *extack)
 {
+	int ret;
+
 	if (pipeline->curr_tables != pipeline->num_tables) {
 		NL_SET_ERR_MSG(extack,
 			       "Must have all table defined to update state to ready");
@@ -388,6 +395,9 @@ static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 			       "Must specify pipeline postactions before sealing");
 		return -EINVAL;
 	}
+	ret = tcf_table_try_set_state_ready(pipeline, extack);
+	if (ret < 0)
+		return ret;
 
 	/* Will never fail in this case */
 	determine_act_topological_order(pipeline, false);
@@ -541,6 +551,9 @@ static struct p4tc_pipeline *tcf_pipeline_create(struct net *net,
 	pipeline->parser = NULL;
 
 	idr_init(&pipeline->p_act_idr);
+
+	idr_init(&pipeline->p_tbl_idr);
+	pipeline->curr_tables = 0;
 
 	idr_init(&pipeline->p_meta_idr);
 	pipeline->p_meta_offset = 0;
