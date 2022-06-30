@@ -43,6 +43,7 @@ static bool obj_is_valid(u32 obj)
 	switch (obj) {
 	case P4TC_OBJ_PIPELINE:
 	case P4TC_OBJ_META:
+	case P4TC_OBJ_TABLE_CLASS:
 		return true;
 	default:
 		return false;
@@ -52,6 +53,7 @@ static bool obj_is_valid(u32 obj)
 static const struct p4tc_template_ops *p4tc_ops[P4TC_OBJ_MAX] = {
 	[P4TC_OBJ_PIPELINE] = &p4tc_pipeline_ops,
 	[P4TC_OBJ_META] = &p4tc_meta_ops,
+	[P4TC_OBJ_TABLE_CLASS] = &p4tc_tclass_ops,
 };
 
 int tcf_p4_tmpl_generic_dump(struct sk_buff *skb,

@@ -46,6 +46,7 @@ static void tcf_pipeline_destroy(struct rcu_head *head)
 
 	pipeline = container_of(head, struct p4tc_pipeline, rcu);
 
+	idr_destroy(&pipeline->p_tbc_idr);
 	idr_destroy(&pipeline->p_meta_idr);
 
 	kfree(pipeline);
@@ -55,8 +56,9 @@ static int tcf_pipeline_put(struct p4tc_template_common *template,
 			    struct netlink_ext_ack *extack)
 {
 	struct p4tc_pipeline *pipeline = to_pipeline(template);
+	struct p4tc_table_class *tclass;
+	unsigned long tbc_id, m_id, tmp;
 	struct p4tc_metadata *meta;
-	unsigned long m_id, tmp;
 
 	if (!refcount_dec_if_one(&pipeline->p_ref)) {
 		NL_SET_ERR_MSG(extack,
@@ -66,6 +68,9 @@ static int tcf_pipeline_put(struct p4tc_template_common *template,
 
 	idr_for_each_entry_ul(&pipeline->p_meta_idr, meta, tmp, m_id)
 		meta->common.ops->put(&meta->common, extack);
+
+	idr_for_each_entry_ul(&pipeline->p_tbc_idr, tclass, tmp, tbc_id)
+		tclass->common.ops->put(&tclass->common, extack);
 
 	idr_remove(&pipeline_idr, pipeline->common.p_id);
 
@@ -92,23 +97,6 @@ static inline bool pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline)
 
 	pipeline->p_state = P4TC_STATE_READY;
 	return true;
-}
-
-static int p4tc_action_init(struct net *net, struct nlattr *nla,
-			    struct tc_action *acts[],
-			    struct netlink_ext_ack *extack)
-{
-	int init_res[TCA_ACT_MAX_PRIO];
-	size_t attrs_size;
-	int ret;
-	u32 flags;
-
-	/* If action was already created, just bind to existing one*/
-	flags = TCA_ACT_FLAGS_BIND;
-	ret = tcf_action_init(net, NULL, nla, NULL, acts, init_res,
-			      &attrs_size, flags, 0, extack);
-
-	return ret;
 }
 
 struct p4tc_pipeline *tcf_pipeline_find_byid(const u32 pipeid)
@@ -244,6 +232,7 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		goto preactions_destroy;
 	}
 
+	idr_init(&pipeline->p_tbc_idr);
 	pipeline->curr_table_classes = 0;
 
 	idr_init(&pipeline->p_meta_idr);

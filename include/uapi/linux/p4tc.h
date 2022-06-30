@@ -21,6 +21,22 @@ struct p4tcmsg {
 #define TEMPLATENAMSZ 256
 #define PIPELINENAMSIZ TEMPLATENAMSZ
 #define METANAMSIZ TEMPLATENAMSZ
+#define TCLASSNAMSIZ TEMPLATENAMSZ
+
+#define P4TC_TCLASS_FLAGS_KEYSZ 0x01
+#define P4TC_TCLASS_FLAGS_COUNT 0x02
+#define P4TC_TCLASS_FLAGS_MAX_ENTRIES 0x04
+#define P4TC_TCLASS_FLAGS_MAX_MASKS 0x08
+#define P4TC_TCLASS_FLAGS_DEFAULT_KEY 0x10
+
+struct p4tc_table_class_parm {
+	__u32 tbc_keysz;
+	__u32 tbc_count;
+	__u32 tbc_max_entries;
+	__u32 tbc_max_masks;
+	__u32 tbc_default_key;
+	__u32 tbc_flags;
+};
 
 /* Root attributes */
 enum {
@@ -49,6 +65,7 @@ enum {
 	P4TC_OBJ_UNSPEC,
 	P4TC_OBJ_PIPELINE,
 	P4TC_OBJ_META,
+	P4TC_OBJ_TABLE_CLASS,
 	__P4TC_OBJ_MAX,
 };
 #define P4TC_OBJ_MAX __P4TC_OBJ_MAX
@@ -145,6 +162,27 @@ enum {
 	__METACT_LMETA_MAX
 };
 #define METACT_LMETA_MAX (__METACT_LMETA_MAX - 1)
+
+/* Table key attributes */
+enum {
+	P4TC_KEY_UNSPEC,
+	P4TC_KEY_ID, /* u32 */
+	P4TC_KEY_ACT, /* nested key actions */
+	__P4TC_TKEY_MAX
+};
+#define P4TC_TKEY_MAX __P4TC_TKEY_MAX
+
+/* Table type attributes */
+enum {
+	P4TC_TCLASS_UNSPEC,
+	P4TC_TCLASS_NAME, /* string */
+	P4TC_TCLASS_INFO, /* struct tc_p4_table_type_parm */
+	P4TC_TCLASS_PREACTIONS, /* nested table preactions */
+	P4TC_TCLASS_KEYS, /* nested table keys */
+	P4TC_TCLASS_POSTACTIONS, /* nested table postactions */
+	__P4TC_TCLASS_MAX
+};
+#define P4TC_TCLASS_MAX __P4TC_TCLASS_MAX
 
 #define P4TC_RTA(r)  ((struct rtattr *)(((char *)(r)) + NLMSG_ALIGN(sizeof(struct p4tcmsg))))
 
