@@ -46,6 +46,7 @@ static void tcf_pipeline_destroy(struct rcu_head *head)
 
 	pipeline = container_of(head, struct p4tc_pipeline, rcu);
 
+	idr_destroy(&pipeline->p_tbl_idr);
 	idr_destroy(&pipeline->p_meta_idr);
 	idr_destroy(&pipeline->p_act_idr);
 
@@ -57,8 +58,9 @@ static int tcf_pipeline_put(struct net *net,
 			    struct netlink_ext_ack *extack)
 {
 	struct p4tc_pipeline *pipeline = to_pipeline(template);
+	unsigned long tbl_id, act_id, m_id, tmp;
+	struct p4tc_table *table;
 	struct p4tc_metadata *meta;
-	unsigned long m_id, act_id, tmp;
 	struct p4tc_act *act;
 
 	if (!refcount_dec_if_one(&pipeline->p_ref)) {
@@ -75,6 +77,9 @@ static int tcf_pipeline_put(struct net *net,
 
 	idr_for_each_entry_ul(&pipeline->p_act_idr, act, tmp, act_id)
 		act->common.ops->put(net, &act->common, extack);
+
+	idr_for_each_entry_ul(&pipeline->p_tbl_idr, table, tmp, tbl_id)
+		table->common.ops->put(net, &table->common, extack);
 
 	idr_remove(&pipeline_idr, pipeline->common.p_id);
 
@@ -101,6 +106,8 @@ static int tcf_pipeline_put(struct net *net,
 static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 					       struct netlink_ext_ack *extack)
 {
+	int ret;
+
 	if (pipeline->curr_tables != pipeline->num_tables) {
 		NL_SET_ERR_MSG(extack,
 			       "Must have all table defined to update state to ready");
@@ -118,6 +125,9 @@ static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 			       "Must specify pipeline postactions before sealing");
 		return -EINVAL;
 	}
+	ret = tcf_table_try_set_state_ready(pipeline, extack);
+	if (ret < 0)
+		return ret;
 
 	pipeline->p_state = P4TC_STATE_READY;
 	return true;
@@ -222,7 +232,7 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_PIPELINE_PREACTIONS],
-				       pipeline->preacts, extack);
+				       pipeline->preacts, 0, extack);
 		if (ret < 0) {
 			kfree(pipeline->preacts);
 			goto idr_rm;
@@ -243,7 +253,7 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_PIPELINE_POSTACTIONS],
-				       pipeline->postacts, extack);
+				       pipeline->postacts, 0, extack);
 		if (ret < 0) {
 			kfree(pipeline->postacts);
 			goto preactions_destroy;
@@ -257,6 +267,9 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 	pipeline->parser = NULL;
 
 	idr_init(&pipeline->p_act_idr);
+
+	idr_init(&pipeline->p_tbl_idr);
+	pipeline->curr_tables = 0;
 
 	idr_init(&pipeline->p_meta_idr);
 	pipeline->p_meta_offset = 0;
@@ -408,7 +421,7 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_PIPELINE_PREACTIONS],
-				       preacts, extack);
+				       preacts, 0, extack);
 		if (ret < 0) {
 			kfree(preacts);
 			goto out;
@@ -425,7 +438,7 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_PIPELINE_POSTACTIONS],
-				       postacts, extack);
+				       postacts, 0, extack);
 		if (ret < 0) {
 			kfree(postacts);
 			goto preactions_destroy;
