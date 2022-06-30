@@ -14,9 +14,18 @@
 #define P4TC_DEFAULT_MAX_RULES 1
 #define P4TC_MAXMETA_OFFSET 256
 #define P4TC_PATH_MAX 3
+#define P4TC_DEFAULT_TCOUNT 64
+#define P4TC_DEFAULT_TINST_COUNT 1
+#define P4TC_MAX_KEYSZ 128
+#define P4TC_MAX_TINSTS 512
+#define P4TC_MAX_TENTRIES (2 << 23)
+#define P4TC_DEFAULT_TENTRIES 256
+#define P4TC_MAX_TMASKS 128
+#define P4TC_DEFAULT_TMASKS 8
 
 #define P4TC_PID_IDX 0
 #define P4TC_MID_IDX 1
+#define P4TC_TBCID_IDX 1
 
 extern struct idr pipeline_idr;
 
@@ -71,6 +80,7 @@ extern const struct p4tc_template_ops p4tc_pipeline_ops;
 struct p4tc_pipeline {
 	struct p4tc_template_common common;
 	struct idr                  p_meta_idr;
+	struct idr                  p_tbc_idr;
 	struct rcu_head             rcu;
 	struct tc_action            **preacts;
 	struct tc_action            **postacts;
@@ -101,6 +111,28 @@ struct p4tc_metadata {
 
 extern const struct p4tc_template_ops p4tc_meta_ops;
 
+struct p4tc_table_key {
+	struct tc_action **key_acts;
+	u32              key_id;
+};
+
+struct p4tc_table_class {
+	struct p4tc_template_common common;
+	struct idr                  tbc_keys_idr;
+	struct tc_action            **tbc_preacts;
+	struct tc_action            **tbc_postacts;
+	u32                         tbc_count;
+	u32                         tbc_keysz;
+	u32                         tbc_id;
+	u32                         tbc_keys_count;
+	u32                         tbc_max_entries;
+	u32                         tbc_max_masks;
+	u32                         tbc_default_key;
+	refcount_t                  tbc_ref;
+};
+
+extern const struct p4tc_template_ops p4tc_tclass_ops;
+
 struct p4tc_pipeline *
 pipeline_find(const char *p_name, const u32 pipeid,
 	      struct netlink_ext_ack *extack);
@@ -114,7 +146,25 @@ static inline bool pipeline_sealed(struct p4tc_pipeline *pipeline)
 	return pipeline->p_state == P4TC_STATE_READY;
 }
 
+static inline int p4tc_action_init(struct net *net, struct nlattr *nla,
+				   struct tc_action *acts[],
+				   struct netlink_ext_ack *extack)
+{
+	int init_res[TCA_ACT_MAX_PRIO];
+	size_t attrs_size;
+	int ret;
+	u32 flags;
+
+	/* If action was already created, just bind to existing one*/
+	flags = TCA_ACT_FLAGS_BIND;
+	ret = tcf_action_init(net, NULL, nla, NULL, acts, init_res,
+			      &attrs_size, flags, 0, extack);
+
+	return ret;
+}
+
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
 #define to_meta(t) ((struct p4tc_metadata *)t)
+#define to_tclass(t) ((struct p4tc_table_class *)t)
 
 #endif
