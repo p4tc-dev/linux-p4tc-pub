@@ -131,7 +131,10 @@ static int ops_init(const struct pernet_operations *ops, struct net *net)
 			goto cleanup;
 	}
 	err = 0;
-	if (ops->init)
+	/* XXX: Need to get feedback from upstream on this */
+	if (ops->init_id)
+		err = ops->init_id(net, *ops->id);
+	else if (ops->init)
 		err = ops->init(net);
 	if (!err)
 		return 0;
@@ -170,7 +173,9 @@ static void ops_exit_list(const struct pernet_operations *ops,
 			cond_resched();
 		}
 	}
-	if (ops->exit_batch)
+	if (ops->exit_batch_id)
+		ops->exit_batch_id(net_exit_list, *ops->id);
+	else if (ops->exit_batch)
 		ops->exit_batch(net_exit_list);
 }
 
@@ -1145,7 +1150,7 @@ static int __register_pernet_operations(struct list_head *list,
 	LIST_HEAD(net_exit_list);
 
 	list_add_tail(&ops->list, list);
-	if (ops->init || (ops->id && ops->size)) {
+	if (ops->init_id || ops->init || (ops->id && ops->size)) {
 		/* We held write locked pernet_ops_rwsem, and parallel
 		 * setup_net() and cleanup_net() are not possible.
 		 */

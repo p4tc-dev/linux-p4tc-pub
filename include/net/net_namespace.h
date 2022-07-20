@@ -422,9 +422,11 @@ struct pernet_operations {
 	 * the calls.
 	 */
 	int (*init)(struct net *net);
+	int (*init_id)(struct net *net, unsigned int id);
 	void (*pre_exit)(struct net *net);
 	void (*exit)(struct net *net);
 	void (*exit_batch)(struct list_head *net_exit_list);
+	void (*exit_batch_id)(struct list_head *net_exit_list, unsigned int id);
 	unsigned int *id;
 	size_t size;
 };
