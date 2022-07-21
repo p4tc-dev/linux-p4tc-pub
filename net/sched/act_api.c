@@ -890,7 +890,7 @@ void tcf_idrinfo_destroy(const struct tc_action_ops *ops,
 }
 EXPORT_SYMBOL(tcf_idrinfo_destroy);
 
-static LIST_HEAD(act_base);
+static DEFINE_IDR(act_base);
 static DEFINE_RWLOCK(act_mod_lock);
 /* since act ops id is stored in pernet subsystem list,
  * then there is no way to walk through only all the action
@@ -949,7 +949,6 @@ static void tcf_pernet_del_id_list(unsigned int id)
 int tcf_register_action(struct tc_action_ops *act,
 			struct pernet_operations *ops)
 {
-	struct tc_action_ops *a;
 	int ret;
 
 	if (!act->act || !act->dump || !act->init)
@@ -970,13 +969,24 @@ int tcf_register_action(struct tc_action_ops *act,
 	}
 
 	write_lock(&act_mod_lock);
-	list_for_each_entry(a, &act_base, head) {
-		if (act->id == a->id || (strcmp(act->kind, a->kind) == 0)) {
+	if (act->id) {
+		if (idr_find(&act_base, act->id)) {
 			ret = -EEXIST;
 			goto err_out;
 		}
+		ret = idr_alloc_u32(&act_base, act, &act->id, act->id,
+				    GFP_ATOMIC);
+		if (ret < 0)
+			goto err_out;
+	} else {
+		/* Only dynamic actions will require ID generation */
+		act->id = TCA_ID_DYN;
+
+		ret = idr_alloc_u32(&act_base, act, &act->id, TCA_ID_MAX,
+				    GFP_ATOMIC);
+		if (ret < 0)
+			goto err_out;
 	}
-	list_add_tail(&act->head, &act_base);
 	write_unlock(&act_mod_lock);
 
 	return 0;
@@ -994,17 +1004,12 @@ EXPORT_SYMBOL(tcf_register_action);
 int tcf_unregister_action(struct tc_action_ops *act,
 			  struct pernet_operations *ops)
 {
-	struct tc_action_ops *a;
-	int err = -ENOENT;
+	int err = 0;
 
 	write_lock(&act_mod_lock);
-	list_for_each_entry(a, &act_base, head) {
-		if (a == act) {
-			list_del(&act->head);
-			err = 0;
-			break;
-		}
-	}
+	if (!idr_remove(&act_base, act->id))
+		err = -EINVAL;
+
 	write_unlock(&act_mod_lock);
 	if (!err) {
 		unregister_pernet_subsys(ops);
@@ -1019,10 +1024,11 @@ EXPORT_SYMBOL(tcf_unregister_action);
 static struct tc_action_ops *tc_lookup_action_n(char *kind)
 {
 	struct tc_action_ops *a, *res = NULL;
+	unsigned long tmp, id;
 
 	if (kind) {
 		read_lock(&act_mod_lock);
-		list_for_each_entry(a, &act_base, head) {
+		idr_for_each_entry_ul(&act_base, a, tmp, id) {
 			if (strcmp(kind, a->kind) == 0) {
 				if (try_module_get(a->owner))
 					res = a;
@@ -1038,10 +1044,11 @@ static struct tc_action_ops *tc_lookup_action_n(char *kind)
 static struct tc_action_ops *tc_lookup_action(struct nlattr *kind)
 {
 	struct tc_action_ops *a, *res = NULL;
+	unsigned long tmp, id;
 
 	if (kind) {
 		read_lock(&act_mod_lock);
-		list_for_each_entry(a, &act_base, head) {
+		idr_for_each_entry_ul(&act_base, a, tmp, id) {
 			if (nla_strcmp(kind, a->kind) == 0) {
 				if (try_module_get(a->owner))
 					res = a;
