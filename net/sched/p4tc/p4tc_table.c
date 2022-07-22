@@ -89,6 +89,7 @@ static const struct nla_policy p4tc_table_policy[P4TC_TABLE_MAX + 1] = {
 	[P4TC_TABLE_POSTACTIONS] = { .type = NLA_NESTED },
 	[P4TC_TABLE_DEFAULT_HIT] = { .type = NLA_NESTED },
 	[P4TC_TABLE_DEFAULT_MISS] = { .type = NLA_NESTED },
+	[P4TC_TABLE_OPT_ENTRY] = { .type = NLA_NESTED },
 };
 
 static const struct nla_policy p4tc_table_key_policy[P4TC_MAXPARSE_KEYS + 1] = {
@@ -229,6 +230,17 @@ static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 		rcu_read_unlock();
 		nla_nest_end(skb, default_missact);
 	}
+
+	if (table->tbl_const_entry) {
+		struct nlattr *const_nest;
+
+		const_nest = nla_nest_start(skb, P4TC_TABLE_OPT_ENTRY);
+		p4tca_table_get_entry_fill(skb, table, table->tbl_const_entry,
+					   table->tbl_id);
+		nla_nest_end(skb, const_nest);
+	}
+	kfree(table->tbl_const_entry);
+	table->tbl_const_entry = NULL;
 
 	if (nla_put(skb, P4TC_TABLE_INFO, sizeof(parm), &parm))
 		goto out_nlmsg_trim;
@@ -405,6 +417,10 @@ static inline int _tcf_table_put(struct net *net,
 		tcf_action_destroy(table->tbl_postacts, TCA_ACT_UNBIND);
 		kfree(table->tbl_postacts);
 	}
+
+	rhltable_free_and_destroy(&table->tbl_entries,
+				  tcf_table_entry_destroy_hash,
+				  table);
 
 	idr_destroy(&table->tbl_keys_idr);
 	idr_destroy(&table->tbl_masks_idr);
@@ -917,6 +933,7 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 		ret = -ENOMEM;
 		goto out;
 	}
+	table->tbl_const_entry = NULL;
 
 	table->common.p_id = pipeline->common.p_id;
 	strscpy(table->common.name, nla_data(tb[P4TC_TABLE_NAME]), TABLENAMSIZ);
@@ -1140,11 +1157,37 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 	spin_lock_init(&table->tbl_masks_idr_lock);
 	spin_lock_init(&table->tbl_prio_idr_lock);
 
+	if (rhltable_init(&table->tbl_entries, &entry_hlt_params) < 0) {
+		ret = -EINVAL;
+		goto defaultacts_destroy;
+	}
+
 	pipeline->curr_tables += 1;
 
 	table->common.ops = (struct p4tc_template_ops *)&p4tc_table_ops;
 
 	return table;
+
+defaultacts_destroy:
+	if (table->tbl_default_missact) {
+		struct p4tc_table_defact *missact;
+
+		missact = table->tbl_default_missact;
+
+		tcf_action_destroy(missact->default_acts, TCA_ACT_UNBIND);
+		kfree(missact->default_acts);
+		kfree(missact);
+	}
+
+	if (table->tbl_default_hitact) {
+		struct p4tc_table_defact *hitact;
+
+		hitact = table->tbl_default_hitact;
+
+		tcf_action_destroy(hitact->default_acts, TCA_ACT_UNBIND);
+		kfree(hitact->default_acts);
+		kfree(hitact);
+	}
 
 keys_put:
 	if (num_keys)
@@ -1329,8 +1372,6 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 	}
 
 	if (parm && parm->tbl_flags & P4TC_TABLE_FLAGS_DEFAULT_KEY) {
-		struct p4tc_table_key *default_key;
-
 		if (!parm->tbl_default_key) {
 			NL_SET_ERR_MSG(extack, "default_key cannot be zero");
 			ret = -EINVAL;
@@ -1343,6 +1384,29 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 			ret = -EINVAL;
 			goto free_perm;
 		}
+	}
+
+	if (tb[P4TC_TABLE_OPT_ENTRY]) {
+		struct p4tc_table_entry *entry;
+
+		entry = kzalloc(GFP_KERNEL, sizeof(*entry));
+		if (!entry) {
+			ret = -ENOMEM;
+			goto free_perm;
+		}
+
+		/* Workaround to make this work */
+		ret = tcf_table_const_entry_cu(net, tb[P4TC_TABLE_OPT_ENTRY],
+					       entry, pipeline, table, extack);
+		if (ret < 0) {
+			kfree(entry);
+			goto free_perm;
+		}
+		table->tbl_const_entry = entry;
+	}
+
+	if (parm && parm->tbl_flags & P4TC_TABLE_FLAGS_DEFAULT_KEY) {
+		struct p4tc_table_key *default_key;
 
 		default_key = keys[parm->tbl_default_key - 1];
 		table->tbl_default_key = default_key->key_id;
