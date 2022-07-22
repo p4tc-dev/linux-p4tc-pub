@@ -61,9 +61,16 @@ static int tcf_pipeline_put(struct net *net,
 	unsigned long tbc_id, m_id, act_id, tmp;
 	struct p4tc_table_class *tclass;
 	struct p4tc_metadata *meta;
-        struct p4tc_act *act;
+	struct p4tc_act *act;
+
+	if (!refcount_dec_if_one(&pipeline->p_ctrl_ref)) {
+		NL_SET_ERR_MSG(extack,
+			       "Can't delete referenced pipeline");
+		return -EBUSY;
+	}
 
 	if (!refcount_dec_if_one(&pipeline->p_ref)) {
+		refcount_set(&pipeline->p_ctrl_ref, 1);
 		NL_SET_ERR_MSG(extack,
 			       "Can't delete referenced pipeline");
 		return -EBUSY;
@@ -207,7 +214,7 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_PIPELINE_PREACTIONS],
-				       pipeline->preacts, extack);
+				       pipeline->preacts, 0, extack);
 		if (ret < 0) {
 			kfree(pipeline->preacts);
 			goto idr_rm;
@@ -229,7 +236,7 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_PIPELINE_POSTACTIONS],
-				       pipeline->postacts, extack);
+				       pipeline->postacts, 0, extack);
 		if (ret < 0) {
 			kfree(pipeline->postacts);
 			goto preactions_destroy;
@@ -253,6 +260,7 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 	pipeline->p_state = P4TC_STATE_NOT_READY;
 
 	refcount_set(&pipeline->p_ref, 1);
+	refcount_set(&pipeline->p_ctrl_ref, 1);
 
 	pipeline->common.ops = (struct p4tc_template_ops *)&p4tc_pipeline_ops;
 
@@ -395,7 +403,7 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_PIPELINE_PREACTIONS],
-				       preacts, extack);
+				       preacts, 0, extack);
 		if (ret < 0) {
 			kfree(preacts);
 			goto out;
@@ -412,7 +420,7 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_PIPELINE_POSTACTIONS],
-				       postacts, extack);
+				       postacts, 0, extack);
 		if (ret < 0) {
 			kfree(postacts);
 			goto preactions_destroy;
