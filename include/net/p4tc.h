@@ -123,6 +123,7 @@ struct p4tc_pipeline {
 	u32                         num_created_acts;
 	refcount_t                  p_ref;
 	refcount_t                  p_ctrl_ref;
+	refcount_t                  p_entry_deferal_ref;
 	u16                         num_tables;
 	u16                         curr_tables;
 	u8                          p_state;
@@ -234,6 +235,7 @@ struct p4tc_table {
 	struct rhltable                     tbl_entries;
 	struct tc_action                    **tbl_preacts;
 	struct tc_action                    **tbl_postacts;
+	struct p4tc_table_entry             *tbl_const_entry;
 	struct p4tc_table_defact __rcu      *tbl_default_hitact;
 	struct p4tc_table_defact __rcu      *tbl_default_missact;
 	struct p4tc_table_perm __rcu        *tbl_permissions;
@@ -320,6 +322,54 @@ extern const struct p4tc_template_ops p4tc_act_ops;
 extern const struct rhashtable_params p4tc_label_ht_params;
 extern const struct rhashtable_params acts_params;
 void p4tc_label_ht_destroy(void *ptr, void *arg);
+
+extern const struct rhashtable_params entry_hlt_params;
+
+struct p4tc_table_entry;
+struct p4tc_table_entry_work {
+	struct work_struct   work;
+	struct p4tc_pipeline *pipeline;
+	struct p4tc_table_entry *entry;
+	bool defer_deletion;
+};
+
+struct p4tc_table_entry_key {
+	u8  *value;
+	u8  *unmasked_key;
+	u16 keysz;
+};
+
+struct p4tc_table_entry_mask {
+	struct rcu_head	 rcu;
+	u32              sz;
+	u32              mask_id;
+	refcount_t       mask_ref;
+	u8               *value;
+};
+
+struct p4tc_table_entry {
+	struct p4tc_table_entry_key      key;
+	struct work_struct               work;
+	struct p4tc_table_entry_tm __rcu *tm;
+	u32                              prio;
+	u32                              mask_id;
+	struct tc_action                 **acts;
+	struct p4tc_table_entry_work     *entry_work;
+	int                              num_acts;
+	struct rhlist_head               ht_node;
+	struct list_head                 list;
+	struct rcu_head                  rcu;
+	refcount_t                       entries_ref;
+	u16                              who_created;
+	u16                              who_updated;
+	u16                              permissions;
+};
+
+extern const struct nla_policy p4tc_root_policy[P4TC_ROOT_MAX + 1];
+extern const struct nla_policy p4tc_policy[P4TC_MAX + 1];
+struct p4tc_table_entry *p4tc_table_entry_lookup(struct sk_buff *skb,
+						 struct p4tc_table *table,
+						 u32 keysz);
 
 struct p4tc_parser {
 	char parser_name[PARSERNAMSIZ];
@@ -444,6 +494,16 @@ struct p4tc_table *tcf_table_get(struct p4tc_pipeline *pipeline,
 				 const char *tblname, const u32 tbl_id,
 				 struct netlink_ext_ack *extack);
 void tcf_table_put_ref(struct p4tc_table *table);
+
+void tcf_table_entry_destroy_hash(void *ptr, void *arg);
+
+int tcf_table_const_entry_cu(struct net *net, struct nlattr *arg,
+			     struct p4tc_table_entry *entry,
+			     struct p4tc_pipeline *pipeline,
+			     struct p4tc_table *table,
+			     struct netlink_ext_ack *extack);
+int p4tca_table_get_entry_fill(struct sk_buff *skb, struct p4tc_table *table,
+			       struct p4tc_table_entry *entry, u32 tbl_id);
 
 struct p4tc_parser *tcf_parser_create(struct p4tc_pipeline *pipeline,
 				      const char *parser_name,

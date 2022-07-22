@@ -234,6 +234,17 @@ static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 	}
 	nla_nest_end(skb, nested_tbl_acts);
 
+	if (table->tbl_const_entry) {
+		struct nlattr *const_nest;
+
+		const_nest = nla_nest_start(skb, P4TC_TABLE_OPT_ENTRY);
+		p4tca_table_get_entry_fill(skb, table, table->tbl_const_entry,
+					   table->tbl_id);
+		nla_nest_end(skb, const_nest);
+	}
+	kfree(table->tbl_const_entry);
+	table->tbl_const_entry = NULL;
+
 	if (nla_put(skb, P4TC_TABLE_INFO, sizeof(parm), &parm))
 		goto out_nlmsg_trim;
 	nla_nest_end(skb, nest);
@@ -380,6 +391,9 @@ static inline int _tcf_table_put(struct net *net, struct nlattr **tb,
 	p4tc_action_destroy(table->tbl_postacts);
 
 	tcf_table_acts_list_destroy(&table->tbl_acts_list);
+
+	rhltable_free_and_destroy(&table->tbl_entries,
+				  tcf_table_entry_destroy_hash, table);
 
 	idr_destroy(&table->tbl_masks_idr);
 	idr_destroy(&table->tbl_prio_idr);
@@ -1075,6 +1089,11 @@ static struct p4tc_table *tcf_table_create(struct net *net, struct nlattr **tb,
 	spin_lock_init(&table->tbl_masks_idr_lock);
 	spin_lock_init(&table->tbl_prio_idr_lock);
 
+	if (rhltable_init(&table->tbl_entries, &entry_hlt_params) < 0) {
+		ret = -EINVAL;
+		goto defaultacts_destroy;
+	}
+
 	table->tbl_key = key;
 
 	pipeline->curr_tables += 1;
@@ -1082,6 +1101,10 @@ static struct p4tc_table *tcf_table_create(struct net *net, struct nlattr **tb,
 	table->common.ops = (struct p4tc_template_ops *)&p4tc_table_ops;
 
 	return table;
+
+defaultacts_destroy:
+	p4tc_table_defact_destroy(table->tbl_default_missact);
+	p4tc_table_defact_destroy(table->tbl_default_hitact);
 
 key_put:
 	if (key)
@@ -1279,6 +1302,25 @@ static struct p4tc_table *tcf_table_update(struct net *net, struct nlattr **tb,
 		}
 	}
 
+	if (tb[P4TC_TABLE_OPT_ENTRY]) {
+		struct p4tc_table_entry *entry;
+
+		entry = kzalloc(GFP_KERNEL, sizeof(*entry));
+		if (!entry) {
+			ret = -ENOMEM;
+			goto free_perm;
+		}
+
+		/* Workaround to make this work */
+		ret = tcf_table_const_entry_cu(net, tb[P4TC_TABLE_OPT_ENTRY],
+					       entry, pipeline, table, extack);
+		if (ret < 0) {
+			kfree(entry);
+			goto free_perm;
+		}
+		table->tbl_const_entry = entry;
+	}
+
 	if (preacts) {
 		p4tc_action_destroy(table->tbl_preacts);
 		table->tbl_preacts = preacts;
@@ -1325,6 +1367,9 @@ static struct p4tc_table *tcf_table_update(struct net *net, struct nlattr **tb,
 	}
 
 	return table;
+
+free_perm:
+	kfree(perm);
 
 key_destroy:
 	if (key)
