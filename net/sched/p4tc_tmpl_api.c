@@ -28,12 +28,12 @@
 #include <net/flow_offload.h>
 #include <net/p4_types.h>
 
-static const struct nla_policy p4tc_root_policy[P4TC_ROOT_MAX + 1] = {
+const struct nla_policy p4tc_root_policy[P4TC_ROOT_MAX + 1] = {
 	[P4TC_ROOT] = { .type = P4T_NESTED },
 	[P4TC_ROOT_PNAME] = { .type = P4T_STRING, .len = PIPELINENAMSIZ },
 };
 
-static const struct nla_policy p4tc_policy[P4TC_MAX + 1] = {
+const struct nla_policy p4tc_policy[P4TC_MAX + 1] = {
 	[P4TC_PATH] = { .type = NLA_BINARY, .len = P4TC_PATH_MAX * sizeof(u32) },
 	[P4TC_PARAMS] = { .type = P4T_NESTED },
 };

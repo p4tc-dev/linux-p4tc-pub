@@ -10,7 +10,7 @@ obj-$(CONFIG_NET_SCHED)		+= sch_api.o sch_blackhole.o
 obj-$(CONFIG_NET_CLS)		+= cls_api.o
 obj-$(CONFIG_NET_P4_TC)		+= p4_types.o p4tc_pipeline.o p4tc_tmpl_api.o p4tc_meta.o \
 				   p4tc_tclass.o p4tc_tinst.o p4tc_parser_api.o \
-				   p4tc_hdrfield.o p4tc_action.o
+				   p4tc_hdrfield.o p4tc_action.o p4tc_tbl_api.o
 obj-$(CONFIG_NET_CLS_ACT)	+= act_api.o
 obj-$(CONFIG_NET_ACT_POLICE)	+= act_police.o
 obj-$(CONFIG_NET_ACT_GACT)	+= act_gact.o

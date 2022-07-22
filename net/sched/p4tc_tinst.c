@@ -59,6 +59,11 @@ static int _tcf_tinst_fill_nlmsg(struct sk_buff *skb,
 
 	if (nla_put_u32(skb, P4TC_TINST_MAX_ENTRIES, tinst->ti_max_entries))
 		goto out_nlmsg_trim;
+
+	if (nla_put_u32(skb, P4TC_TINST_CUR_ENTRIES,
+			refcount_read(&tinst->ti_entries_ref) - 1))
+		goto out_nlmsg_trim;
+
 	nla_nest_end(skb, nest);
 
 	return skb->len;
@@ -102,7 +107,7 @@ tinst_find_name(struct nlattr *name_attr, struct p4tc_table_class *tclass)
 	return NULL;
 }
 
-static struct p4tc_table_instance *
+struct p4tc_table_instance *
 tinst_find(struct nlattr *name_attr,
 	   const u32 ti_id,
 	   struct p4tc_pipeline *pipeline,
@@ -160,6 +165,14 @@ int p4tc_tinst_init(struct p4tc_table_instance *tinst,
 	strscpy(tinst->common.name, ti_name, TINSTNAMSIZ);
 
 	refcount_set(&tinst->ti_ref, 1);
+	refcount_set(&tinst->ti_ctrl_ref, 1);
+	refcount_set(&tinst->ti_entries_ref, 1);
+
+	idr_init(&tinst->ti_masks_idr);
+	spin_lock_init(&tinst->ti_masks_idr_lock);
+
+	if (rhltable_init(&tinst->ti_entries, &entry_hlt_params) < 0)
+		return -EINVAL;
 
 	tinst->common.ops = (struct p4tc_template_ops *)&p4tc_tinst_ops;
 
@@ -334,13 +347,25 @@ out:
 static int _tcf_tinst_put(struct p4tc_table_class *tclass,
 			  struct p4tc_table_instance *tinst)
 {
-	if (!refcount_dec_if_one(&tinst->ti_ref))
+	if (!refcount_dec_if_one(&tinst->ti_ctrl_ref))
 		return -EBUSY;
+
+	if (!refcount_dec_if_one(&tinst->ti_ref)) {
+		refcount_set(&tinst->ti_ctrl_ref, 1);
+		return -EBUSY;
+	}
 
 	idr_remove(&tclass->tbc_ti_idr, tinst->ti_id);
 
 	tclass->tbc_curr_count--;
 	tclass->tbc_curr_used_entries -= tinst->ti_max_entries;
+
+	rhltable_free_and_destroy(&tinst->ti_entries,
+				  tcf_table_entry_destroy_hash,
+				  tinst);
+
+	rcu_barrier();
+	idr_destroy(&tinst->ti_masks_idr);
 
 	kfree(tinst);
 

@@ -16,7 +16,6 @@
 #define P4TC_PATH_MAX 3
 #define P4TC_DEFAULT_TCOUNT 64
 #define P4TC_DEFAULT_TINST_COUNT 1
-#define P4TC_MAX_KEYSZ 128
 #define P4TC_MAX_TINSTS 512
 #define P4TC_MAX_TENTRIES (2 << 23)
 #define P4TC_DEFAULT_TENTRIES 256
@@ -99,6 +98,7 @@ struct p4tc_pipeline {
 	u32                         max_rules;
 	u32                         p_meta_offset;
 	refcount_t                  p_ref;
+	refcount_t                  p_ctrl_ref;
 	u16                         num_table_classes;
 	u16                         curr_table_classes;
 	u8                          p_state;
@@ -143,6 +143,7 @@ struct p4tc_table_class {
 	u32                         tbc_max_masks;
 	u32                         tbc_curr_used_entries;
 	u32                         tbc_default_key;
+	refcount_t                  tbc_ctrl_ref;
 	refcount_t                  tbc_ref;
 };
 
@@ -151,11 +152,23 @@ extern const struct p4tc_template_ops p4tc_tclass_ops;
 struct p4tc_table_instance {
 	struct p4tc_template_common common;
 	struct rhash_head ht_node;
+	struct rhltable   ti_entries;
+	struct idr        ti_masks_idr;
+	spinlock_t        ti_masks_idr_lock;
 	u32               tbc_id;
 	u32               ti_id;
 	u32               ti_max_entries;
 	refcount_t        ti_ref;
+	refcount_t        ti_ctrl_ref;
+	refcount_t        ti_entries_ref;
 };
+
+extern struct p4tc_table_instance *
+tinst_find(struct nlattr *name_attr,
+	   const u32 ti_id,
+	   struct p4tc_pipeline *pipeline,
+	   struct p4tc_table_class *tclass,
+	   struct netlink_ext_ack *extack);
 
 extern const struct p4tc_template_ops p4tc_tinst_ops;
 
@@ -197,6 +210,39 @@ struct p4tc_act {
 extern const struct p4tc_template_ops p4tc_act_ops;
 extern const struct rhashtable_params acts_params;
 
+extern const struct rhashtable_params entry_hlt_params;
+
+struct p4tc_table_entry_key {
+	u8  *value;
+	u8  *unmasked_key;
+	u16 keysz;
+};
+
+struct p4tc_table_entry_mask {
+	struct rcu_head	 rcu;
+	u32              sz;
+	u32              mask_id;
+	refcount_t       mask_ref;
+	u8               *value;
+};
+
+struct p4tc_table_entry {
+	struct p4tc_table_entry_key      key;
+	struct p4tc_table_entry_tm __rcu *tm;
+	u32                              prio;
+	u32                              mask_id;
+	struct tc_action                 **acts;
+	struct rhlist_head               ht_node;
+	struct list_head                 list;
+	struct rcu_head                  rcu;
+	refcount_t                       entries_ref;
+	u16                              who_created;
+	u16                              who_updated;
+};
+
+extern const struct nla_policy p4tc_root_policy[P4TC_ROOT_MAX + 1];
+extern const struct nla_policy p4tc_policy[P4TC_MAX + 1];
+
 struct p4tc_parser {
 	char parser_name[PARSERNAMSIZ];
 	struct idr hdr_fields_idr;
@@ -229,16 +275,15 @@ static inline bool pipeline_sealed(struct p4tc_pipeline *pipeline)
 }
 
 static inline int p4tc_action_init(struct net *net, struct nlattr *nla,
-				   struct tc_action *acts[],
+				   struct tc_action *acts[], u32 flags,
 				   struct netlink_ext_ack *extack)
 {
 	int init_res[TCA_ACT_MAX_PRIO];
 	size_t attrs_size;
 	int ret;
-	u32 flags;
 
 	/* If action was already created, just bind to existing one*/
-	flags = TCA_ACT_FLAGS_BIND;
+	flags |= TCA_ACT_FLAGS_BIND;
 	ret = tcf_action_init(net, NULL, nla, NULL, acts, init_res,
 			      &attrs_size, flags, 0, extack);
 
@@ -254,6 +299,8 @@ int p4tc_tinst_init(struct p4tc_table_instance *tinst,
 		    const char *ti_name,
 		    struct p4tc_table_class *tclass,
 		    u32 max_entries);
+
+void tcf_table_entry_destroy_hash(void *ptr, void *arg);
 
 struct p4tc_parser *tcf_parser_create(struct p4tc_pipeline *pipeline,
 				      const char *parser_name,

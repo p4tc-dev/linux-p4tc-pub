@@ -193,8 +193,13 @@ static inline int _tcf_tclass_put(struct net *net,
 	unsigned long tmp, tbc_id, ti_id;
 	struct p4tc_table_key *key;
 
-	if (!refcount_dec_if_one(&tclass->tbc_ref))
+	if (!refcount_dec_if_one(&tclass->tbc_ctrl_ref))
 		return -EBUSY;
+
+	if (!refcount_dec_if_one(&tclass->tbc_ref)) {
+		refcount_set(&tclass->tbc_ctrl_ref, 1);
+		return -EBUSY;
+	}
 
 	idr_for_each_entry_ul(&tclass->tbc_keys_idr, key, tmp, tbc_id) {
 		tcf_tclass_key_put(key);
@@ -312,7 +317,7 @@ tcf_table_key_add_1(struct net *net,
 			goto free;
 		}
 
-		ret = p4tc_action_init(net, tb[P4TC_KEY_ACT], key->key_acts,
+		ret = p4tc_action_init(net, tb[P4TC_KEY_ACT], key->key_acts, 0,
 				       extack);
 		if (ret < 0) {
 			kfree(key->key_acts);
@@ -381,7 +386,7 @@ tcf_table_key_update_1(struct net *net,
 		}
 
 		ret = p4tc_action_init(net, tb_key[P4TC_KEY_ACT], key->key_acts,
-				       extack);
+				       0, extack);
 		if (ret < 0) {
 			kfree(key->key_acts);
 			goto free;
@@ -639,6 +644,7 @@ tcf_tclass_create(struct net *net, struct nlmsghdr *n,
 	}
 
 	refcount_set(&tclass->tbc_ref, 1);
+	refcount_set(&tclass->tbc_ctrl_ref, 1);
 
 	if (tbc_id) {
 		tclass->tbc_id = tbc_id;
@@ -669,7 +675,7 @@ tcf_tclass_create(struct net *net, struct nlmsghdr *n,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_TCLASS_PREACTIONS],
-				       tclass->tbc_preacts, extack);
+				       tclass->tbc_preacts, 0, extack);
 		if (ret < 0) {
 			kfree(tclass->tbc_preacts);
 			goto idr_rm;
@@ -688,7 +694,7 @@ tcf_tclass_create(struct net *net, struct nlmsghdr *n,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_TCLASS_POSTACTIONS],
-				       tclass->tbc_postacts, extack);
+				       tclass->tbc_postacts, 0, extack);
 		if (ret < 0) {
 			kfree(tclass->tbc_postacts);
 			goto preactions_destroy;
@@ -839,7 +845,7 @@ tcf_tclass_update(struct net *net, struct nlmsghdr *n,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_TCLASS_PREACTIONS],
-				       preacts, extack);
+				       preacts, 0, extack);
 		if (ret < 0) {
 			kfree(preacts);
 			goto out;
@@ -856,7 +862,7 @@ tcf_tclass_update(struct net *net, struct nlmsghdr *n,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_TCLASS_POSTACTIONS],
-				       postacts, extack);
+				       postacts, 0, extack);
 		if (ret < 0) {
 			kfree(postacts);
 			goto preactions_destroy;
