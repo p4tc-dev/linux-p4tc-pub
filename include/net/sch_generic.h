@@ -326,6 +326,11 @@ struct tcf_result {
 		};
 		const struct tcf_proto *goto_tp;
 
+		struct {
+			bool hit;
+			bool miss;
+			int action_run_id;
+		};
 	};
 };
 
