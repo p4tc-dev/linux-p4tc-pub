@@ -48,11 +48,11 @@ static int _tcf_meta_put(struct p4tc_pipeline *pipeline,
 	return 0;
 }
 
-static int tcf_meta_put(struct p4tc_template_common *tmpl,
+static int tcf_meta_put(struct net *net, struct p4tc_template_common *template,
 			struct netlink_ext_ack *extack)
 {
-	struct p4tc_pipeline *pipeline = idr_find(&pipeline_idr, tmpl->p_id);
-	struct p4tc_metadata *meta = to_meta(tmpl);
+	struct p4tc_pipeline *pipeline = idr_find(&pipeline_idr, template->p_id);
+	struct p4tc_metadata *meta = to_meta(template);
 	int ret;
 
 	ret = _tcf_meta_put(pipeline, meta, extack);
@@ -385,7 +385,7 @@ out_nlmsg_trim:
 	return -1;
 }
 
-static int tcf_meta_fill_nlmsg(struct sk_buff *skb,
+static int tcf_meta_fill_nlmsg(struct net *net, struct sk_buff *skb,
 			       struct p4tc_template_common *template,
 			       struct netlink_ext_ack *extack)
 {
@@ -445,9 +445,9 @@ out_nlmsg_trim:
 	return ret;
 }
 
-static int tcf_meta_gd(struct sk_buff *skb, struct nlmsghdr *n,
-		       struct nlattr *nla, char **p_name,
-		       u32 *ids, struct netlink_ext_ack *extack)
+static int tcf_meta_gd(struct net *net, struct sk_buff *skb, struct nlmsghdr *n,
+		       struct nlattr *nla,  char **p_name, u32 *ids,
+		       struct netlink_ext_ack *extack)
 {
 	u32 pipeid = ids[P4TC_PID_IDX], m_id = ids[P4TC_MID_IDX];
 	struct nlattr *tb[P4TC_META_MAX + 1] = {};

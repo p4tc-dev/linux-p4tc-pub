@@ -68,7 +68,7 @@ out_nlmsg_trim:
 	return ret;
 }
 
-static int tcf_tinst_fill_nlmsg(struct sk_buff *skb,
+static int tcf_tinst_fill_nlmsg(struct net *net, struct sk_buff *skb,
 				struct p4tc_template_common *tmpl,
 				struct netlink_ext_ack *extack)
 {
@@ -399,9 +399,10 @@ out_nlmsg_trim:
 	return 0;
 }
 
-static int tcf_tinst_gd(struct sk_buff *skb, struct nlmsghdr *n,
-			struct nlattr *nla, char **p_name,
-			u32 *ids, struct netlink_ext_ack *extack)
+static int tcf_tinst_gd(struct net *net, struct sk_buff *skb,
+			struct nlmsghdr *n, struct nlattr *nla,
+			char **p_name, u32 *ids,
+			struct netlink_ext_ack *extack)
 {
 	u32 pipeid = ids[P4TC_PID_IDX], tbc_id = ids[P4TC_MID_IDX];
 	struct nlattr *tb[P4TC_TINST_MAX + 1] = {};
@@ -467,7 +468,7 @@ out_nlmsg_trim:
 	return ret;
 }
 
-static int tcf_tinst_put(struct p4tc_template_common *tmpl,
+static int tcf_tinst_put(struct net *net, struct p4tc_template_common *tmpl,
 			 struct netlink_ext_ack *extack)
 {
 	struct p4tc_table_instance *tinst = to_tinst(tmpl);

@@ -29,6 +29,7 @@
 #define P4TC_MID_IDX 1
 #define P4TC_TBCID_IDX 1
 #define P4TC_TIID_IDX 2
+#define P4TC_AID_IDX 1
 #define P4TC_PARSEID_IDX 1
 #define P4TC_HDRFIELDID_IDX 2
 
@@ -36,6 +37,7 @@ extern struct idr pipeline_idr;
 
 struct p4tc_dump_ctx {
 	u32 ids[P4TC_PATH_MAX];
+	struct rhashtable_iter *iter;
 };
 
 struct p4tc_template_common;
@@ -61,12 +63,14 @@ struct p4tc_template_ops {
 	struct p4tc_template_common *
 	(*cu)(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	      char **pname, u32 *ids, struct netlink_ext_ack *extack);
-	int (*put)(struct p4tc_template_common *tmpl,
+	int (*put)(struct net *net, struct p4tc_template_common *tmpl,
 		   struct netlink_ext_ack *extack);
 	/* XXX: Triple check to see if it's really ok not to have net as an argument */
-	int (*gd)(struct sk_buff *skb, struct nlmsghdr *n, struct nlattr *nla,
-		  char **p_name, u32 *ids, struct netlink_ext_ack *extack);
-	int (*fill_nlmsg)(struct sk_buff *skb, struct p4tc_template_common *tmpl,
+	int (*gd)(struct net *net, struct sk_buff *skb, struct nlmsghdr *n,
+		  struct nlattr *nla,  char **p_name, u32 *ids,
+		  struct netlink_ext_ack *extack);
+	int (*fill_nlmsg)(struct net *net, struct sk_buff *skb,
+			  struct p4tc_template_common *tmpl,
 			  struct netlink_ext_ack *extack);
 	int (*dump)(struct sk_buff *skb, struct p4tc_dump_ctx *ctx,
 		    struct nlattr *nla, char **p_name,
@@ -87,6 +91,7 @@ struct p4tc_pipeline {
 	struct p4tc_template_common common;
 	struct idr                  p_meta_idr;
 	struct idr                  p_tbc_idr;
+	struct idr                  p_act_idr;
 	struct idr                  p_parser_idr;
 	struct rcu_head             rcu;
 	struct tc_action            **preacts;
@@ -153,6 +158,44 @@ struct p4tc_table_instance {
 };
 
 extern const struct p4tc_template_ops p4tc_tinst_ops;
+
+struct p4tc_ipv4_param_value {
+	u32 value;
+	u32 mask;
+};
+
+struct p4tc_act_param {
+	char            name[ACTPARAMNAMSIZ];
+	void            *value;
+	u32             type;
+	u32             id;
+	struct rcu_head	rcu;
+};
+
+struct p4tc_act_param_ops;
+
+struct p4tc_act_param_ops {
+	int (*init_value)(struct p4tc_act_param_ops *op,
+			  struct p4tc_act_param *nparam,
+			  struct nlattr **tb);
+	int (*dump_value)(struct sk_buff *skb, struct p4tc_act_param_ops *op,
+			   struct p4tc_act_param *param);
+	void (*free)(struct p4tc_act_param *param);
+	u32 len;
+	u32 alloc_len;
+};
+
+struct p4tc_act {
+	struct p4tc_template_common common;
+	struct tc_action_ops        ops;
+	struct pernet_operations    *p4_net_ops;
+	struct idr                  params_idr;
+	struct tcf_exts             exts;
+	u32                         a_id;
+	bool                        active;
+};
+extern const struct p4tc_template_ops p4tc_act_ops;
+extern const struct rhashtable_params acts_params;
 
 struct p4tc_parser {
 	char parser_name[PARSERNAMSIZ];
@@ -229,6 +272,7 @@ bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
 #define to_meta(t) ((struct p4tc_metadata *)t)
 #define to_tclass(t) ((struct p4tc_table_class *)t)
 #define to_tinst(t) ((struct p4tc_table_instance *)t)
+#define to_act(t) ((struct p4tc_act *)t)
 #define to_hdrfield(t) ((struct p4tc_header_field *)t)
 
 #endif

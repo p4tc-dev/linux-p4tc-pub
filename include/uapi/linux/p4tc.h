@@ -25,6 +25,7 @@ struct p4tcmsg {
 #define TINSTNAMSIZ TEMPLATENAMSZ
 #define PARSERNAMSIZ TEMPLATENAMSZ
 #define HDRFIELDNAMSIZ TEMPLATENAMSZ
+#define ACTPARAMNAMSIZ TEMPLATENAMSZ
 
 #define P4TC_TCLASS_FLAGS_KEYSZ 0x01
 #define P4TC_TCLASS_FLAGS_COUNT 0x02
@@ -71,6 +72,7 @@ enum {
 	P4TC_OBJ_TABLE_CLASS,
 	P4TC_OBJ_TABLE_INST,
 	P4TC_OBJ_HDR_FIELD,
+	P4TC_OBJ_ACT,
 	__P4TC_OBJ_MAX,
 };
 #define P4TC_OBJ_MAX __P4TC_OBJ_MAX
@@ -186,6 +188,36 @@ enum {
 	__P4TC_HDRFIELD_MAX
 };
 #define P4TC_HDRFIELD_MAX (__P4TC_HDRFIELD_MAX - 1)
+
+/* Action attributes */
+enum {
+	P4TC_ACT_UNSPEC,
+	P4TC_ACT_NAME, /* string */
+	P4TC_ACT_PARMS, /* nested params */
+	P4TC_ACT_OPT, /* action opt */
+	P4TC_ACT_TM, /* action tm */
+	P4TC_ACT_LIST, /* actions list */
+	P4TC_ACT_ACTIVE, /* u8 */
+	P4TC_ACT_PAD,
+	__P4TC_ACT_MAX
+};
+#define P4TC_ACT_MAX __P4TC_ACT_MAX
+
+/* Action params attributes */
+enum {
+	P4TC_ACT_PARAMS_UNSPEC,
+	P4TC_ACT_PARAMS_NAME, /* string */
+	P4TC_ACT_PARAMS_ID, /* u32 */
+	P4TC_ACT_PARAMS_VALUE, /* bytes */
+	P4TC_ACT_PARAMS_MASK, /* bytes */
+	P4TC_ACT_PARAMS_TYPE, /* u32 */
+	__P4TC_ACT_PARAMS_MAX
+};
+#define P4TC_ACT_PARAMS_MAX __P4TC_ACT_PARAMS_MAX
+
+struct tc_act_dyna {
+	tc_gen;
+};
 
 #define P4TC_RTA(r)  ((struct rtattr *)(((char *)(r)) + NLMSG_ALIGN(sizeof(struct p4tcmsg))))
 
