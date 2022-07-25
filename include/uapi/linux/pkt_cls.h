@@ -140,9 +140,9 @@ enum tca_id {
 	TCA_ID_MPLS,
 	TCA_ID_CT,
 	TCA_ID_GATE,
-	TCA_ID_DYN,
+	TCA_ID_DYN = 256,
 	/* other actions go here */
-	__TCA_ID_MAX = 255
+	__TCA_ID_MAX = 1023
 };
 
 #define TCA_ID_MAX __TCA_ID_MAX
