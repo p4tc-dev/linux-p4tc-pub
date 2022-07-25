@@ -46,7 +46,7 @@ static int _tcf_hdrfield_put(struct p4tc_pipeline *pipeline,
 	return 0;
 }
 
-static int tcf_hdrfield_put(struct p4tc_template_common *tmpl,
+static int tcf_hdrfield_put(struct net *net, struct p4tc_template_common *tmpl,
 			    struct netlink_ext_ack *extack)
 {
 	struct p4tc_header_field *hdrfield;
@@ -377,7 +377,7 @@ out_nlmsg_trim:
 	return -1;
 }
 
-static int tcf_hdrfield_fill_nlmsg(struct sk_buff *skb,
+static int tcf_hdrfield_fill_nlmsg(struct net *net, struct sk_buff *skb,
 				   struct p4tc_template_common *template,
 				   struct netlink_ext_ack *extack)
 {
@@ -443,7 +443,7 @@ out_nlmsg_trim:
 	return 0;
 }
 
-static int tcf_hdrfield_gd(struct sk_buff *skb,
+static int tcf_hdrfield_gd(struct net *net, struct sk_buff *skb,
 			   struct nlmsghdr *n, struct nlattr *nla,
 			   char **p_name, u32 *ids,
 			   struct netlink_ext_ack *extack)

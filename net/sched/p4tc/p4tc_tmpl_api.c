@@ -44,6 +44,7 @@ static bool obj_is_valid(u32 obj)
 	case P4TC_OBJ_PIPELINE:
 	case P4TC_OBJ_META:
 	case P4TC_OBJ_HDR_FIELD:
+	case P4TC_OBJ_ACT:
 		return true;
 	default:
 		return false;
@@ -54,6 +55,7 @@ static const struct p4tc_template_ops *p4tc_ops[P4TC_OBJ_MAX] = {
 	[P4TC_OBJ_PIPELINE] = &p4tc_pipeline_ops,
 	[P4TC_OBJ_META] = &p4tc_meta_ops,
 	[P4TC_OBJ_HDR_FIELD] = &p4tc_hdrfield_ops,
+	[P4TC_OBJ_ACT] = &p4tc_act_ops,
 };
 
 int tcf_p4_tmpl_generic_dump(struct sk_buff *skb,
@@ -107,9 +109,9 @@ out_nlmsg_trim:
 	return -ENOMEM;
 }
 
-static int tc_ctl_p4_tmpl_gd_1(struct sk_buff *skb, struct nlmsghdr *n,
-			       struct nlattr *arg, char **p_name,
-			       struct netlink_ext_ack *extack)
+static int tc_ctl_p4_tmpl_gd_1(struct net *net, struct sk_buff *skb,
+			       struct nlmsghdr *n, struct nlattr *arg,
+			       char **p_name, struct netlink_ext_ack *extack)
 {
 	struct p4tcmsg *t = (struct p4tcmsg *)nlmsg_data(n);
 	u32 ids[P4TC_PATH_MAX] = {};
@@ -141,7 +143,7 @@ static int tc_ctl_p4_tmpl_gd_1(struct sk_buff *skb, struct nlmsghdr *n,
 
 	op = (struct p4tc_template_ops *)p4tc_ops[t->obj];
 
-	ret = op->gd(skb, n, tb[P4TC_PARAMS], p_name, ids, extack);
+	ret = op->gd(net, skb, n, tb[P4TC_PARAMS], p_name, ids, extack);
 	if (ret < 0)
 		return ret;
 
@@ -210,7 +212,7 @@ static int tc_ctl_p4_tmpl_gd_n(struct sk_buff *skb, struct nlmsghdr *n,
 	for (i = 1; i < P4TC_MSGBATCH_SIZE + 1 && tb[i]; i++) {
 		struct nlattr *nest = nla_nest_start(new_skb, i);
 
-		ret = tc_ctl_p4_tmpl_gd_1(new_skb, nlh, tb[i], &p_name_out,
+		ret = tc_ctl_p4_tmpl_gd_1(net, new_skb, nlh, tb[i], &p_name_out,
 					  extack);
 		if (n->nlmsg_flags & NLM_F_ROOT && event == RTM_DELP4TEMPLATE) {
 			if (ret <= 0)
@@ -343,7 +345,7 @@ tcf_p4_tmpl_cu_1(struct sk_buff *skb, struct net *net,
 	if (IS_ERR(tmpl))
 		return tmpl;
 
-	ret = op->fill_nlmsg(skb, tmpl, extack);
+	ret = op->fill_nlmsg(net, skb, tmpl, extack);
 	if (ret < 0)
 		goto put;
 
@@ -353,7 +355,7 @@ tcf_p4_tmpl_cu_1(struct sk_buff *skb, struct net *net,
 	return tmpl;
 
 put:
-	op->put(tmpl, extack);
+	op->put(net, tmpl, extack);
 
 out:
 	return ERR_PTR(ret);
@@ -458,7 +460,7 @@ undo_prev:
 		while (--i > 0) {
 			struct p4tc_template_common *tmpl = tmpls[i - 1];
 
-			tmpl->ops->put(tmpl, extack);
+			tmpl->ops->put(net, tmpl, extack);
 		}
 	}
 

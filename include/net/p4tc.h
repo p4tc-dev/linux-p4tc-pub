@@ -9,6 +9,8 @@
 #include <linux/refcount.h>
 #include <linux/rhashtable.h>
 #include <linux/rhashtable-types.h>
+#include <net/tc_act/p4tc.h>
+#include <net/p4tc_types.h>
 
 #define P4TC_DEFAULT_NUM_TABLES 1
 #define P4TC_DEFAULT_MAX_RULES 1
@@ -19,6 +21,7 @@
 
 #define P4TC_PID_IDX 0
 #define P4TC_MID_IDX 1
+#define P4TC_AID_IDX 1
 #define P4TC_PARSEID_IDX 1
 #define P4TC_HDRFIELDID_IDX 2
 
@@ -26,6 +29,7 @@
 
 struct p4tc_dump_ctx {
 	u32 ids[P4TC_PATH_MAX];
+	struct rhashtable_iter *iter;
 };
 
 struct p4tc_template_common;
@@ -52,12 +56,14 @@ struct p4tc_template_ops {
 	struct p4tc_template_common *
 	(*cu)(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	      char **pname, u32 *ids, struct netlink_ext_ack *extack);
-	int (*put)(struct p4tc_template_common *tmpl,
+	int (*put)(struct net *net, struct p4tc_template_common *tmpl,
 		   struct netlink_ext_ack *extack);
 	/* XXX: Triple check to see if it's really ok not to have net as an argument */
-	int (*gd)(struct sk_buff *skb, struct nlmsghdr *n, struct nlattr *nla,
-		  char **p_name, u32 *ids, struct netlink_ext_ack *extack);
-	int (*fill_nlmsg)(struct sk_buff *skb, struct p4tc_template_common *tmpl,
+	int (*gd)(struct net *net, struct sk_buff *skb, struct nlmsghdr *n,
+		  struct nlattr *nla,  char **p_name, u32 *ids,
+		  struct netlink_ext_ack *extack);
+	int (*fill_nlmsg)(struct net *net, struct sk_buff *skb,
+			  struct p4tc_template_common *tmpl,
 			  struct netlink_ext_ack *extack);
 	int (*dump)(struct sk_buff *skb, struct p4tc_dump_ctx *ctx,
 		    struct nlattr *nla, char **p_name, u32 *ids,
@@ -77,6 +83,7 @@ extern const struct p4tc_template_ops p4tc_pipeline_ops;
 struct p4tc_pipeline {
 	struct p4tc_template_common common;
 	struct idr                  p_meta_idr;
+	struct idr                  p_act_idr;
 	struct rcu_head             rcu;
 	struct p4tc_parser          *parser;
 	struct tc_action            **preacts;
@@ -128,6 +135,41 @@ struct p4tc_metadata {
 
 extern const struct p4tc_template_ops p4tc_meta_ops;
 
+struct p4tc_act_param {
+	char            name[ACTPARAMNAMSIZ];
+	void            *value;
+	void            *mask;
+	u32             type;
+	u32             id;
+	struct rcu_head	rcu;
+};
+
+struct p4tc_act_param_ops;
+
+struct p4tc_act_param_ops {
+	int (*init_value)(struct net *net, struct p4tc_act_param_ops *op,
+			  struct p4tc_act_param *nparam,
+			  struct nlattr **tb, struct netlink_ext_ack *extack);
+	int (*dump_value)(struct sk_buff *skb, struct p4tc_act_param_ops *op,
+			   struct p4tc_act_param *param);
+	void (*free)(struct p4tc_act_param *param);
+	u32 len;
+	u32 alloc_len;
+};
+
+struct p4tc_act {
+	struct p4tc_template_common common;
+	struct tc_action_ops        ops;
+	struct pernet_operations    *p4_net_ops;
+	struct idr                  params_idr;
+	struct tcf_exts             exts;
+	struct list_head            head;
+	u32                         a_id;
+	bool                        active;
+};
+extern const struct p4tc_template_ops p4tc_act_ops;
+extern const struct rhashtable_params acts_params;
+
 struct p4tc_parser {
 	char parser_name[PARSERNAMSIZ];
 	struct idr hdr_fields_idr;
@@ -158,6 +200,58 @@ struct p4tc_metadata *tcf_meta_find_byid(struct p4tc_pipeline *pipeline,
 					 u32 m_id);
 void tcf_meta_fill_user_offsets(struct p4tc_pipeline *pipeline);
 
+static inline int p4tc_action_init(struct net *net, struct nlattr *nla,
+				   struct tc_action *acts[],
+				   struct netlink_ext_ack *extack)
+{
+	int init_res[TCA_ACT_MAX_PRIO];
+	size_t attrs_size;
+	int ret;
+	u32 flags;
+
+	/* If action was already created, just bind to existing one*/
+	flags = TCA_ACT_FLAGS_BIND;
+	ret = tcf_action_init(net, NULL, nla, NULL, acts, init_res,
+			      &attrs_size, flags, 0, extack);
+
+	return ret;
+}
+
+static inline struct p4tc_skb_ext *p4tc_skb_ext_alloc(struct sk_buff *skb)
+{
+	struct p4tc_skb_ext *p4tc_skb_ext = skb_ext_add(skb, P4TC_SKB_EXT);
+
+	if (!p4tc_skb_ext)
+		return NULL;
+
+	p4tc_skb_ext->p4tc_ext = kzalloc(sizeof(struct __p4tc_skb_ext),
+					 GFP_ATOMIC);
+	if (!p4tc_skb_ext->p4tc_ext)
+		return NULL;
+
+	return p4tc_skb_ext;
+}
+
+struct p4tc_act *tcf_action_find_byid(struct p4tc_pipeline *pipeline,
+				      const u32 a_id);
+struct p4tc_act *
+tcf_action_find_byname(const char *act_name, struct p4tc_pipeline *pipeline);
+struct p4tc_act *
+tcf_action_find_byany(struct p4tc_pipeline *pipeline,
+		      const char *act_name,
+		      const u32 a_id,
+		      struct netlink_ext_ack *extack);
+int tcf_p4_dyna_template_init(struct net *net, struct tc_action **a,
+			      struct p4tc_act *act,
+			      struct list_head *params_list,
+			      struct tc_act_dyna *parm, u32 flags,
+			      struct netlink_ext_ack *extack);
+struct p4tc_act_param *tcf_param_find_byid(struct idr *params_idr,
+					   const u32 param_id);
+struct p4tc_act_param *
+tcf_param_find_byany(struct p4tc_act *act, const char *param_name,
+		     const u32 param_id, struct netlink_ext_ack *extack);
+
 struct p4tc_parser *tcf_parser_create(struct p4tc_pipeline *pipeline,
 				      const char *parser_name,
 				      u32 parser_inst_id,
@@ -186,6 +280,7 @@ void *tcf_hdrfield_fetch(struct sk_buff *skb,
 
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
 #define to_meta(t) ((struct p4tc_metadata *)t)
+#define to_act(t) ((struct p4tc_act *)t)
 #define to_hdrfield(t) ((struct p4tc_header_field *)t)
 
 #endif
