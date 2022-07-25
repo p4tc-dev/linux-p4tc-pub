@@ -4,6 +4,7 @@
 
 #include <linux/types.h>
 #include <linux/pkt_sched.h>
+#include <linux/pkt_cls.h>
 
 /* pipeline header */
 struct p4tcmsg {
@@ -29,6 +30,9 @@ struct p4tcmsg {
 #define METANAMSIZ TEMPLATENAMSZ
 #define PARSERNAMSIZ TEMPLATENAMSZ
 #define HDRFIELDNAMSIZ TEMPLATENAMSZ
+#define ACTPARAMNAMSIZ TEMPLATENAMSZ
+
+#define LABELNAMSIZ 32
 
 /* Root attributes */
 enum {
@@ -58,6 +62,7 @@ enum {
 	P4TC_OBJ_PIPELINE,
 	P4TC_OBJ_META,
 	P4TC_OBJ_HDR_FIELD,
+	P4TC_OBJ_ACT,
 	__P4TC_OBJ_MAX,
 };
 #define P4TC_OBJ_MAX __P4TC_OBJ_MAX
@@ -171,6 +176,47 @@ enum {
 	__P4TC_HDRFIELD_MAX
 };
 #define P4TC_HDRFIELD_MAX (__P4TC_HDRFIELD_MAX - 1)
+
+/* Action attributes */
+enum {
+	P4TC_ACT_UNSPEC,
+	P4TC_ACT_NAME, /* string */
+	P4TC_ACT_PARMS, /* nested params */
+	P4TC_ACT_OPT, /* action opt */
+	P4TC_ACT_TM, /* action tm */
+	P4TC_ACT_CMDS_LIST, /* command list */
+	P4TC_ACT_ACTIVE, /* u8 */
+	P4TC_ACT_PAD,
+	__P4TC_ACT_MAX
+};
+#define P4TC_ACT_MAX __P4TC_ACT_MAX
+
+#define P4TC_CMDS_LIST_MAX 32
+
+/* Action params attributes */
+enum {
+	P4TC_ACT_PARAMS_VALUE_UNSPEC,
+	P4TC_ACT_PARAMS_VALUE_RAW, /* binary */
+	P4TC_ACT_PARAMS_VALUE_OPND, /* struct p4tc_u_operand */
+	__P4TC_ACT_PARAMS_VALUE_MAX
+};
+#define P4TC_ACT_VALUE_PARAMS_MAX __P4TC_ACT_PARAMS_VALUE_MAX
+
+/* Action params attributes */
+enum {
+	P4TC_ACT_PARAMS_UNSPEC,
+	P4TC_ACT_PARAMS_NAME, /* string */
+	P4TC_ACT_PARAMS_ID, /* u32 */
+	P4TC_ACT_PARAMS_VALUE, /* bytes */
+	P4TC_ACT_PARAMS_MASK, /* bytes */
+	P4TC_ACT_PARAMS_TYPE, /* u32 */
+	__P4TC_ACT_PARAMS_MAX
+};
+#define P4TC_ACT_PARAMS_MAX __P4TC_ACT_PARAMS_MAX
+
+struct tc_act_dyna {
+	tc_gen;
+};
 
 #define P4TC_RTA(r) \
 	((struct rtattr *)(((char *)(r)) + NLMSG_ALIGN(sizeof(struct p4tcmsg))))
