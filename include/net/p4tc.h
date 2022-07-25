@@ -9,6 +9,8 @@
 #include <linux/refcount.h>
 #include <linux/rhashtable.h>
 #include <linux/rhashtable-types.h>
+#include <net/tc_act/p4tc.h>
+#include <net/p4tc_types.h>
 
 #define P4TC_DEFAULT_NUM_TCLASSES 1
 #define P4TC_DEFAULT_MAX_RULES 1
@@ -31,11 +33,13 @@
 #define P4TC_MID_IDX 1
 #define P4TC_TBCID_IDX 1
 #define P4TC_TIID_IDX 2
+#define P4TC_AID_IDX 1
 #define P4TC_PARSEID_IDX 1
 #define P4TC_HDRFIELDID_IDX 2
 
 struct p4tc_dump_ctx {
 	u32 ids[P4TC_PATH_MAX];
+	struct rhashtable_iter *iter;
 };
 
 struct p4tc_template_common;
@@ -62,12 +66,14 @@ struct p4tc_template_ops {
 	struct p4tc_template_common *
 	(*cu)(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	      char **pname, u32 *ids, struct netlink_ext_ack *extack);
-	int (*put)(struct p4tc_template_common *tmpl,
+	int (*put)(struct net *net, struct p4tc_template_common *tmpl,
 		   struct netlink_ext_ack *extack);
 	/* XXX: Triple check to see if it's really ok not to have net as an argument */
-	int (*gd)(struct sk_buff *skb, struct nlmsghdr *n, struct nlattr *nla,
-		  char **p_name, u32 *ids, struct netlink_ext_ack *extack);
-	int (*fill_nlmsg)(struct sk_buff *skb, struct p4tc_template_common *tmpl,
+	int (*gd)(struct net *net, struct sk_buff *skb, struct nlmsghdr *n,
+		  struct nlattr *nla,  char **p_name, u32 *ids,
+		  struct netlink_ext_ack *extack);
+	int (*fill_nlmsg)(struct net *net, struct sk_buff *skb,
+			  struct p4tc_template_common *tmpl,
 			  struct netlink_ext_ack *extack);
 	int (*dump)(struct sk_buff *skb, struct p4tc_dump_ctx *ctx,
 		    struct nlattr *nla, char **p_name,
@@ -190,6 +196,46 @@ tcf_tinst_find_byany(struct nlattr *name_attr,
 
 extern const struct p4tc_template_ops p4tc_tinst_ops;
 
+struct p4tc_ipv4_param_value {
+	u32 value;
+	u32 mask;
+};
+
+struct p4tc_act_param {
+	char            name[ACTPARAMNAMSIZ];
+	void            *value;
+	void            *mask;
+	u32             type;
+	u32             id;
+	struct rcu_head	rcu;
+};
+
+struct p4tc_act_param_ops;
+
+struct p4tc_act_param_ops {
+	int (*init_value)(struct net *net, struct p4tc_act_param_ops *op,
+			  struct p4tc_act_param *nparam,
+			  struct nlattr **tb, struct netlink_ext_ack *extack);
+	int (*dump_value)(struct sk_buff *skb, struct p4tc_act_param_ops *op,
+			   struct p4tc_act_param *param);
+	void (*free)(struct p4tc_act_param *param);
+	u32 len;
+	u32 alloc_len;
+};
+
+struct p4tc_act {
+	struct p4tc_template_common common;
+	struct tc_action_ops        ops;
+	struct pernet_operations    *p4_net_ops;
+	struct idr                  params_idr;
+	struct tcf_exts             exts;
+	struct list_head            head;
+	u32                         a_id;
+	bool                        active;
+};
+extern const struct p4tc_template_ops p4tc_act_ops;
+extern const struct rhashtable_params acts_params;
+
 struct p4tc_parser {
 	char parser_name[PARSERNAMSIZ];
 	struct idr hdr_fields_idr;
@@ -237,6 +283,32 @@ static inline int p4tc_action_init(struct net *net, struct nlattr *nla,
 	return ret;
 }
 
+static inline struct p4tc_skb_ext *p4tc_skb_ext_alloc(struct sk_buff *skb)
+{
+	struct p4tc_skb_ext *p4tc_skb_ext = skb_ext_add(skb, P4TC_SKB_EXT);
+
+	if (!p4tc_skb_ext)
+		return NULL;
+
+	p4tc_skb_ext->p4tc_ext = kzalloc(sizeof(struct __p4tc_skb_ext),
+					 GFP_ATOMIC);
+	if (!p4tc_skb_ext->p4tc_ext)
+		return NULL;
+
+	return p4tc_skb_ext;
+}
+
+struct p4tc_act *tcf_action_find_byid(struct p4tc_pipeline *pipeline,
+				      const u32 a_id);
+struct p4tc_act *
+tcf_action_find_byname(const char *act_name, struct p4tc_pipeline *pipeline);
+struct p4tc_act *tcf_action_find_byany(struct nlattr *act_name_attr,
+			     const u32 a_id,
+			     struct p4tc_pipeline *pipeline,
+			     struct netlink_ext_ack *extack);
+struct p4tc_act_param *tcf_param_find_byid(struct idr *params_idr,
+					   const u32 param_id);
+
 struct p4tc_table_class *
 tcf_tclass_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
 		      const u32 tbc_id, struct netlink_ext_ack *extack);
@@ -277,6 +349,7 @@ bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
 #define to_meta(t) ((struct p4tc_metadata *)t)
 #define to_tclass(t) ((struct p4tc_table_class *)t)
 #define to_tinst(t) ((struct p4tc_table_instance *)t)
+#define to_act(t) ((struct p4tc_act *)t)
 #define to_hdrfield(t) ((struct p4tc_header_field *)t)
 
 #endif

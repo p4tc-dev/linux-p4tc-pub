@@ -129,7 +129,7 @@ out_nlmsg_trim:
 	return -1;
 }
 
-static int tcf_tclass_fill_nlmsg(struct sk_buff *skb,
+static int tcf_tclass_fill_nlmsg(struct net *net, struct sk_buff *skb,
 				 struct p4tc_template_common *template,
 				 struct netlink_ext_ack *extack)
 {
@@ -185,7 +185,8 @@ static inline void tcf_tclass_key_replace_many(struct p4tc_table_key **keys,
 	}
 }
 
-static inline int _tcf_tclass_put(struct p4tc_pipeline *pipeline,
+static inline int _tcf_tclass_put(struct net *net,
+				  struct p4tc_pipeline *pipeline,
 				  struct p4tc_table_class *tclass,
 				  struct netlink_ext_ack *extack)
 {
@@ -202,7 +203,7 @@ static inline int _tcf_tclass_put(struct p4tc_pipeline *pipeline,
 	}
 
 	idr_for_each_entry_ul(&tclass->tbc_ti_idr, tinst, tmp, ti_id)
-		tinst->common.ops->put(&tinst->common, extack);
+		tinst->common.ops->put(net, &tinst->common, extack);
 
 	if (tclass->tbc_preacts) {
 		tcf_action_destroy(tclass->tbc_preacts, TCA_ACT_UNBIND);
@@ -222,15 +223,14 @@ static inline int _tcf_tclass_put(struct p4tc_pipeline *pipeline,
 	return 0;
 }
 
-static int tcf_tclass_put(struct p4tc_template_common *tmpl,
+static int tcf_tclass_put(struct net *net, struct p4tc_template_common *tmpl,
 			  struct netlink_ext_ack *extack)
-
 {
 	struct p4tc_pipeline *pipeline = tcf_pipeline_find_byid(tmpl->p_id);
 	struct p4tc_table_class *tclass = to_tclass(tmpl);
 	int ret;
 
-	ret = _tcf_tclass_put(pipeline, tclass, extack);
+	ret = _tcf_tclass_put(net, pipeline, tclass, extack);
 	if (ret < 0)
 		NL_SET_ERR_MSG(extack, "Unable to delete referenced table class");
 
@@ -789,7 +789,7 @@ tcf_tclass_create(struct net *net, struct nlmsghdr *n,
 		ret = p4tc_tinst_init(tinst, pipeline, tbcname,
 				      tclass, P4TC_DEFAULT_TIENTRIES);
 		if (ret < 0) {
-			tinst->common.ops->put(&tinst->common, extack);
+			tinst->common.ops->put(net, &tinst->common, extack);
 			goto keys_put;
 		}
 	}
@@ -1056,7 +1056,7 @@ out:
 	return (struct p4tc_template_common *)tclass;
 }
 
-static int tcf_tclass_flush(struct sk_buff *skb,
+static int tcf_tclass_flush(struct net *net, struct sk_buff *skb,
 			    struct p4tc_pipeline *pipeline,
 			    struct netlink_ext_ack *extack)
 {
@@ -1075,7 +1075,7 @@ static int tcf_tclass_flush(struct sk_buff *skb,
 	}
 
 	idr_for_each_entry_ul(&pipeline->p_tbc_idr, tclass, tmp, tbc_id) {
-		if (_tcf_tclass_put(pipeline, tclass, extack) < 0) {
+		if (_tcf_tclass_put(net, pipeline, tclass, extack) < 0) {
 			ret = -EBUSY;
 			continue;
 		}
@@ -1102,7 +1102,7 @@ out_nlmsg_trim:
 	return ret;
 }
 
-static int tcf_tclass_gd(struct sk_buff *skb,
+static int tcf_tclass_gd(struct net *net, struct sk_buff *skb,
 			 struct nlmsghdr *n, struct nlattr *nla,
 			 char **p_name, u32 *ids,
 			 struct netlink_ext_ack *extack)
@@ -1137,7 +1137,7 @@ static int tcf_tclass_gd(struct sk_buff *skb,
 		ids[P4TC_PID_IDX] = pipeline->common.p_id;
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE && (n->nlmsg_flags & NLM_F_ROOT))
-		return tcf_tclass_flush(skb, pipeline, extack);
+		return tcf_tclass_flush(net, skb, pipeline, extack);
 
 	tclass = tcf_tclass_find_byany(pipeline, tb[P4TC_TCLASS_NAME], tbc_id, extack);
 	if (IS_ERR(tclass))
@@ -1150,7 +1150,7 @@ static int tcf_tclass_gd(struct sk_buff *skb,
 	}
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE) {
-		ret = _tcf_tclass_put(pipeline, tclass, extack);
+		ret = _tcf_tclass_put(net, pipeline, tclass, extack);
 		if (ret < 0) {
 			NL_SET_ERR_MSG(extack,
 				       "Unable to delete referenced table class");

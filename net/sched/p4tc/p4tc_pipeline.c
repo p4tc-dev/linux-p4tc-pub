@@ -53,13 +53,15 @@ static void tcf_pipeline_destroy(struct rcu_head *head)
 	kfree(pipeline);
 }
 
-static int tcf_pipeline_put(struct p4tc_template_common *template,
+static int tcf_pipeline_put(struct net *net,
+			    struct p4tc_template_common *template,
 			    struct netlink_ext_ack *extack)
 {
 	struct p4tc_pipeline *pipeline = to_pipeline(template);
-	unsigned long tbc_id, m_id, tmp;
+	unsigned long tbc_id, m_id, act_id, tmp;
 	struct p4tc_table_class *tclass;
 	struct p4tc_metadata *meta;
+        struct p4tc_act *act;
 
 	if (!refcount_dec_if_one(&pipeline->p_ref)) {
 		NL_SET_ERR_MSG(extack,
@@ -71,10 +73,13 @@ static int tcf_pipeline_put(struct p4tc_template_common *template,
 		tcf_parser_del(pipeline, pipeline->parser, extack);
 
 	idr_for_each_entry_ul(&pipeline->p_meta_idr, meta, tmp, m_id)
-		meta->common.ops->put(&meta->common, extack);
+		meta->common.ops->put(net, &meta->common, extack);
 
 	idr_for_each_entry_ul(&pipeline->p_tbc_idr, tclass, tmp, tbc_id)
-		tclass->common.ops->put(&tclass->common, extack);
+		tclass->common.ops->put(net, &tclass->common, extack);
+
+	idr_for_each_entry_ul(&pipeline->p_act_idr, act, tmp, act_id)
+		act->common.ops->put(net, &act->common, extack);
 
 	idr_remove(&pipeline_idr, pipeline->common.p_id);
 
@@ -523,7 +528,7 @@ out_nlmsg_trim:
 	return -1;
 }
 
-static int tcf_pipeline_fill_nlmsg(struct sk_buff *skb,
+static int tcf_pipeline_fill_nlmsg(struct net *net, struct sk_buff *skb,
 				   struct p4tc_template_common *template,
 				   struct netlink_ext_ack *extack)
 {
@@ -538,15 +543,17 @@ static int tcf_pipeline_fill_nlmsg(struct sk_buff *skb,
 	return 0;
 }
 
-static int tcf_pipeline_del_one(struct p4tc_template_common *tmpl,
+static int tcf_pipeline_del_one(struct net *net,
+				struct p4tc_template_common *tmpl,
 				struct netlink_ext_ack *extack)
 {
-	return tcf_pipeline_put(tmpl, extack);
+	return tcf_pipeline_put(net, tmpl, extack);
 }
 
-static int tcf_pipeline_gd(struct sk_buff *skb, struct nlmsghdr *n,
-			   struct nlattr *nla, char **p_name,
-			   u32 *ids, struct netlink_ext_ack *extack)
+static int tcf_pipeline_gd(struct net *net, struct sk_buff *skb,
+			   struct nlmsghdr *n, struct nlattr *nla,
+			   char **p_name, u32 *ids,
+			   struct netlink_ext_ack *extack)
 {
 	unsigned char *b = skb_tail_pointer(skb);
 	u32 pipeid = ids[P4TC_PID_IDX];
@@ -565,7 +572,8 @@ static int tcf_pipeline_gd(struct sk_buff *skb, struct nlmsghdr *n,
 		return PTR_ERR(pipeline);
 
 	tmpl = (struct p4tc_template_common *)pipeline;
-	if (tcf_pipeline_fill_nlmsg(skb, tmpl, extack) < 0)
+	ret = tcf_pipeline_fill_nlmsg(net, skb, tmpl, extack);
+	if (ret < 0)
 		return -1;
 
 	if (!ids[P4TC_PID_IDX])
@@ -575,7 +583,7 @@ static int tcf_pipeline_gd(struct sk_buff *skb, struct nlmsghdr *n,
 		strscpy(*p_name, pipeline->common.name, PIPELINENAMSIZ);
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE) {
-		ret = tcf_pipeline_del_one(tmpl, extack);
+		ret = tcf_pipeline_del_one(net, tmpl, extack);
 		if (ret < 0)
 			goto out_nlmsg_trim;
 	}
