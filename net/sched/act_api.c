@@ -1020,6 +1020,26 @@ int tcf_unregister_action(struct tc_action_ops *act,
 }
 EXPORT_SYMBOL(tcf_unregister_action);
 
+/* lookup by ID */
+struct tc_action_ops *tc_lookup_action_byid(u32 act_id)
+{
+	struct tc_action_ops *a, *res = NULL;
+
+	if (!act_id)
+		return NULL;
+
+	read_lock(&act_mod_lock);
+
+	a = idr_find(&act_base, act_id);
+	if (a && try_module_get(a->owner))
+		res = a;
+
+	read_unlock(&act_mod_lock);
+
+	return res;
+}
+EXPORT_SYMBOL(tc_lookup_action_byid);
+
 /* lookup by name */
 static struct tc_action_ops *tc_lookup_action_n(char *kind)
 {
