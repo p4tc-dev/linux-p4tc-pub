@@ -198,6 +198,15 @@ err:
 	return ERR_PTR(ret);
 }
 
+/* Dummy function which just returns true
+ * Once we have the proper parser code, this function will work properly
+ */
+bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
+				struct p4tc_header_field *hdrfield)
+{
+	return true;
+}
+
 int tcf_parser_del(struct p4tc_pipeline *pipeline,
 		   struct p4tc_parser *parser, struct netlink_ext_ack *extack)
 {

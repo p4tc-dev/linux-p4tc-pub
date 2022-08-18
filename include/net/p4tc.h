@@ -20,6 +20,9 @@
 #define P4TC_PID_IDX 0
 #define P4TC_MID_IDX 1
 #define P4TC_PARSEID_IDX 1
+#define P4TC_HDRFIELDID_IDX 2
+
+#define P4TC_HDRFIELD_IS_VALIDITY_BIT 0x1
 
 struct p4tc_dump_ctx {
 	u32 ids[P4TC_PATH_MAX];
@@ -135,6 +138,19 @@ struct p4tc_parser {
 	u32 parser_inst_id;
 };
 
+struct p4tc_header_field {
+	struct p4tc_template_common common;
+	struct p4tc_parser          *parser;
+	u32                         parser_inst_id;
+	u32                         hdr_field_id;
+	u16                         startbit;
+	u16                         endbit;
+	u8                          datatype; /* T_XXX */
+	u8                          flags;  /* P4TC_HDRFIELD_FLAGS_* */
+};
+
+extern const struct p4tc_template_ops p4tc_hdrfield_ops;
+
 struct p4tc_metadata *
 tcf_meta_find_byany(struct p4tc_pipeline *pipeline, const char *mname,
 		    const u32 m_id, struct netlink_ext_ack *extack);
@@ -146,6 +162,7 @@ struct p4tc_parser *tcf_parser_create(struct p4tc_pipeline *pipeline,
 				      const char *parser_name,
 				      u32 parser_inst_id,
 				      struct netlink_ext_ack *extack);
+
 struct p4tc_parser *tcf_parser_find_byid(struct p4tc_pipeline *pipeline,
 					 const u32 parser_inst_id);
 struct p4tc_parser *
@@ -157,7 +174,18 @@ bool tcf_parser_is_callable(struct p4tc_parser *parser);
 int tcf_skb_parse(struct sk_buff *skb, struct p4tc_skb_ext *p4tc_ext,
 		  struct p4tc_parser *parser);
 
+struct p4tc_header_field *tcf_hdrfield_find_byid(struct p4tc_parser *parser,
+						 const u32 hdrfield_id);
+struct p4tc_header_field *
+tcf_hdrfield_find_byany(struct p4tc_parser *parser, const char *hdrfield_name,
+			u32 hdrfield_id, struct netlink_ext_ack *extack);
+bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
+				struct p4tc_header_field *hdrfield);
+void *tcf_hdrfield_fetch(struct sk_buff *skb,
+			 struct p4tc_header_field *hdrfield);
+
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
 #define to_meta(t) ((struct p4tc_metadata *)t)
+#define to_hdrfield(t) ((struct p4tc_header_field *)t)
 
 #endif
