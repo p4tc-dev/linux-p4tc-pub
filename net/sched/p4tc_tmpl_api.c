@@ -49,6 +49,8 @@ static bool obj_is_valid(u32 obj)
 		return true;
 	case P4TC_OBJ_TABLE_INST:
 		return true;
+	case P4TC_OBJ_HDR_FIELD:
+		return true;
 	default:
 		return false;
 	}
@@ -59,6 +61,7 @@ static const struct p4tc_template_ops *p4tc_ops[P4TC_OBJ_MAX] = {
 	[P4TC_OBJ_META] = &p4tc_meta_ops,
 	[P4TC_OBJ_TABLE_CLASS] = &p4tc_tclass_ops,
 	[P4TC_OBJ_TABLE_INST] = &p4tc_tinst_ops,
+	[P4TC_OBJ_HDR_FIELD] = &p4tc_hdrfield_ops,
 };
 
 int tcf_p4_tmpl_generic_dump(struct sk_buff *skb,

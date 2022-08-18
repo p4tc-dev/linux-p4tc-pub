@@ -114,6 +114,8 @@ tcf_parser_create(struct p4tc_pipeline *pipeline, const char *parser_name,
 
 	refcount_set(&parser->parser_ref, 1);
 
+	idr_init(&parser->hdr_fields_idr);
+
 	strscpy(parser->parser_name, parser_name, PARSERNAMSIZ);
 
 	return parser;
@@ -121,6 +123,15 @@ tcf_parser_create(struct p4tc_pipeline *pipeline, const char *parser_name,
 free_parser:
 	kfree(parser);
 	return ERR_PTR(ret);
+}
+
+/* Dummy function which just returns true
+ * Once we have the proper parser code, this function will work properly
+ */
+bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
+				struct p4tc_header_field *hdrfield)
+{
+	return true;
 }
 
 int tcf_parser_del(struct p4tc_pipeline *pipeline, const char *parser_name,
@@ -141,6 +152,8 @@ int tcf_parser_del(struct p4tc_pipeline *pipeline, const char *parser_name,
 		NL_SET_ERR_MSG(extack, "Unable to delete referenced parser");
 		return -EBUSY;
 	}
+
+	idr_destroy(&parser->hdr_fields_idr);
 
 	idr_remove(&pipeline->p_parser_idr, parser_inst_id);
 

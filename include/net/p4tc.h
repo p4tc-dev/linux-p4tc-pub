@@ -30,6 +30,7 @@
 #define P4TC_TBCID_IDX 1
 #define P4TC_TIID_IDX 2
 #define P4TC_PARSEID_IDX 1
+#define P4TC_HDRFIELDID_IDX 2
 
 extern struct idr pipeline_idr;
 
@@ -155,9 +156,21 @@ extern const struct p4tc_template_ops p4tc_tinst_ops;
 
 struct p4tc_parser {
 	char parser_name[PARSERNAMSIZ];
+	struct idr hdr_fields_idr;
 	refcount_t parser_ref;
 	u32 parser_inst_id;
 };
+
+struct p4tc_header_field {
+	struct p4tc_template_common common;
+	struct p4tc_parser          *parser;
+	u32                         parser_inst_id;
+	u32                         hdr_field_id;
+	u16                         startbit;
+	u16                         endbit;
+	u8                          datatype; /* T_XXX */
+};
+extern const struct p4tc_template_ops p4tc_hdrfield_ops;
 
 struct p4tc_pipeline *
 pipeline_find(const char *p_name, const u32 pipeid,
@@ -209,10 +222,13 @@ struct p4tc_parser *tcf_parser_find(struct p4tc_pipeline *pipeline,
 				    struct netlink_ext_ack *extack);
 int tcf_parser_del(struct p4tc_pipeline *pipeline, const char *parser_name,
 		   u32 parser_inst_id, struct netlink_ext_ack *extack);
+bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
+				struct p4tc_header_field *hdrfield);
 
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
 #define to_meta(t) ((struct p4tc_metadata *)t)
 #define to_tclass(t) ((struct p4tc_table_class *)t)
 #define to_tinst(t) ((struct p4tc_table_instance *)t)
+#define to_hdrfield(t) ((struct p4tc_header_field *)t)
 
 #endif
