@@ -32,6 +32,7 @@
 #define P4TC_TBCID_IDX 1
 #define P4TC_TIID_IDX 2
 #define P4TC_PARSEID_IDX 1
+#define P4TC_HDRFIELDID_IDX 2
 
 struct p4tc_dump_ctx {
 	u32 ids[P4TC_PATH_MAX];
@@ -210,6 +211,8 @@ struct p4tc_header_field {
 	u8                          datatype; /* T_XXX */
 };
 
+extern const struct p4tc_template_ops p4tc_hdrfield_ops;
+
 struct p4tc_metadata *
 tcf_meta_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
 		    const u32 m_id, struct netlink_ext_ack *extack);
@@ -253,6 +256,7 @@ struct p4tc_parser *tcf_parser_create(struct p4tc_pipeline *pipeline,
 				      const char *parser_name,
 				      u32 parser_inst_id,
 				      struct netlink_ext_ack *extack);
+
 struct p4tc_parser *tcf_parser_find_byid(struct p4tc_pipeline *pipeline,
 					 const u32 parser_inst_id);
 struct p4tc_parser *tcf_parser_find_byany(struct p4tc_pipeline *pipeline,
@@ -264,6 +268,8 @@ int tcf_parser_del(struct p4tc_pipeline *pipeline,
 bool tcf_parser_is_callable(struct p4tc_parser *parser);
 int tcf_skb_parse(struct sk_buff *skb, struct p4tc_skb_ext *p4tc_ext,
 		  struct p4tc_parser *parser);
+struct p4tc_header_field *tcf_hdrfield_find_byid(struct p4tc_parser *parser,
+						 const u32 hdrfield_id);
 bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
 				struct p4tc_header_field *hdrfield);
 
@@ -271,5 +277,6 @@ bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
 #define to_meta(t) ((struct p4tc_metadata *)t)
 #define to_tclass(t) ((struct p4tc_table_class *)t)
 #define to_tinst(t) ((struct p4tc_table_instance *)t)
+#define to_hdrfield(t) ((struct p4tc_header_field *)t)
 
 #endif
