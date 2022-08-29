@@ -48,6 +48,7 @@ static void tcf_pipeline_destroy(struct rcu_head *head)
 
 	idr_destroy(&pipeline->p_tbc_idr);
 	idr_destroy(&pipeline->p_meta_idr);
+	idr_destroy(&pipeline->p_act_idr);
 
 	kfree(pipeline);
 }
@@ -56,8 +57,8 @@ static int tcf_pipeline_put(struct p4tc_template_common *template,
 			    struct netlink_ext_ack *extack)
 {
 	struct p4tc_pipeline *pipeline = to_pipeline(template);
-	struct p4tc_table_class *tclass;
 	unsigned long tbc_id, m_id, tmp;
+	struct p4tc_table_class *tclass;
 	struct p4tc_metadata *meta;
 
 	if (!refcount_dec_if_one(&pipeline->p_ref)) {
@@ -65,6 +66,9 @@ static int tcf_pipeline_put(struct p4tc_template_common *template,
 			       "Can't delete referenced pipeline");
 		return -EBUSY;
 	}
+
+	if (pipeline->parser)
+		tcf_parser_del(pipeline, pipeline->parser, extack);
 
 	idr_for_each_entry_ul(&pipeline->p_meta_idr, meta, tmp, m_id)
 		meta->common.ops->put(&meta->common, extack);
@@ -231,6 +235,9 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		ret = -EINVAL;
 		goto preactions_destroy;
 	}
+
+	idr_init(&pipeline->p_act_idr);
+	pipeline->parser = NULL;
 
 	idr_init(&pipeline->p_tbc_idr);
 	pipeline->curr_table_classes = 0;
