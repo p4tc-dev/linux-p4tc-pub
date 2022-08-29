@@ -115,6 +115,8 @@ static int tcf_pipeline_put(struct net *net,
         }
 
 	idr_remove(&pipe_net->pipeline_idr, pipeline->common.p_id);
+	if (pipeline->parser)
+		tcf_parser_del(net, pipeline, pipeline->parser, extack);
 
 	idr_for_each_entry_ul(&pipeline->p_meta_idr, meta, tmp, m_id)
 		meta->common.ops->put(net, &meta->common, true, extack);
@@ -318,6 +320,8 @@ static struct p4tc_pipeline *tcf_pipeline_create(struct net *net,
 		pipeline->postacts = NULL;
 		pipeline->num_postacts = 0;
 	}
+
+	pipeline->parser = NULL;
 
 	idr_init(&pipeline->p_meta_idr);
 	pipeline->p_meta_offset = 0;
