@@ -29,6 +29,7 @@
 #define P4TC_MID_IDX 1
 #define P4TC_TBCID_IDX 1
 #define P4TC_TIID_IDX 2
+#define P4TC_PARSEID_IDX 1
 
 extern struct idr pipeline_idr;
 
@@ -85,6 +86,7 @@ struct p4tc_pipeline {
 	struct p4tc_template_common common;
 	struct idr                  p_meta_idr;
 	struct idr                  p_tbc_idr;
+	struct idr                  p_parser_idr;
 	struct rcu_head             rcu;
 	struct tc_action            **preacts;
 	struct tc_action            **postacts;
@@ -151,6 +153,12 @@ struct p4tc_table_instance {
 
 extern const struct p4tc_template_ops p4tc_tinst_ops;
 
+struct p4tc_parser {
+	char parser_name[PARSERNAMSIZ];
+	refcount_t parser_ref;
+	u32 parser_inst_id;
+};
+
 struct p4tc_pipeline *
 pipeline_find(const char *p_name, const u32 pipeid,
 	      struct netlink_ext_ack *extack);
@@ -190,6 +198,17 @@ int p4tc_tinst_init(struct p4tc_table_instance *tinst,
 		    const char *ti_name,
 		    struct p4tc_table_class *tclass,
 		    u32 max_entries);
+
+struct p4tc_parser *tcf_parser_create(struct p4tc_pipeline *pipeline,
+				      const char *parser_name,
+				      u32 parser_inst_id,
+				      struct netlink_ext_ack *extack);
+struct p4tc_parser *tcf_parser_find(struct p4tc_pipeline *pipeline,
+				    struct nlattr *name_attr,
+				    u32 parser_inst_id,
+				    struct netlink_ext_ack *extack);
+int tcf_parser_del(struct p4tc_pipeline *pipeline, const char *parser_name,
+		   u32 parser_inst_id, struct netlink_ext_ack *extack);
 
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
 #define to_meta(t) ((struct p4tc_metadata *)t)
