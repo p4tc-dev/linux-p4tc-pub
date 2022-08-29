@@ -19,6 +19,7 @@
 
 #define P4TC_PID_IDX 0
 #define P4TC_MID_IDX 1
+#define P4TC_PARSEID_IDX 1
 
 struct p4tc_dump_ctx {
 	u32 ids[P4TC_PATH_MAX];
@@ -74,6 +75,7 @@ struct p4tc_pipeline {
 	struct p4tc_template_common common;
 	struct idr                  p_meta_idr;
 	struct rcu_head             rcu;
+	struct p4tc_parser          *parser;
 	struct tc_action            **preacts;
 	int                         num_preacts;
 	struct tc_action            **postacts;
@@ -123,12 +125,37 @@ struct p4tc_metadata {
 
 extern const struct p4tc_template_ops p4tc_meta_ops;
 
+struct p4tc_parser {
+	char parser_name[PARSERNAMSIZ];
+	struct idr hdr_fields_idr;
+#ifdef CONFIG_KPARSER
+	const struct kparser_parser *kparser;
+#endif
+	refcount_t parser_ref;
+	u32 parser_inst_id;
+};
+
 struct p4tc_metadata *
 tcf_meta_find_byany(struct p4tc_pipeline *pipeline, const char *mname,
 		    const u32 m_id, struct netlink_ext_ack *extack);
 struct p4tc_metadata *tcf_meta_find_byid(struct p4tc_pipeline *pipeline,
 					 u32 m_id);
 void tcf_meta_fill_user_offsets(struct p4tc_pipeline *pipeline);
+
+struct p4tc_parser *tcf_parser_create(struct p4tc_pipeline *pipeline,
+				      const char *parser_name,
+				      u32 parser_inst_id,
+				      struct netlink_ext_ack *extack);
+struct p4tc_parser *tcf_parser_find_byid(struct p4tc_pipeline *pipeline,
+					 const u32 parser_inst_id);
+struct p4tc_parser *
+tcf_parser_find_byany(struct p4tc_pipeline *pipeline, const char *parser_name,
+		      u32 parser_inst_id, struct netlink_ext_ack *extack);
+int tcf_parser_del(struct p4tc_pipeline *pipeline,
+		   struct p4tc_parser *parser, struct netlink_ext_ack *extack);
+bool tcf_parser_is_callable(struct p4tc_parser *parser);
+int tcf_skb_parse(struct sk_buff *skb, struct p4tc_skb_ext *p4tc_ext,
+		  struct p4tc_parser *parser);
 
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
 #define to_meta(t) ((struct p4tc_metadata *)t)

@@ -64,6 +64,9 @@ static int tcf_pipeline_put(struct p4tc_template_common *template,
 		return -EBUSY;
 	}
 
+	if (pipeline->parser)
+		tcf_parser_del(pipeline, pipeline->parser, extack);
+
 	idr_for_each_entry_ul(&pipeline->p_meta_idr, meta, tmp, m_id)
 		meta->common.ops->put(&meta->common, extack);
 
@@ -261,6 +264,8 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		pipeline->postacts = NULL;
 		pipeline->num_postacts = 0;
 	}
+
+	pipeline->parser = NULL;
 
 	idr_init(&pipeline->p_meta_idr);
 	pipeline->p_meta_offset = 0;

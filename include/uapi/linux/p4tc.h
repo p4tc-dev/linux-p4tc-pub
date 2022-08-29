@@ -26,6 +26,7 @@ struct p4tcmsg {
 #define TEMPLATENAMSZ 256
 #define PIPELINENAMSIZ TEMPLATENAMSZ
 #define METANAMSIZ TEMPLATENAMSZ
+#define PARSERNAMSIZ TEMPLATENAMSZ
 
 /* Root attributes */
 enum {
