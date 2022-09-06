@@ -2,8 +2,8 @@
 VERSION = 6
 PATCHLEVEL = 1
 SUBLEVEL = 0
-EXTRAVERSION =
-NAME = Hurr durr I'ma ninja sloth
+EXTRAVERSION = p4tc
+NAME = Super Jamel
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
