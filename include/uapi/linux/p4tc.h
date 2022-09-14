@@ -384,4 +384,127 @@ enum {
 #define P4TC_RTA(r) \
 	((struct rtattr *)(((char *)(r)) + NLMSG_ALIGN(sizeof(struct p4tcmsg))))
 
+/* P4TC COMMANDS */
+
+/* Operations */
+enum {
+	P4TC_CMD_OP_UNSPEC,
+	P4TC_CMD_OP_SET,
+	P4TC_CMD_OP_ACT,
+	P4TC_CMD_OP_BEQ,
+	P4TC_CMD_OP_BNE,
+	P4TC_CMD_OP_BLT,
+	P4TC_CMD_OP_BLE,
+	P4TC_CMD_OP_BGT,
+	P4TC_CMD_OP_BGE,
+	P4TC_CMD_OP_PLUS,
+	P4TC_CMD_OP_PRINT,
+	P4TC_CMD_OP_TBLAPP,
+	P4TC_CMD_OP_SNDPORTEGR,
+	P4TC_CMD_OP_MIRPORTEGR,
+	P4TC_CMD_OP_SUB,
+	P4TC_CMD_OP_CONCAT,
+	P4TC_CMD_OP_BAND,
+	P4TC_CMD_OP_BOR,
+	P4TC_CMD_OP_BXOR,
+	P4TC_CMD_OP_LABEL,
+	P4TC_CMD_OP_JUMP,
+	__P4TC_CMD_OP_MAX
+};
+#define P4TC_CMD_OP_MAX (__P4TC_CMD_OP_MAX - 1)
+
+#define P4TC_CMD_OPERS_MAX 9
+
+/* single operation within P4TC_ACT_CMDS_LIST */
+enum {
+	P4TC_CMD_UNSPEC,
+	P4TC_CMD_OPERATION,	/*struct p4tc_u_operate */
+	P4TC_CMD_OPER_LIST,    /*nested P4TC_CMD_OPER_XXX list */
+	P4TC_CMD_OPER_LABEL1,
+	P4TC_CMD_OPER_LABEL2,
+	__P4TC_CMD_OPER_MAX
+};
+#define P4TC_CMD_OPER_MAX (__P4TC_CMD_OPER_MAX - 1)
+
+enum {
+	P4TC_CMD_OPER_A,
+	P4TC_CMD_OPER_B,
+	P4TC_CMD_OPER_C,
+	P4TC_CMD_OPER_D,
+	P4TC_CMD_OPER_E,
+	P4TC_CMD_OPER_F,
+	P4TC_CMD_OPER_G,
+	P4TC_CMD_OPER_H,
+	P4TC_CMD_OPER_I,
+};
+
+#define P4TC_CMDS_RESULTS_HIT 1
+#define P4TC_CMDS_RESULTS_MISS 2
+
+/* P4TC_CMD_OPERATION */
+struct p4tc_u_operate {
+	__u16 op_type;		/* P4TC_CMD_OP_XXX */
+	__u8 op_flags;
+	__u8 op_UNUSED;
+	__u32 op_ctl1;
+	__u32 op_ctl2;
+};
+
+/* Nested P4TC_CMD_OPER_XXX */
+enum {
+	P4TC_CMD_OPND_UNSPEC,
+	P4TC_CMD_OPND_INFO,
+	P4TC_CMD_OPND_PATH,
+	P4TC_CMD_OPND_PATH_EXTRA,
+	P4TC_CMD_OPND_LARGE_CONSTANT,
+	P4TC_CMD_OPND_PREFIX,
+	__P4TC_CMD_OPND_MAX
+};
+#define P4TC_CMD_OPND_MAX (__P4TC_CMD_OPND_MAX - 1)
+
+/* operand types */
+enum {
+	P4TC_OPER_UNSPEC,
+	P4TC_OPER_CONST,
+	P4TC_OPER_META,
+	P4TC_OPER_ACTID,
+	P4TC_OPER_TBL,
+	P4TC_OPER_KEY,
+	P4TC_OPER_RES,
+	P4TC_OPER_HDRFIELD,
+	P4TC_OPER_PARAM,
+	P4TC_OPER_DEV,
+	P4TC_OPER_REG,
+	P4TC_OPER_LABEL,
+	__P4TC_OPER_MAX
+};
+#define P4TC_OPER_MAX (__P4TC_OPER_MAX - 1)
+
+#define P4TC_CMD_MAX_OPER_PATH_LEN 32
+
+/* P4TC_CMD_OPER_INFO operand*/
+struct p4tc_u_operand {
+	__u32 immedv;		/* immediate value */
+	__u32 immedv2;
+	__u32 pipeid;		/* 0 for kernel-global */
+	__u8 oper_type;		/* P4TC_OPER_XXX */
+	__u8 oper_datatype;	/* T_XXX */
+	__u8 oper_cbitsize;	/* Size of container, u8 = 8, etc
+				 * Useful for a type that is not atomic
+				 */
+	__u8 oper_startbit;
+	__u8 oper_endbit;
+	__u8 oper_flags;
+};
+
+/* operand flags */
+#define DATA_IS_IMMEDIATE (BIT(0)) /* data is held as immediate value */
+#define DATA_IS_RAW (BIT(1))	 /* bitXX datatype, not intepreted by kernel */
+#define DATA_IS_SLICE (BIT(2))	 /* bitslice in a container, not intepreted
+				  * by kernel
+				  */
+#define DATA_USES_ROOT_PIPE (BIT(3))
+#define DATA_HAS_TYPE_INFO (BIT(4))
+#define DATA_IS_READ_ONLY (BIT(5))
+
 #endif

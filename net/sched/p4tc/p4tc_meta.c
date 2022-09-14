@@ -202,6 +202,71 @@ static int p4tc_check_meta_size(struct p4tc_meta_size_params *sz_params,
 	return new_bitsz;
 }
 
+static inline void *tcf_meta_fetch_kernel(struct sk_buff *skb,
+					  const u32 kernel_meta_id)
+{
+	switch (kernel_meta_id) {
+	case P4TC_KERNEL_META_QMAP:
+		return &skb->queue_mapping;
+	case P4TC_KERNEL_META_PKTLEN:
+		return &skb->len;
+	case P4TC_KERNEL_META_DATALEN:
+		return &skb->data_len;
+	case P4TC_KERNEL_META_SKBMARK:
+		return &skb->mark;
+	case P4TC_KERNEL_META_TCINDEX:
+		return &skb->tc_index;
+	case P4TC_KERNEL_META_SKBHASH:
+		return &skb->hash;
+	case P4TC_KERNEL_META_SKBPRIO:
+		return &skb->priority;
+	case P4TC_KERNEL_META_IFINDEX:
+		return &skb->dev->ifindex;
+	case P4TC_KERNEL_META_SKBIIF:
+		return &skb->skb_iif;
+	case P4TC_KERNEL_META_PROTOCOL:
+		return &skb->protocol;
+	case P4TC_KERNEL_META_PKTYPE:
+	case P4TC_KERNEL_META_IDF:
+	case P4TC_KERNEL_META_IPSUM:
+	case P4TC_KERNEL_META_OOOK:
+	case P4TC_KERNEL_META_PTYPEOFF:
+	case P4TC_KERNEL_META_PTCLNOFF:
+		return &skb->__pkt_type_offset;
+	case P4TC_KERNEL_META_FCLONE:
+	case P4TC_KERNEL_META_PEEKED:
+	case P4TC_KERNEL_META_CLONEOFF:
+		return &skb->__cloned_offset;
+	case P4TC_KERNEL_META_DIRECTION:
+		return &skb->__pkt_vlan_present_offset;
+	default:
+		return NULL;
+	}
+
+	return NULL;
+}
+
+static inline void *tcf_meta_fetch_user(struct sk_buff *skb, const u32 skb_off)
+{
+	struct p4tc_skb_ext *p4tc_skb_ext;
+
+	p4tc_skb_ext = skb_ext_find(skb, P4TC_SKB_EXT);
+	if (!p4tc_skb_ext) {
+		pr_err("Unable to find P4TC_SKB_EXT\n");
+		return NULL;
+	}
+
+	return &p4tc_skb_ext->p4tc_ext->metadata[skb_off];
+}
+
+void *tcf_meta_fetch(struct sk_buff *skb, struct p4tc_metadata *meta)
+{
+	if (meta->common.p_id != P4TC_KERNEL_PIPEID)
+		return tcf_meta_fetch_user(skb, meta->m_skb_off);
+
+	return tcf_meta_fetch_kernel(skb, meta->m_id);
+}
+
 void tcf_meta_fill_user_offsets(struct p4tc_pipeline *pipeline)
 {
 	u32 meta_off = START_META_OFFSET;
