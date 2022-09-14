@@ -2,6 +2,7 @@
 #ifndef __NET_TC_ACT_P4_H
 #define __NET_TC_ACT_P4_H
 
+#include <linux/indirect_call_wrapper.h>
 #include <net/pkt_cls.h>
 #include <net/act_api.h>
 
@@ -23,5 +24,9 @@ struct tcf_p4act {
 	u32 act_id;
 };
 #define to_p4act(a) ((struct tcf_p4act *)a)
+
+INDIRECT_CALLABLE_DECLARE(int tcf_p4_dyna_act(struct sk_buff *skb,
+					      const struct tc_action *a,
+					      struct tcf_result *res));
 
 #endif /* __NET_TC_ACT_P4_H */
