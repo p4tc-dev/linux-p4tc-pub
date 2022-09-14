@@ -9,6 +9,7 @@
 #include <linux/refcount.h>
 #include <linux/rhashtable.h>
 #include <linux/rhashtable-types.h>
+#include <net/tc_act/p4tc.h>
 
 #define P4TC_DEFAULT_NUM_TCLASSES 1
 #define P4TC_DEFAULT_MAX_RULES 1
@@ -113,9 +114,14 @@ int tcf_p4_tmpl_generic_dump(struct sk_buff *skb,
 			     struct idr *idr, int idx,
 			     struct netlink_ext_ack *extack);
 
+struct tca_meta_value_ops {
+	void *(*fetch)(struct sk_buff *skb, void *value);
+};
+
 struct p4tc_metadata {
 	struct p4tc_template_common common;
 	struct rcu_head             rcu;
+	struct tca_meta_value_ops   m_value_ops;
 	u32                         m_id;
 	u32                         m_skb_off;
 	refcount_t                  m_ref;

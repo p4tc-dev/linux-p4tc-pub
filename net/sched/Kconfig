@@ -971,6 +971,20 @@ config NET_ACT_IFE
 	  To compile this code as a module, choose M here: the
 	  module will be called act_ife.
 
+config NET_ACT_METACT
+       tristate "P4 TC Metact"
+       depends on NET_CLS_ACT
+       depends on NET_P4_TC
+       select NET_METACT
+       help
+	  Say Y here if you are using P4 TC.
+	  This enables metact actions such as SET, ACT, BRANCHING and PRINTING
+	  For details refer to netdev0x16 paper:
+	   "Your Network Datapath Will Be P4 Scripted"
+
+	  To compile this code as a module, choose M here: the
+	  module will be called act_metact.
+
 config NET_ACT_TUNNEL_KEY
 	tristate "IP tunnel metadata manipulation"
 	depends on NET_CLS_ACT
