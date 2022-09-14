@@ -129,6 +129,13 @@ static int p4t_u32_write(struct p4_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
+static void p4t_u32_print(const char *prefix, void *val)
+{
+	u32 *v = val;
+
+	pr_info("%s 0x%x\n", prefix, *v);
+}
+
 static int p4t_u32_hread(struct p4_type_mask_shift *mask_shift, void *sval,
 			 void *dval)
 {
@@ -171,6 +178,31 @@ static int p4t_s32_hread(struct p4_type_mask_shift *mask_shift, void *sval,
 	*dst = *src;
 
 	return 0;
+}
+
+static int p4t_s32_write(struct p4_type_mask_shift *mask_shift, void *sval,
+			 void *dval)
+{
+	s32 *dst = dval;
+	s32 *src = sval;
+
+	*src = *dst;
+
+	return 0;
+}
+
+static void p4t_s32_print(const char *prefix, void *val)
+{
+	s32 *v = val;
+
+	pr_info("%s %d\n", prefix, *v);
+}
+
+static void p4t_s64_print(const char *prefix, void *val)
+{
+	s64 *v = val;
+
+	pr_info("%s 0x%llx\n", prefix, *v);
 }
 
 static int p4t_be32_validate(struct p4_type *container, void *value, u8 bitstart,
@@ -218,6 +250,13 @@ static int p4t_be32_hread(struct p4_type_mask_shift *mask_shift, void *sval,
 	*dst = be32_to_cpu(readval);
 
 	return 0;
+}
+
+static void p4t_be32_print(const char *prefix, void *val)
+{
+	__be32 *v = val;
+
+	pr_info("%s 0x%x\n", prefix, *v);
 }
 
 static int p4t_u16_validate(struct p4_type *container, void *value, u8 bitstart,
@@ -289,6 +328,13 @@ static int p4t_u16_write(struct p4_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
+static void p4t_u16_print(const char *prefix, void *val)
+{
+	u16 *v = val;
+
+	pr_info("%s 0x%x\n", prefix, *v);
+}
+
 static int p4t_u16_hread(struct p4_type_mask_shift *mask_shift, void *sval,
 			 void *dval)
 {
@@ -330,6 +376,24 @@ static int p4t_s16_hread(struct p4_type_mask_shift *mask_shift, void *sval,
 	*dst = *src;
 
 	return 0;
+}
+
+static int p4t_s16_write(struct p4_type_mask_shift *mask_shift, void *sval,
+			 void *dval)
+{
+	s16 *dst = dval;
+	s16 *src = sval;
+
+	*src = *dst;
+
+	return 0;
+}
+
+static void p4t_s16_print(const char *prefix, void *val)
+{
+	s16 *v = val;
+
+	pr_info("%s %d\n", prefix, *v);
 }
 
 static int p4t_be16_validate(struct p4_type *container, void *value, u8 bitstart,
@@ -377,6 +441,33 @@ static int p4t_be16_hread(struct p4_type_mask_shift *mask_shift, void *sval,
 	*dst = be16_to_cpu(readval);
 
 	return 0;
+}
+
+static int p4t_be16_write(struct p4_type_mask_shift *mask_shift, void *sval,
+			  void *dval)
+{
+	__be16 *dst = dval;
+	u16 maskedst = 0;
+	u16 *src = sval;
+	u8 shift = 0;
+
+	if (mask_shift) {
+		u16 *dmask = (u16 *)mask_shift->mask;
+
+		maskedst = *dst & ~*dmask;
+		shift = mask_shift->shift;
+	}
+
+	*dst = cpu_to_be16(maskedst | (*src << shift));
+
+	return 0;
+}
+
+static void p4t_be16_print(const char *prefix, void *val)
+{
+	__be16 *v = val;
+
+	pr_info("%s 0x%x\n", prefix, *v);
 }
 
 static int p4t_u8_validate(struct p4_type *container, void *value, u8 bitstart,
@@ -448,6 +539,13 @@ static int p4t_u8_write(struct p4_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
+static void p4t_u8_print(const char *prefix, void *val)
+{
+	u8 *v = val;
+
+	pr_info("%s 0x%x\n", prefix, *v);
+}
+
 static int p4t_u8_hread(struct p4_type_mask_shift *mask_shift, void *sval,
 			void *dval)
 {
@@ -491,6 +589,13 @@ static int p4t_s8_hread(struct p4_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
+static void p4t_s8_print(const char *prefix, void *val)
+{
+	s8 *v = val;
+
+	pr_info("%s %d\n", prefix, *v);
+}
+
 static int p4t_u64_validate(struct p4_type *container, void *value, u8 bitstart,
 			    u8 bitend, struct netlink_ext_ack *extack)
 {
@@ -505,7 +610,11 @@ static int p4t_u64_validate(struct p4_type *container, void *value, u8 bitstart,
 		return ret;
 
 	bitsz = bitend - bitstart + 1;
-	maxval = (1UL << bitsz) - 1;
+	/* Trying to shift 64 bits causes kernel to crash */
+	if (bitsz == 64)
+		maxval = U64_MAX;
+	else
+		maxval = (1UL << bitsz) - 1;
 
 	if (val && (*val > container_maxsz || *val > maxval)) {
 		NL_SET_ERR_MSG_MOD(extack, "U64 value out of range");
@@ -560,6 +669,13 @@ static int p4t_u64_write(struct p4_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
+static void p4t_u64_print(const char *prefix, void *val)
+{
+	u64 *v = val;
+
+	pr_info("%s 0x%llx\n", prefix, *v);
+}
+
 static int p4t_u64_hread(struct p4_type_mask_shift *mask_shift, void *sval,
 			 void *dval)
 {
@@ -583,6 +699,7 @@ static struct p4_type_ops u8_ops = {
 	.create_bitops = p4t_u8_bitops,
 	.host_read = p4t_u8_hread,
 	.host_write = p4t_u8_write,
+	.print = p4t_u8_print,
 };
 
 static struct p4_type_ops u16_ops = {
@@ -590,6 +707,7 @@ static struct p4_type_ops u16_ops = {
 	.create_bitops = p4t_u16_bitops,
 	.host_read = p4t_u16_hread,
 	.host_write = p4t_u16_write,
+	.print = p4t_u16_print,
 };
 
 static struct p4_type_ops u32_ops = {
@@ -597,6 +715,7 @@ static struct p4_type_ops u32_ops = {
 	.create_bitops = p4t_u32_bitops,
 	.host_read = p4t_u32_hread,
 	.host_write = p4t_u32_write,
+	.print = p4t_u32_print,
 };
 
 static struct p4_type_ops u64_ops = {
@@ -604,6 +723,7 @@ static struct p4_type_ops u64_ops = {
 	.create_bitops = p4t_u64_bitops,
 	.host_read = p4t_u64_hread,
 	.host_write = p4t_u64_write,
+	.print = p4t_u64_print,
 };
 
 static struct p4_type_ops u128_ops = {};
@@ -611,31 +731,41 @@ static struct p4_type_ops u128_ops = {};
 static struct p4_type_ops s8_ops = {
 	.validate_p4t = p4t_s8_validate,
 	.host_read = p4t_s8_hread,
+	.print = p4t_s8_print,
 };
 
 static struct p4_type_ops s16_ops = {
 	.validate_p4t = p4t_s16_validate,
 	.host_read = p4t_s16_hread,
+	.host_write = p4t_s16_write,
+	.print = p4t_s16_print,
 };
 
 static struct p4_type_ops s32_ops = {
 	.validate_p4t = p4t_s32_validate,
 	.host_read = p4t_s32_hread,
+	.host_write = p4t_s32_write,
+	.print = p4t_s32_print,
 };
 
-static struct p4_type_ops s64_ops = {};
+static struct p4_type_ops s64_ops = {
+	.print = p4t_s64_print,
+};
 static struct p4_type_ops s128_ops = {};
 
 static struct p4_type_ops be16_ops = {
 	.validate_p4t = p4t_be16_validate,
 	.create_bitops = p4t_u16_bitops,
 	.host_read = p4t_be16_hread,
+	.host_write = p4t_be16_write,
+	.print = p4t_be16_print,
 };
 
 static struct p4_type_ops be32_ops = {
 	.validate_p4t = p4t_be32_validate,
 	.create_bitops = p4t_u32_bitops,
 	.host_read = p4t_be32_hread,
+	.print = p4t_be32_print,
 };
 
 static struct p4_type_ops string_ops = {};

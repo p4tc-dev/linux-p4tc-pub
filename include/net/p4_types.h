@@ -26,6 +26,7 @@ struct p4_type_ops {
 			 void *dval);
 	int (*host_write)(struct p4_type_mask_shift *mask_shift, void *sval,
 			  void *dval);
+	void (*print)(const char *prefix, void *val);
 };
 
 #define P4T_MAX_STR_SZ 32
