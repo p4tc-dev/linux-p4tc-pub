@@ -107,6 +107,7 @@ struct p4tc_pipeline {
 	u16                         num_tables;
 	u16                         curr_tables;
 	u8                          p_state;
+	refcount_t                  p_hdrs_used;
 };
 
 int tcf_p4_tmpl_generic_dump(struct sk_buff *skb,
@@ -213,21 +214,23 @@ struct p4tc_ipv4_param_value {
 	u32 mask;
 };
 
+#define P4TC_ACT_PARAM_FLAGS_ISDYN BIT(0)
+
 struct p4tc_act_param {
 	char            name[ACTPARAMNAMSIZ];
+	struct list_head head;
+	struct rcu_head	rcu;
 	void            *value;
 	void            *mask;
 	u32             type;
 	u32             id;
-	struct rcu_head	rcu;
+	u8              flags;
 };
-
-struct p4tc_act_param_ops;
 
 struct p4tc_act_param_ops {
 	int (*init_value)(struct net *net, struct p4tc_act_param_ops *op,
-			  struct p4tc_act_param *nparam,
-			  struct nlattr **tb, struct netlink_ext_ack *extack);
+			  struct p4tc_act_param *nparam, struct nlattr **tb,
+			  struct netlink_ext_ack *extack);
 	int (*dump_value)(struct sk_buff *skb, struct p4tc_act_param_ops *op,
 			   struct p4tc_act_param *param);
 	void (*free)(struct p4tc_act_param *param);
@@ -235,10 +238,24 @@ struct p4tc_act_param_ops {
 	u32 alloc_len;
 };
 
+struct p4tc_label_key {
+	char *label;
+	u32 labelsz;
+};
+
+struct p4tc_label_node {
+	struct rhash_head ht_node;
+	struct p4tc_label_key key;
+	int cmd_offset;
+};
+
 struct p4tc_act {
 	struct p4tc_template_common common;
 	struct tc_action_ops        ops;
+	struct rhashtable           *labels;
+	struct list_head            cmd_operations;
 	struct pernet_operations    *p4_net_ops;
+	struct p4tc_pipeline        *pipeline;
 	struct idr                  params_idr;
 	struct tcf_exts             exts;
 	struct list_head            head;
@@ -246,7 +263,9 @@ struct p4tc_act {
 	bool                        active;
 };
 extern const struct p4tc_template_ops p4tc_act_ops;
+extern const struct rhashtable_params p4tc_label_ht_params;
 extern const struct rhashtable_params acts_params;
+void p4tc_label_ht_destroy(void *ptr, void *arg);
 
 extern const struct rhashtable_params entry_hlt_params;
 
@@ -331,6 +350,7 @@ tcf_meta_find_byany(struct p4tc_pipeline *pipeline, const char *mname,
 struct p4tc_metadata *tcf_meta_find_byid(struct p4tc_pipeline *pipeline,
 					 u32 m_id);
 void tcf_meta_fill_user_offsets(struct p4tc_pipeline *pipeline);
+void *tcf_meta_fetch(struct sk_buff *skb, struct p4tc_metadata *meta);
 
 static inline int p4tc_action_init(struct net *net, struct nlattr *nla,
 				   struct tc_action *acts[], u32 flags,
@@ -441,11 +461,103 @@ tcf_register_find_byany(struct p4tc_pipeline *pipeline,
 
 void tcf_register_put_rcu(struct rcu_head *head);
 
+int p4tc_init_net_ops(struct net *net, unsigned int id);
+void p4tc_exit_net_ops(struct list_head *net_list, unsigned int id);
+int tcf_p4_act_init_params(struct net *net,
+			   struct tcf_p4act_params *params,
+			   struct p4tc_act *act,
+			   struct nlattr *nla, struct netlink_ext_ack *extack);
+void tcf_p4_act_params_destroy(struct tcf_p4act_params *params);
+int p4_act_init(struct p4tc_act *act, struct nlattr *nla,
+		struct p4tc_act_param *params[],
+		struct netlink_ext_ack *extack);
+void p4_put_many_params(struct idr *params_idr,
+			struct p4tc_act_param *params[],
+			int params_count);
+void tcf_p4_act_params_destroy_rcu(struct rcu_head *head);
+int p4_act_init_params(struct p4tc_act *act,
+		       struct nlattr *nla,
+		       struct p4tc_act_param *params[],
+		       bool update,
+		       struct netlink_ext_ack *extack);
+extern const struct p4tc_act_param_ops param_ops[P4T_MAX + 1];
+int generic_dump_param_value(struct sk_buff *skb, struct p4tc_type *type,
+			     struct p4tc_act_param *param);
+
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
 #define to_meta(t) ((struct p4tc_metadata *)t)
 #define to_act(t) ((struct p4tc_act *)t)
 #define to_hdrfield(t) ((struct p4tc_header_field *)t)
 #define to_table(t) ((struct p4tc_table *)t)
 #define to_register(t) ((struct p4tc_register *)t)
+
+/* P4TC COMMANDS */
+int p4tc_cmds_parse(struct net *net, struct p4tc_act *act,
+		    struct nlattr *nla, bool ovr,
+		    struct netlink_ext_ack *extack);
+int p4tc_cmds_copy(struct p4tc_act *act, struct list_head *new_cmd_operations,
+		   bool delete_old, struct netlink_ext_ack *extack);
+
+int p4tc_cmds_fillup(struct sk_buff *skb, struct list_head *meta_ops);
+void p4tc_cmds_release_ope_list(struct list_head *entries,
+				bool called_from_template);
+struct p4tc_cmd_operand;
+int p4tc_cmds_fill_operand(struct sk_buff *skb, struct p4tc_cmd_operand *kopnd);
+
+struct p4tc_cmd_operate {
+	struct list_head cmd_operations;
+	struct list_head operands_list;
+	struct p4tc_cmd_s *cmd;
+	char *label1;
+	char *label2;
+	u32 num_opnds;
+	u32 ctl1;
+	u32 ctl2;
+	u16 op_id;		/* P4TC_CMD_OP_XXX */
+	u32 cmd_offset;
+	u8 op_flags;
+	u8 op_cnt;
+};
+
+struct tcf_p4act;
+struct p4tc_cmd_operand {
+	struct list_head oper_list_node;
+	void *(*fetch)(struct sk_buff *skb, struct p4tc_cmd_operand *op,
+		       struct tcf_p4act *cmd, struct tcf_result *res);
+	struct p4tc_type *oper_datatype; /* what is stored in path_or_value - P4T_XXX */
+	struct p4tc_type_mask_shift *oper_mask_shift;
+	struct tc_action *action;
+	void *path_or_value;
+	void *path_or_value_extra;
+	void *print_prefix;
+	void *priv;
+	u64 immedv_large[BITS_TO_U64(P4T_MAX_BITSZ)];
+	u32 immedv;		/* one of: immediate value, metadata id, action id */
+	u32 immedv2;		/* one of: action instance */
+	u32 path_or_value_sz;
+	u32 path_or_value_extra_sz;
+	u32 print_prefix_sz;
+	u32 immedv_large_sz;
+	u32 pipeid;		/* 0 for kernel */
+	u8 oper_type;		/* P4TC_CMD_OPER_XXX */
+	u8 oper_cbitsize;	/* based on P4T_XXX container size */
+	u8 oper_bitsize;	/* diff between bitend - oper_bitend */
+	u8 oper_bitstart;
+	u8 oper_bitend;
+	u8 oper_flags;		/* TBA: DATA_IS_IMMEDIATE */
+};
+
+struct p4tc_cmd_s {
+	int cmdid;
+	u32 num_opnds;
+	int (*validate_operands)(struct net *net, struct p4tc_act *act,
+				 struct p4tc_cmd_operate *ope, u32 cmd_num_opns,
+				 struct netlink_ext_ack *extack);
+	void (*free_operation)(struct p4tc_cmd_operate *op,
+			       bool called_for_instance,
+			       struct netlink_ext_ack *extack);
+	int (*run)(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+		   struct tcf_p4act *cmd, struct tcf_result *res);
+};
 
 #endif
