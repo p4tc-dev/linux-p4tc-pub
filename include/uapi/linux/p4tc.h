@@ -228,7 +228,7 @@ enum {
 	P4TC_ACT_PARMS, /* nested params */
 	P4TC_ACT_OPT, /* action opt */
 	P4TC_ACT_TM, /* action tm */
-	P4TC_ACT_LIST, /* actions list */
+	P4TC_ACT_METACT_LIST, /* command list */
 	P4TC_ACT_ACTIVE, /* u8 */
 	P4TC_ACT_PAD,
 	__P4TC_ACT_MAX

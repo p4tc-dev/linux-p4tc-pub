@@ -163,6 +163,75 @@ static int p4tc_check_meta_size(struct p4tc_meta_size_params *sz_params,
 	return new_bitsz;
 }
 
+static inline void *tcf_meta_fetch_kernel(struct sk_buff *skb,
+					  const u32 kernel_meta_id)
+{
+	switch (kernel_meta_id) {
+	case METACT_LMETA_QMAP:
+		return &skb->queue_mapping;
+	case METACT_LMETA_PKTLEN:
+		return &skb->len;
+	case METACT_LMETA_DATALEN:
+		return &skb->data_len;
+	case METACT_LMETA_SKBMARK:
+		return &skb->mark;
+	case METACT_LMETA_TCINDEX:
+		return &skb->tc_index;
+	case METACT_LMETA_SKBHASH:
+		return &skb->hash;
+	case METACT_LMETA_SKBPRIO:
+		return &skb->priority;
+	case METACT_LMETA_IFINDEX:
+		return &skb->dev->ifindex;
+	case METACT_LMETA_SKBIIF:
+		return &skb->skb_iif;
+	case METACT_LMETA_PROTOCOL:
+		return &skb->protocol;
+	case METACT_LMETA_PKTYPE:
+	case METACT_LMETA_IDF:
+	case METACT_LMETA_IPSUM:
+	case METACT_LMETA_OOOK:
+	case METACT_LMETA_PTYPEOFF:
+	case METACT_LMETA_PTCLNOFF:
+		return &skb->__pkt_type_offset;
+	case METACT_LMETA_FCLONE:
+	case METACT_LMETA_PEEKED:
+	case METACT_LMETA_CLONEOFF:
+		return &skb->__cloned_offset;
+	case METACT_LMETA_DIRECTION:
+		return &skb->__pkt_vlan_present_offset;
+	default:
+		return NULL;
+	}
+
+	return NULL;
+}
+
+static inline void *tcf_meta_fetch_user(struct sk_buff *skb, const u32 skb_off)
+{
+	struct p4tc_skb_ext *p4tc_skb_ext;
+
+	p4tc_skb_ext = skb_ext_find(skb, P4TC_SKB_EXT);
+	if (!p4tc_skb_ext) {
+		pr_err("Unable to find P4TC_SKB_EXT\n");
+		return NULL;
+	}
+
+	return &p4tc_skb_ext->p4tc_ext->metadata[skb_off];
+}
+
+static void *tcf_meta_fetch(struct sk_buff *skb, void *m_value_ops)
+{
+	const struct p4tc_metadata *meta = container_of(m_value_ops,
+							struct p4tc_metadata,
+							m_value_ops);
+
+	if (meta->common.p_id != P4TC_KERNEL_PIPEID)
+		return tcf_meta_fetch_user(skb, meta->m_skb_off);
+
+	return tcf_meta_fetch_kernel(skb, meta->m_id);
+}
+
 void tcf_meta_fill_user_offsets(struct p4tc_pipeline *pipeline)
 {
 	u32 meta_off = START_META_OFFSET;
@@ -203,6 +272,7 @@ __tcf_meta_create(struct p4tc_pipeline *pipeline, u32 m_id,
 	}
 
 	meta->common.p_id = pipeline->common.p_id;
+	meta->m_value_ops.fetch = tcf_meta_fetch;
 
 	datatype = p4type_find_byid(sz_params->datatype);
 	if (!datatype) {

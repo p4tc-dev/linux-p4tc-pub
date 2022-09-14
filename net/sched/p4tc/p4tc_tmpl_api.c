@@ -59,7 +59,9 @@ static const struct p4tc_template_ops *p4tc_ops[P4TC_OBJ_MAX] = {
 	[P4TC_OBJ_TABLE_CLASS] = &p4tc_tclass_ops,
 	[P4TC_OBJ_TABLE_INST] = &p4tc_tinst_ops,
 	[P4TC_OBJ_HDR_FIELD] = &p4tc_hdrfield_ops,
+#ifdef CONFIG_NET_ACT_METACT
 	[P4TC_OBJ_ACT] = &p4tc_act_ops,
+#endif
 };
 
 int tcf_p4_tmpl_generic_dump(struct sk_buff *skb,

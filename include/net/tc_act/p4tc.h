@@ -2,6 +2,7 @@
 #ifndef __NET_TC_ACT_P4_H
 #define __NET_TC_ACT_P4_H
 
+#include <net/pkt_cls.h>
 #include <net/act_api.h>
 
 struct tcf_p4act_params {
