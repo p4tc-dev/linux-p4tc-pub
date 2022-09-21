@@ -27,7 +27,7 @@ jobs:
           ./scripts/config --enable NET_CLS_ACT
           ./scripts/config --enable NET_TC_SKB_EXT
           make listnewconfig >> .config
-          for commit in $(git rev-list origin/master..HEAD); do
+          for commit in $(git rev-list origin/master-6.0..HEAD); do
               git checkout $commit
               ./scripts/config --enable NET_P4_TC
               make -j $(nproc)
@@ -53,7 +53,7 @@ jobs:
           ./scripts/config --enable NET_CLS_ACT
           ./scripts/config --enable NET_TC_SKB_EXT
           make CC=clang listnewconfig >> .config
-          for commit in $(git rev-list origin/master..HEAD); do
+          for commit in $(git rev-list origin/master-6.0..HEAD); do
               git checkout $commit
               ./scripts/config --enable NET_P4_TC
               make CC=clang -j $(nproc)
