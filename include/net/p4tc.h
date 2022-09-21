@@ -23,6 +23,7 @@
 #define P4TC_DEFAULT_TMASKS 8
 #define P4TC_MAX_TIENTRIES 512
 #define P4TC_DEFAULT_TIENTRIES 128
+#define P4TC_KERNEL_PIPEID 0
 
 #define P4TC_PID_IDX 0
 #define P4TC_MID_IDX 1
@@ -59,6 +60,7 @@ struct p4tc_template_common;
 }
 
 struct p4tc_template_ops {
+	void (*init)(void);
 	struct p4tc_template_common *
 	(*cu)(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	      char **pname, u32 *ids, struct netlink_ext_ack *extack);
@@ -264,7 +266,7 @@ extern const struct p4tc_template_ops p4tc_hdrfield_ops;
 struct p4tc_pipeline *
 pipeline_find(const char *p_name, const u32 pipeid,
 	      struct netlink_ext_ack *extack);
-
+struct p4tc_pipeline *tcf_pipeline_find_byid(const u32 pipeid);
 struct p4tc_pipeline *
 pipeline_find_unsealed(const char *p_name, const u32 pipeid,
 	      struct netlink_ext_ack *extack);

@@ -26,6 +26,7 @@
 #include <net/p4tc.h>
 #include <net/netlink.h>
 #include <net/flow_offload.h>
+#include <net/p4_types.h>
 
 DEFINE_IDR(pipeline_idr);
 
@@ -115,12 +116,20 @@ static inline bool pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline)
 	return true;
 }
 
+struct p4tc_pipeline *tcf_pipeline_find_byid(const u32 pipeid)
+{
+	return idr_find(&pipeline_idr, pipeid);
+}
+
 static struct p4tc_pipeline *pipeline_find_name(const char *name)
 {
 	struct p4tc_pipeline *pipeline;
 	unsigned long tmp, id;
 
 	idr_for_each_entry_ul(&pipeline_idr, pipeline, tmp, id) {
+		/* Don't show kernel pipeline */
+		if (id == P4TC_KERNEL_PIPEID)
+			continue;
 		if (strncmp(pipeline->common.name, name,
 			    PIPELINENAMSIZ) == 0)
 			return pipeline;
@@ -154,7 +163,7 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		goto err;
 	}
 
-	if (pipeline_find_name(p_name) || idr_find(&pipeline_idr, pipeid)) {
+	if (pipeline_find_name(p_name) || tcf_pipeline_find_byid(pipeid)) {
 		NL_SET_ERR_MSG(extack, "Pipeline was already created");
 		ret = -EEXIST;
 		goto err;
@@ -277,7 +286,7 @@ __pipeline_find(const char *p_name, const u32 pipeid,
 	int err;
 
 	if (pipeid) {
-		pipeline = idr_find(&pipeline_idr, pipeid);
+		pipeline = tcf_pipeline_find_byid(pipeid);
 		if (!pipeline) {
 			NL_SET_ERR_MSG(extack, "Unable to find pipeline by id");
 			err = -EINVAL;
@@ -578,9 +587,14 @@ static int tcf_pipeline_dump_1(struct sk_buff *skb,
 			       struct p4tc_template_common *common)
 {
 	struct p4tc_pipeline *pipeline = to_pipeline(common);
-	struct nlattr *param = nla_nest_start(skb, P4TC_PARAMS);
 	unsigned char *b = skb_tail_pointer(skb);
+	struct nlattr *param;
 
+	/* Don't show kernel pipeline in dump */
+	if (pipeline->common.p_id == P4TC_KERNEL_PIPEID)
+		return 1;
+
+	param = nla_nest_start(skb, P4TC_PARAMS);
 	if (!param)
 		goto out_nlmsg_trim;
 	if (nla_put_string(skb, P4TC_PIPELINE_NAME, pipeline->common.name))
@@ -595,7 +609,41 @@ out_nlmsg_trim:
 	return -ENOMEM;
 }
 
+static void tcf_pipeline_init(void)
+{
+	int pipeid = P4TC_KERNEL_PIPEID;
+	struct p4tc_pipeline *pipeline;
+	int ret;
+
+	pipeline = kzalloc(sizeof(*pipeline), GFP_ATOMIC);
+	if (!pipeline) {
+		pr_err("Unable to register kernel pipeline\n");
+		return;
+	}
+
+	strscpy(pipeline->common.name, "kernel", PIPELINENAMSIZ);
+
+	idr_init(&pipeline->p_meta_idr);
+
+	pipeline->common.ops = (struct p4tc_template_ops *)&p4tc_pipeline_ops;
+
+	ret = idr_alloc_u32(&pipeline_idr, pipeline, &pipeid, pipeid,
+			    GFP_ATOMIC);
+	if (ret < 0) {
+		idr_destroy(&pipeline->p_meta_idr);
+		kfree(pipeline);
+		pr_err("Unable to register kernel pipeline in IDR\n");
+		return;
+	}
+	pipeline->common.p_id = pipeid;
+
+	pipeline->p_state = P4TC_STATE_READY;
+
+	register_p4_types();
+}
+
 const struct p4tc_template_ops p4tc_pipeline_ops = {
+	.init = tcf_pipeline_init,
 	.cu = tcf_pipeline_cu,
 	.fill_nlmsg = tcf_pipeline_fill_nlmsg,
 	.gd = tcf_pipeline_gd,

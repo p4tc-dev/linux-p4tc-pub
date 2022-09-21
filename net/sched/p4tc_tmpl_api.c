@@ -26,7 +26,6 @@
 #include <net/p4tc.h>
 #include <net/netlink.h>
 #include <net/flow_offload.h>
-#include <net/p4_types.h>
 
 const struct nla_policy p4tc_root_policy[P4TC_ROOT_MAX + 1] = {
 	[P4TC_ROOT] = { .type = P4T_NESTED },
@@ -82,6 +81,7 @@ int tcf_p4_tmpl_generic_dump(struct sk_buff *skb,
 
 	idr_for_each_entry_continue_ul(idr, common, tmp, id) {
 		struct nlattr *count;
+		int ret;
 
 		if (i == P4TC_MSGBATCH_SIZE)
 			break;
@@ -89,8 +89,13 @@ int tcf_p4_tmpl_generic_dump(struct sk_buff *skb,
 		count = nla_nest_start(skb, i + 1);
 		if (!count)
 			goto out_nlmsg_trim;
-		if (common->ops->dump_1(skb, common) < 0)
+		ret = common->ops->dump_1(skb, common);
+		if (ret < 0) {
 			goto out_nlmsg_trim;
+		} else if (ret) {
+			nla_nest_cancel(skb, count);
+			continue;
+		}
 		nla_nest_end(skb, count);
 
 		i++;
@@ -576,13 +581,20 @@ static int tc_ctl_p4_tmpl_dump(struct sk_buff *skb, struct netlink_callback *cb)
 
 static int __init p4tc_template_init(void)
 {
+	int i;
+
 	rtnl_register(PF_UNSPEC, RTM_CREATEP4TEMPLATE, tc_ctl_p4_tmpl_cu, NULL, 0);
 	rtnl_register(PF_UNSPEC, RTM_DELP4TEMPLATE, tc_ctl_p4_tmpl_delete, NULL,
 		      0);
 	rtnl_register(PF_UNSPEC, RTM_GETP4TEMPLATE, tc_ctl_p4_tmpl_get,
 		      tc_ctl_p4_tmpl_dump, 0);
 
-	register_p4_types();
+	for (i = 1; i <= P4TC_OBJ_META; i++) {
+		const struct p4tc_template_ops *op = p4tc_ops[i];
+
+		if (op->init)
+			op->init();
+	}
 
 	return 0;
 }
