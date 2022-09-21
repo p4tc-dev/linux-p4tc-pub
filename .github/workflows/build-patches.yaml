@@ -17,7 +17,6 @@ jobs:
       - run: |
           sudo apt update && sudo apt install -y gawk flex bison openssl libssl-dev libelf-dev libudev-dev libpci-dev libiberty-dev
           make tinyconfig
-          ./scripts/config --enable WERROR
           ./scripts/config --enable 64BIT
           ./scripts/config --enable NET
           ./scripts/config --enable NET_INGRESS
@@ -44,7 +43,6 @@ jobs:
       - run: |
           sudo apt update && sudo apt install -y gawk flex bison openssl libssl-dev libelf-dev libudev-dev libpci-dev libiberty-dev
           make CC=clang tinyconfig
-          ./scripts/config --enable WERROR
           ./scripts/config --enable 64BIT
           ./scripts/config --enable NET
           ./scripts/config --enable NET_INGRESS
