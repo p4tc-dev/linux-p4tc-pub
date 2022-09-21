@@ -28,6 +28,8 @@
 #include <net/flow_offload.h>
 #include <net/p4_types.h>
 
+#define START_META_OFFSET 0
+
 static const struct nla_policy p4tc_meta_policy[P4TC_META_MAX + 1] = {
 	[P4TC_META_NAME] = { .type = NLA_STRING, .len = METANAMSIZ },
 	[P4TC_META_SIZE] = { .len = sizeof(struct p4tc_meta_size_params) },
@@ -40,7 +42,7 @@ static int _tcf_meta_put(struct p4tc_pipeline *pipeline,
 	if (!refcount_dec_if_one(&meta->m_ref))
 		return -EBUSY;
 
-	pipeline->p_meta_offset -= BITS_TO_BYTES(meta->m_sz);
+	pipeline->p_meta_offset -= BITS_TO_U32(meta->m_sz) * sizeof(u32);
 	idr_remove(&pipeline->p_meta_idr, meta->m_id);
 
 	kfree_rcu(meta, rcu);
@@ -51,7 +53,7 @@ static int _tcf_meta_put(struct p4tc_pipeline *pipeline,
 static int tcf_meta_put(struct net *net, struct p4tc_template_common *template,
 			struct netlink_ext_ack *extack)
 {
-	struct p4tc_pipeline *pipeline = idr_find(&pipeline_idr, template->p_id);
+	struct p4tc_pipeline *pipeline = tcf_pipeline_find_byid(template->p_id);
 	struct p4tc_metadata *meta = to_meta(template);
 	int ret;
 
@@ -62,10 +64,15 @@ static int tcf_meta_put(struct net *net, struct p4tc_template_common *template,
 	return ret;
 }
 
-static struct p4tc_metadata *
-meta_find_name(struct nlattr *name_attr, struct p4tc_pipeline *pipeline)
+struct p4tc_metadata *tcf_meta_find_byid(struct p4tc_pipeline *pipeline,
+					 u32 m_id)
 {
-	const char *m_name = nla_data(name_attr);
+	return idr_find(&pipeline->p_meta_idr, m_id);
+}
+
+static struct p4tc_metadata *
+tcf_meta_find_byname(const char *m_name, struct p4tc_pipeline *pipeline)
+{
 	struct p4tc_metadata *meta;
 	unsigned long tmp, id;
 
@@ -76,15 +83,21 @@ meta_find_name(struct nlattr *name_attr, struct p4tc_pipeline *pipeline)
 	return NULL;
 }
 
-static struct p4tc_metadata *
-meta_find(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
-	  const u32 m_id, struct netlink_ext_ack *extack)
+static inline struct p4tc_metadata *
+tcf_meta_find_byname_attr(struct nlattr *name_attr, struct p4tc_pipeline *pipeline)
+{
+	return tcf_meta_find_byname(nla_data(name_attr), pipeline);
+}
+
+struct p4tc_metadata *
+tcf_meta_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
+	      const u32 m_id, struct netlink_ext_ack *extack)
 {
 	struct p4tc_metadata *meta;
 	int err;
 
 	if (m_id) {
-		meta = idr_find(&pipeline->p_meta_idr, m_id);
+		meta = tcf_meta_find_byid(pipeline, m_id);
 		if (!meta) {
 			NL_SET_ERR_MSG(extack,
 				       "Unable to find metadatum by id");
@@ -93,7 +106,7 @@ meta_find(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
 		}
 	} else {
 		if (name_attr) {
-			meta = meta_find_name(name_attr, pipeline);
+			meta = tcf_meta_find_byname_attr(name_attr, pipeline);
 			if (!meta) {
 				NL_SET_ERR_MSG(extack,
 					       "Metadatum name not found");
@@ -149,89 +162,88 @@ static int verify_meta_size(struct p4tc_meta_size_params *sz_params,
 	return new_bitsz;
 }
 
+void tcf_meta_set_offsets(struct p4tc_pipeline *pipeline)
+{
+	u32 meta_off = START_META_OFFSET;
+	struct p4tc_metadata *meta;
+	unsigned long tmp, id;
+
+	idr_for_each_entry_ul(&pipeline->p_meta_idr, meta, tmp, id) {
+		/* Offsets are multiples of 4 for alignment purposes */
+		meta->m_skb_off = meta_off;
+		meta_off += BITS_TO_U32(meta->m_sz) << 2;
+	}
+}
+
 static struct p4tc_metadata *
-tcf_meta_create(struct nlmsghdr *n, struct nlattr *nla, u32 m_id,
-		struct p4tc_pipeline *pipeline, struct netlink_ext_ack *extack)
+__tcf_meta_create(struct p4tc_pipeline *pipeline, u32 m_id,
+		  const char *m_name, struct p4tc_meta_size_params *sz_params,
+		  gfp_t alloc_flag, struct netlink_ext_ack *extack)
 {
 	u32 p_meta_offset = 0;
-	int ret = 0;
-	struct nlattr *tb[P4TC_META_MAX + 1];
+	bool called_for_kernel_meta;
 	struct p4tc_metadata *meta;
+	struct p4_type *datatype;
+	u32 sz_bytes;
+	int sz_bits;
+	int ret;
 
-	ret = nla_parse_nested_deprecated(tb, P4TC_META_MAX, nla,
-					  p4tc_meta_policy, extack);
-	if (ret < 0)
-		goto out;
+	called_for_kernel_meta = pipeline->common.p_id == P4TC_KERNEL_PIPEID;
 
-	if (meta_find_name(tb[P4TC_META_NAME], pipeline) ||
-	    idr_find(&pipeline->p_meta_idr, m_id)) {
-		NL_SET_ERR_MSG(extack, "Metadatum already exists");
-		ret = -EEXIST;
-		goto out;
-	}
-
-	meta = kmalloc(sizeof(*meta), GFP_KERNEL);
+	meta = kzalloc(sizeof(*meta), alloc_flag);
 	if (!meta) {
-		NL_SET_ERR_MSG(extack, "Unable to create metadatum");
+		if (called_for_kernel_meta)
+			pr_err("Unable to allocate kernel metadatum");
+		else
+			NL_SET_ERR_MSG(extack,
+				       "Unable to allocate user metadatum");
 		ret = -ENOMEM;
 		goto out;
 	}
 	meta->common.p_id = pipeline->common.p_id;
 
-	if (tb[P4TC_META_NAME]) {
-		const char *name = nla_data(tb[P4TC_META_NAME]);
-
-		strscpy(meta->common.name, name, METANAMSIZ);
-	} else {
-		NL_SET_ERR_MSG(extack, "Must specify metadatum name");
-		ret = -ENOENT;
+	datatype = p4type_find_byid(sz_params->datatype);
+	if (!datatype) {
+		if (called_for_kernel_meta)
+			pr_err("Invalid data type for kernel metadataum %u\n",
+			       sz_params->datatype);
+		else
+			NL_SET_ERR_MSG(extack,
+				       "Invalid data type for user metdatum");
+		ret = -EINVAL;
 		goto free;
 	}
 
-	if (tb[P4TC_META_SIZE]) {
-		struct p4tc_meta_size_params *sz_params;
-		struct p4_type *datatype;
-		u32 sz_bytes;
-		int sz_bits;
+	sz_bits = verify_meta_size(sz_params, datatype, extack);
+	if (sz_bits < 0) {
+		ret = sz_bits;
+		goto free;
+	}
 
-		sz_params = nla_data(tb[P4TC_META_SIZE]);
-		datatype = p4type_find_byid(sz_params->datatype);
-		if (!datatype) {
-			NL_SET_ERR_MSG(extack, "Invalid data type");
-			ret = -EINVAL;
-			goto free;
-		}
-
-		sz_bits = verify_meta_size(sz_params, datatype, extack);
-		if (sz_bits < 0) {
-			ret = sz_bits;
-			goto free;
-		}
-
-		sz_bytes = BITS_TO_BYTES(datatype->bitsz);
+	sz_bytes = BITS_TO_U32(datatype->bitsz) << 2;
+	if (!called_for_kernel_meta) {
 		p_meta_offset = pipeline->p_meta_offset + sz_bytes;
 		if (p_meta_offset > BITS_TO_BYTES(P4TC_MAXMETA_OFFSET)) {
 			NL_SET_ERR_MSG(extack, "Metadata max offset exceeded");
 			ret = -EINVAL;
 			goto free;
 		}
-		meta->m_datatype = datatype->typeid;
-		meta->m_startbit = sz_params->startbit;
-		meta->m_endbit = sz_params->endbit;
-		meta->m_sz = sz_bits;
-	} else {
-		NL_SET_ERR_MSG(extack, "Must specify metadatum size params");
-		ret = -ENOENT;
-		goto free;
 	}
-
-	refcount_set(&meta->m_ref, 1);
+	meta->m_datatype = datatype->typeid;
+	meta->m_startbit = sz_params->startbit;
+	meta->m_endbit = sz_params->endbit;
+	meta->m_sz = sz_bits;
 
 	if (m_id) {
 		ret = idr_alloc_u32(&pipeline->p_meta_idr, meta, &m_id,
-				    m_id, GFP_KERNEL);
+				    m_id, alloc_flag);
 		if (ret < 0) {
-			NL_SET_ERR_MSG(extack, "Unable to alloc metadatum id");
+			if (called_for_kernel_meta)
+				pr_err("Unable to alloc kernel metadatum id %u\n",
+				       m_id);
+			else
+				NL_SET_ERR_MSG(extack,
+					       "Unable to alloc user metadatum id");
 			goto free;
 		}
 
@@ -240,20 +252,72 @@ tcf_meta_create(struct nlmsghdr *n, struct nlattr *nla, u32 m_id,
 		meta->m_id = 1;
 
 		ret = idr_alloc_u32(&pipeline->p_meta_idr, meta, &meta->m_id,
-				    UINT_MAX, GFP_KERNEL);
+				    UINT_MAX, alloc_flag);
 		if (ret < 0) {
-			NL_SET_ERR_MSG(extack, "Unable to alloc metadatum id");
+			if (called_for_kernel_meta)
+				pr_err("Unable to alloc kernel metadatum id %u\n",
+				       meta->m_id);
+			else
+				NL_SET_ERR_MSG(extack, "Unable to alloc metadatum id");
 			goto free;
 		}
 	}
-	pipeline->p_meta_offset = p_meta_offset;
+	if (!called_for_kernel_meta)
+		pipeline->p_meta_offset = p_meta_offset;
 
 	meta->common.ops = (struct p4tc_template_ops *)&p4tc_meta_ops;
+	strscpy(meta->common.name, m_name, METANAMSIZ);
+
+	refcount_set(&meta->m_ref, 1);
 
 	return meta;
 
 free:
 	kfree(meta);
+out:
+	return ERR_PTR(ret);
+}
+
+struct p4tc_metadata *
+tcf_meta_create(struct nlmsghdr *n, struct nlattr *nla, u32 m_id,
+		struct p4tc_pipeline *pipeline, struct netlink_ext_ack *extack)
+{
+	int ret = 0;
+	struct p4tc_meta_size_params *sz_params;
+	struct nlattr *tb[P4TC_META_MAX + 1];
+	char *m_name;
+
+	ret = nla_parse_nested_deprecated(tb, P4TC_META_MAX, nla,
+					  p4tc_meta_policy, extack);
+	if (ret < 0)
+		goto out;
+
+	if (tcf_meta_find_byname_attr(tb[P4TC_META_NAME], pipeline) ||
+	    tcf_meta_find_byid(pipeline, m_id)) {
+		NL_SET_ERR_MSG(extack, "Metadatum already exists");
+		ret = -EEXIST;
+		goto out;
+	}
+
+	if (tb[P4TC_META_NAME]) {
+		m_name = nla_data(tb[P4TC_META_NAME]);
+	} else {
+		NL_SET_ERR_MSG(extack, "Must specify metadatum name");
+		ret = -ENOENT;
+		goto out;
+	}
+
+	if (tb[P4TC_META_SIZE]) {
+		sz_params = nla_data(tb[P4TC_META_SIZE]);
+	} else {
+		NL_SET_ERR_MSG(extack, "Must specify metadatum size params");
+		ret = -ENOENT;
+		goto out;
+	}
+
+	return __tcf_meta_create(pipeline, m_id, m_name, sz_params, GFP_KERNEL,
+				 extack);
+
 out:
 	return ERR_PTR(ret);
 }
@@ -272,7 +336,7 @@ tcf_meta_update(struct nlmsghdr *n, struct nlattr *nla, u32 m_id,
 	if (ret < 0)
 		goto out;
 
-	meta = meta_find(pipeline, tb[P4TC_META_NAME], m_id, extack);
+	meta = tcf_meta_find_byany(pipeline, tb[P4TC_META_NAME], m_id, extack);
 	if (IS_ERR(meta))
 		return meta;
 
@@ -298,10 +362,10 @@ tcf_meta_update(struct nlmsghdr *n, struct nlattr *nla, u32 m_id,
 			goto out;
 		}
 
-		new_bytesz = BITS_TO_BYTES(new_datatype->bitsz);
+		new_bytesz = BITS_TO_U32(new_datatype->bitsz) * sizeof(u32);
 
 		curr_datatype = p4type_find_byid(meta->m_datatype);
-		curr_bytesz = BITS_TO_BYTES(curr_datatype->bitsz);
+		curr_bytesz = BITS_TO_U32(curr_datatype->bitsz) * sizeof(u32);
 
 		diff = new_bytesz - curr_bytesz;
 		p_meta_offset = pipeline->p_meta_offset + diff;
@@ -480,7 +544,7 @@ static int tcf_meta_gd(struct net *net, struct sk_buff *skb, struct nlmsghdr *n,
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE && (n->nlmsg_flags & NLM_F_ROOT))
 		return tcf_meta_flush(skb, pipeline, extack);
 
-	meta = meta_find(pipeline, tb[P4TC_META_NAME], m_id, extack);
+	meta = tcf_meta_find_byany(pipeline, tb[P4TC_META_NAME], m_id, extack);
 	if (IS_ERR(meta))
 		return PTR_ERR(meta);
 
@@ -526,7 +590,7 @@ static int tcf_meta_dump(struct sk_buff *skb,
 			return PTR_ERR(pipeline);
 		ctx->ids[P4TC_PID_IDX] = pipeline->common.p_id;
 	} else {
-		pipeline = idr_find(&pipeline_idr, ctx->ids[P4TC_PID_IDX]);
+		pipeline = pipeline_find_id(ctx->ids[P4TC_PID_IDX]);
 	}
 
 	m_id = ctx->ids[P4TC_MID_IDX];
@@ -575,7 +639,90 @@ out_nlmsg_trim:
 	return -ENOMEM;
 }
 
+static int register_kernel_meta(struct p4tc_pipeline *pipeline, u32 m_id,
+				const char *m_name, u8 startbit, u8 endbit,
+				u32 datatype)
+{
+	struct p4tc_meta_size_params sz_params;
+	struct p4tc_metadata *meta;
+
+	sz_params.startbit = startbit;
+	sz_params.endbit = endbit;
+	sz_params.datatype = datatype;
+
+	meta = __tcf_meta_create(pipeline, m_id, m_name, &sz_params, GFP_ATOMIC,
+				 NULL);
+	if (IS_ERR(meta)) {
+		pr_err("Error in metadata create %ld\n", PTR_ERR(meta));
+		return PTR_ERR(meta);
+	}
+	pr_info("Registered kernel metadata %s with id %u\n", m_name, m_id);
+
+	return 0;
+}
+
+#define REGISTER_KERNEL_META(pipeline, m_id, m_name, startbit, endbit, datatype) \
+	do { \
+		if (register_kernel_meta(pipeline, m_id, m_name, startbit, endbit, datatype)) { \
+			pr_err("Failed to register kernel metadatum %s\n", m_name); \
+			return; \
+		} \
+	} while (0)
+
+static void tcf_meta_init(void)
+{
+	struct p4tc_pipeline *pipeline;
+
+	pipeline = tcf_pipeline_find_byid(0);
+	if (!pipeline) {
+		pr_err("Kernel pipeline was not registered\n");
+		return;
+	}
+
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_PKTLEN, "pktlen", 0, 31,
+			     P4T_U32);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_DATALEN, "datalen", 0, 31,
+			     P4T_U32);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_SKBMARK, "skbmark", 0, 31,
+			     P4T_U32);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_TCINDEX, "tcindex", 0, 15,
+			     P4T_U16);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_SKBHASH, "skbhash", 0, 31,
+			     P4T_U32);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_SKBPRIO, "skbprio", 0, 31,
+			     P4T_U32);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_IFINDEX, "ifindex", 0, 31,
+			     P4T_S32);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_SKBIIF, "skbiif", 0, 31,
+			     P4T_S32);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_PROTOCOL, "protocol", 0, 15,
+			     P4T_BE16);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_PKTYPE, "pktype", 0, 2,
+			     P4T_U8);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_IDF, "idf", 3, 3,
+			     P4T_U8);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_IPSUM, "ipsum", 5, 6,
+			     P4T_U8);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_OOOK, "oook", 7, 7,
+			     P4T_U8);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_FCLONE, "fclone", 2, 3,
+			     P4T_U8);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_PEEKED, "peeked", 4, 4,
+			     P4T_U8);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_QMAP, "qmap", 0, 15,
+			     P4T_U16);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_PTYPEOFF, "ptypeoff", 0, 7,
+			     P4T_U8);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_CLONEOFF, "cloneoff", 0, 7,
+			     P4T_U8);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_PTCLNOFF, "ptclnoff", 0, 15,
+			     P4T_U16);
+	REGISTER_KERNEL_META(pipeline, METACT_LMETA_DIRECTION, "direction", 7, 7,
+			     P4T_U8);
+}
+
 const struct p4tc_template_ops p4tc_meta_ops = {
+	.init = tcf_meta_init,
 	.cu = tcf_meta_cu,
 	.fill_nlmsg = tcf_meta_fill_nlmsg,
 	.gd = tcf_meta_gd,

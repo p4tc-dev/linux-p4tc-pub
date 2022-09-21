@@ -4361,6 +4361,9 @@ static const u8 skb_ext_type_len[] = {
 #if IS_ENABLED(CONFIG_NET_TC_SKB_EXT)
 	[TC_SKB_EXT] = SKB_EXT_CHUNKSIZEOF(struct tc_skb_ext),
 #endif
+#if IS_ENABLED(CONFIG_NET_P4_TC)
+	[P4TC_SKB_EXT] = SKB_EXT_CHUNKSIZEOF(struct p4tc_skb_ext),
+#endif
 #if IS_ENABLED(CONFIG_MPTCP)
 	[SKB_EXT_MPTCP] = SKB_EXT_CHUNKSIZEOF(struct mptcp_ext),
 #endif
@@ -4380,6 +4383,9 @@ static __always_inline unsigned int skb_ext_total_length(void)
 #endif
 #if IS_ENABLED(CONFIG_NET_TC_SKB_EXT)
 		skb_ext_type_len[TC_SKB_EXT] +
+#endif
+#if IS_ENABLED(CONFIG_NET_P4_TC)
+		skb_ext_type_len[P4TC_SKB_EXT] +
 #endif
 #if IS_ENABLED(CONFIG_MPTCP)
 		skb_ext_type_len[SKB_EXT_MPTCP] +
@@ -6464,6 +6470,13 @@ static void skb_ext_put_mctp(struct mctp_flow *flow)
 }
 #endif
 
+#if CONFIG_NET_P4_TC
+static void skb_ext_put_p4tc(struct p4tc_skb_ext *p4tc_skb_ext)
+{
+	kfree(p4tc_skb_ext->p4tc_ext);
+}
+#endif
+
 void __skb_ext_del(struct sk_buff *skb, enum skb_ext_id id)
 {
 	struct skb_ext *ext = skb->extensions;
@@ -6502,6 +6515,10 @@ free_now:
 #ifdef CONFIG_MCTP_FLOWS
 	if (__skb_ext_exist(ext, SKB_EXT_MCTP))
 		skb_ext_put_mctp(skb_ext_get_ptr(ext, SKB_EXT_MCTP));
+#endif
+#ifdef CONFIG_NET_P4_TC
+	if (__skb_ext_exist(ext, P4TC_SKB_EXT))
+		skb_ext_put_p4tc(skb_ext_get_ptr(ext, P4TC_SKB_EXT));
 #endif
 
 	kmem_cache_free(skbuff_ext_cache, ext);

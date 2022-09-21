@@ -12,7 +12,7 @@
 
 #define P4TC_DEFAULT_NUM_TCLASSES 1
 #define P4TC_DEFAULT_MAX_RULES 1
-#define P4TC_MAXMETA_OFFSET 256
+#define P4TC_MAXMETA_OFFSET 512
 #define P4TC_PATH_MAX 3
 #define P4TC_DEFAULT_TCOUNT 64
 #define P4TC_DEFAULT_TINST_COUNT 1
@@ -115,6 +115,7 @@ struct p4tc_metadata {
 	struct p4tc_template_common common;
 	struct rcu_head             rcu;
 	u32                         m_id;
+	u32                         m_skb_off;
 	refcount_t                  m_ref;
 	u16                         m_sz;
 	u16                         m_startbit; /* Relative to its container */
@@ -270,6 +271,12 @@ struct p4tc_pipeline *tcf_pipeline_find_byid(const u32 pipeid);
 struct p4tc_pipeline *
 pipeline_find_unsealed(const char *p_name, const u32 pipeid,
 	      struct netlink_ext_ack *extack);
+struct p4tc_metadata *
+tcf_meta_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
+		    const u32 m_id, struct netlink_ext_ack *extack);
+struct p4tc_metadata *tcf_meta_find_byid(struct p4tc_pipeline *pipeline,
+					 u32 m_id);
+void tcf_meta_set_offsets(struct p4tc_pipeline *pipeline);
 
 static inline bool pipeline_sealed(struct p4tc_pipeline *pipeline)
 {
@@ -290,6 +297,21 @@ static inline int p4tc_action_init(struct net *net, struct nlattr *nla,
 			      &attrs_size, flags, 0, extack);
 
 	return ret;
+}
+
+static inline struct p4tc_skb_ext *p4tc_skb_ext_alloc(struct sk_buff *skb)
+{
+	struct p4tc_skb_ext *p4tc_skb_ext = skb_ext_add(skb, P4TC_SKB_EXT);
+
+	if (!p4tc_skb_ext)
+		return NULL;
+
+	p4tc_skb_ext->p4tc_ext = kzalloc(sizeof(struct __p4tc_skb_ext),
+					 GFP_ATOMIC);
+	if (!p4tc_skb_ext->p4tc_ext)
+		return NULL;
+
+	return p4tc_skb_ext;
 }
 
 struct p4tc_table_class *

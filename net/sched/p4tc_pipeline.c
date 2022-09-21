@@ -408,6 +408,7 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 			ret = -EINVAL;
 			goto postactions_destroy;
 		}
+		tcf_meta_set_offsets(pipeline);
 	}
 
 	if (max_rules)

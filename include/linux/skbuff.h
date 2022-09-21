@@ -325,6 +325,22 @@ struct tc_skb_ext {
 };
 #endif
 
+#if IS_ENABLED(CONFIG_NET_P4_TC)
+#define P4TC_MAX_KEYSZ 128
+#define HEADER_MAX_LEN 512
+#define META_MAX_LEN 512
+
+struct __p4tc_skb_ext {
+	u8 key[BITS_TO_BYTES(P4TC_MAX_KEYSZ)];
+	u8 hdrs[HEADER_MAX_LEN];
+	u8 metadata[META_MAX_LEN];
+};
+
+struct p4tc_skb_ext {
+	struct __p4tc_skb_ext *p4tc_ext;
+};
+#endif
+
 struct sk_buff_head {
 	/* These two members must be first to match sk_buff. */
 	struct_group_tagged(sk_buff_list, list,
@@ -4541,6 +4557,9 @@ enum skb_ext_id {
 #endif
 #if IS_ENABLED(CONFIG_NET_TC_SKB_EXT)
 	TC_SKB_EXT,
+#endif
+#if IS_ENABLED(CONFIG_NET_P4_TC)
+	P4TC_SKB_EXT,
 #endif
 #if IS_ENABLED(CONFIG_MPTCP)
 	SKB_EXT_MPTCP,
