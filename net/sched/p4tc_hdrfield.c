@@ -53,7 +53,7 @@ static int tcf_hdrfield_put(struct net *net, struct p4tc_template_common *tmpl,
 	pipeline = idr_find(&pipeline_idr, tmpl->p_id);
 
 	hdrfield = to_hdrfield(tmpl);
-	parser = idr_find(&pipeline->p_parser_idr, hdrfield->parser_inst_id);
+	parser = pipeline->parser;
 
 	return _tcf_hdrfield_put(pipeline, parser, hdrfield);
 }
@@ -149,12 +149,28 @@ tcf_hdrfield_create(struct nlmsghdr *n, struct nlattr *nla,
 	WARN_ON(!refcount_inc_not_zero(&pipeline->p_ref));
 
 	rcu_read_lock();
-	parser = tcf_parser_find(pipeline, tb[P4TC_HDRFIELD_PARSER_NAME],
-				 parser_id, extack);
+	parser = tcf_parser_find_byany(pipeline, tb[P4TC_HDRFIELD_PARSER_NAME],
+				       parser_id, NULL);
 	if (IS_ERR(parser)) {
+		char *parser_name;
+
+		if (!tb[P4TC_HDRFIELD_PARSER_NAME]) {
+			NL_SET_ERR_MSG(extack, "Must supply parser name");
+			ret = -EINVAL;
+			goto refcount_dec_pipeline;
+		}
+
 		rcu_read_unlock();
-		ret = PTR_ERR(parser);
-		goto refcount_dec_pipeline;
+		/* If the parser instance wasn't created, let's create it here */
+		parser_name = nla_data(tb[P4TC_HDRFIELD_PARSER_NAME]);
+		parser = tcf_parser_create(pipeline, parser_name, parser_id,
+					   extack);
+
+		if (IS_ERR(parser)) {
+			ret = PTR_ERR(parser);
+			goto refcount_dec_pipeline;
+		}
+		rcu_read_lock();
 	}
 
 	if (!refcount_inc_not_zero(&parser->parser_ref)) {
@@ -240,7 +256,7 @@ tcf_hdrfield_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 		return ERR_PTR(-EOPNOTSUPP);
 	}
 
-	pipeline = pipeline_find_unsealed(*p_name, pipeid, extack);
+	pipeline = tcf_pipeline_find_byany_unsealed(*p_name, pipeid, extack);
 	if (IS_ERR(pipeline))
 		return (void *)pipeline;
 
@@ -379,7 +395,7 @@ static int tcf_hdrfield_gd(struct net *net, struct sk_buff *skb,
 	struct p4tc_parser *parser;
 	int ret;
 
-	pipeline = pipeline_find(*p_name, pipeid, extack);
+	pipeline = tcf_pipeline_find_byany(*p_name, pipeid, extack);
 	if (IS_ERR(pipeline))
 		return PTR_ERR(pipeline);
 
@@ -388,8 +404,8 @@ static int tcf_hdrfield_gd(struct net *net, struct sk_buff *skb,
 	if (ret < 0)
 		return ret;
 
-	parser = tcf_parser_find(pipeline, tb[P4TC_HDRFIELD_PARSER_NAME],
-				 parser_inst_id, extack);
+	parser = tcf_parser_find_byany(pipeline, tb[P4TC_HDRFIELD_PARSER_NAME],
+				       parser_inst_id, extack);
 	if (IS_ERR(parser))
 		return PTR_ERR(parser);
 
@@ -464,7 +480,7 @@ static int tcf_hdrfield_dump(struct sk_buff *skb, struct p4tc_dump_ctx *ctx,
 	int ret;
 
 	if (!ctx->ids[P4TC_PID_IDX]) {
-		pipeline = pipeline_find(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany(*p_name, pipeid, extack);
 		if (IS_ERR(pipeline))
 			return PTR_ERR(pipeline);
 		ctx->ids[P4TC_PID_IDX] = pipeline->common.p_id;
@@ -481,15 +497,14 @@ static int tcf_hdrfield_dump(struct sk_buff *skb, struct p4tc_dump_ctx *ctx,
 			if (ret < 0)
 				return ret;
 		}
-		parser = tcf_parser_find(pipeline,
-					 tb[P4TC_HDRFIELD_PARSER_NAME],
-					 ids[P4TC_PARSEID_IDX], extack);
+		parser = tcf_parser_find_byany(pipeline,
+					      tb[P4TC_HDRFIELD_PARSER_NAME],
+					      ids[P4TC_PARSEID_IDX], extack);
 		if (IS_ERR(parser))
 			return PTR_ERR(parser);
 		ctx->ids[P4TC_PARSEID_IDX] = parser->parser_inst_id;
 	} else {
-		parser = idr_find(&pipeline->p_parser_idr,
-				  ctx->ids[P4TC_PARSEID_IDX]);
+		parser = pipeline->parser;
 	}
 
 	if (!ids[P4TC_PID_IDX])
