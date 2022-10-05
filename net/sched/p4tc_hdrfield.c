@@ -118,6 +118,30 @@ out:
 	return ERR_PTR(err);
 }
 
+static void *tcf_hdrfield_fetch(struct sk_buff *skb, void *hdr_value_ops)
+{
+	size_t hdr_offset_len = sizeof(u16);
+	const struct p4tc_header_field *hdrfield;
+	u16 *hdr_offset_bits, hdr_offset;
+	struct p4tc_skb_ext *p4tc_skb_ext;
+	u16 hdr_offset_index;
+
+	hdrfield = container_of(hdr_value_ops, struct p4tc_header_field,
+				h_value_ops);
+
+	p4tc_skb_ext = skb_ext_find(skb, P4TC_SKB_EXT);
+	if (!p4tc_skb_ext) {
+		pr_err("Unable to find P4TC_SKB_EXT\n");
+		return NULL;
+	}
+
+	hdr_offset_index = (hdrfield->hdr_field_id - 1) * hdr_offset_len;
+	hdr_offset_bits = (u16 *)&p4tc_skb_ext->p4tc_ext->hdrs[hdr_offset_index];
+	hdr_offset = BITS_TO_BYTES(*hdr_offset_bits);
+
+	return skb_mac_header(skb) + hdr_offset;
+}
+
 static struct p4tc_header_field *
 tcf_hdrfield_create(struct nlmsghdr *n, struct nlattr *nla,
 		    struct p4tc_pipeline *pipeline, u32 *ids,
@@ -229,6 +253,7 @@ tcf_hdrfield_create(struct nlmsghdr *n, struct nlattr *nla,
 	hdrfield->common.p_id = pipeline->common.p_id;
 	hdrfield->common.ops = (struct p4tc_template_ops *)&p4tc_hdrfield_ops;
 	hdrfield->parser = parser;
+	hdrfield->h_value_ops.fetch = tcf_hdrfield_fetch;
 
 	if (hdrfield_name)
 		strscpy(hdrfield->common.name, hdrfield_name, HDRFIELDNAMSIZ);

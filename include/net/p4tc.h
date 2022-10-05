@@ -267,6 +267,7 @@ struct p4tc_parser {
 struct p4tc_header_field {
 	struct p4tc_template_common common;
 	struct p4tc_parser          *parser;
+	struct tca_meta_value_ops   h_value_ops;
 	u32                         parser_inst_id;
 	u32                         hdr_field_id;
 	u16                         startbit;
