@@ -169,7 +169,9 @@ int p4tc_tinst_init(struct p4tc_table_instance *tinst,
 	refcount_set(&tinst->ti_entries_ref, 1);
 
 	idr_init(&tinst->ti_masks_idr);
+	idr_init(&tinst->ti_prio_idr);
 	spin_lock_init(&tinst->ti_masks_idr_lock);
+	spin_lock_init(&tinst->ti_prio_idr_lock);
 
 	if (rhltable_init(&tinst->ti_entries, &entry_hlt_params) < 0)
 		return -EINVAL;
@@ -367,6 +369,7 @@ static int _tcf_tinst_put(struct p4tc_table_class *tclass,
 
 	rcu_barrier();
 	idr_destroy(&tinst->ti_masks_idr);
+	idr_destroy(&tinst->ti_prio_idr);
 
 	kfree(tinst);
 

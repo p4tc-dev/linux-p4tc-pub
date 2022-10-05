@@ -169,7 +169,9 @@ struct p4tc_table_instance {
 	struct rhash_head ht_node;
 	struct rhltable   ti_entries;
 	struct idr        ti_masks_idr;
+	struct idr        ti_prio_idr;
 	spinlock_t        ti_masks_idr_lock;
+	spinlock_t        ti_prio_idr_lock;
 	u32               tbc_id;
 	u32               ti_id;
 	u32               ti_max_entries;
@@ -247,6 +249,7 @@ struct p4tc_table_entry {
 	u32                              prio;
 	u32                              mask_id;
 	struct tc_action                 **acts;
+	int                              num_acts;
 	struct rhlist_head               ht_node;
 	struct list_head                 list;
 	struct rcu_head                  rcu;
@@ -257,6 +260,9 @@ struct p4tc_table_entry {
 
 extern const struct nla_policy p4tc_root_policy[P4TC_ROOT_MAX + 1];
 extern const struct nla_policy p4tc_policy[P4TC_MAX + 1];
+struct p4tc_table_entry *
+p4tc_table_entry_lookup(struct sk_buff *skb, struct p4tc_table_instance *tinst,
+			u32 keysz);
 
 struct p4tc_parser {
 	char parser_name[PARSERNAMSIZ];
