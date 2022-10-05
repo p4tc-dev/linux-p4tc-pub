@@ -36,6 +36,7 @@
 #define P4TC_HDRFIELD_IS_VALIDITY_BIT 0x1
 
 struct p4tc_percpu_scratchpad {
+	u32 prog_cookie;
 	u32 keysz;
 	u32 maskid;
 	u8 key[BITS_TO_BYTES(P4TC_MAX_KEYSZ)];
