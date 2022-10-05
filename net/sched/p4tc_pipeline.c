@@ -46,7 +46,6 @@ static void tcf_pipeline_destroy(struct rcu_head *head)
 
 	idr_destroy(&pipeline->p_tbc_idr);
 	idr_destroy(&pipeline->p_meta_idr);
-	idr_destroy(&pipeline->p_parser_idr);
 	idr_destroy(&pipeline->p_act_idr);
 
 	kfree(pipeline);
@@ -57,10 +56,9 @@ static int tcf_pipeline_put(struct net *net,
 			    struct netlink_ext_ack *extack)
 {
 	struct p4tc_pipeline *pipeline = to_pipeline(template);
-	unsigned long tbc_id, m_id, parser_id, act_id, tmp;
+	unsigned long tbc_id, m_id, act_id, tmp;
 	struct p4tc_table_class *tclass;
 	struct p4tc_metadata *meta;
-	struct p4tc_parser *parser;
 	struct p4tc_act *act;
 
 	if (!refcount_dec_if_one(&pipeline->p_ctrl_ref)) {
@@ -76,9 +74,8 @@ static int tcf_pipeline_put(struct net *net,
 		return -EBUSY;
 	}
 
-	idr_for_each_entry_ul(&pipeline->p_parser_idr, parser, tmp, parser_id)
-		tcf_parser_del(pipeline, parser->parser_name,
-			       parser->parser_inst_id, extack);
+	if (pipeline->parser)
+		tcf_parser_del(pipeline, pipeline->parser, extack);
 
 	idr_for_each_entry_ul(&pipeline->p_meta_idr, meta, tmp, m_id)
 		meta->common.ops->put(net, &meta->common, extack);
@@ -251,8 +248,8 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		goto preactions_destroy;
 	}
 
-	idr_init(&pipeline->p_parser_idr);
 	idr_init(&pipeline->p_act_idr);
+	pipeline->parser = NULL;
 
 	idr_init(&pipeline->p_tbc_idr);
 	pipeline->curr_table_classes = 0;

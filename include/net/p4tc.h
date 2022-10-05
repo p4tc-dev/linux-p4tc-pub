@@ -94,8 +94,8 @@ struct p4tc_pipeline {
 	struct idr                  p_meta_idr;
 	struct idr                  p_tbc_idr;
 	struct idr                  p_act_idr;
-	struct idr                  p_parser_idr;
 	struct rcu_head             rcu;
+	struct p4tc_parser          *parser;
 	struct tc_action            **preacts;
 	int                         num_preacts;
 	struct tc_action            **postacts;
@@ -257,6 +257,9 @@ extern const struct nla_policy p4tc_policy[P4TC_MAX + 1];
 struct p4tc_parser {
 	char parser_name[PARSERNAMSIZ];
 	struct idr hdr_fields_idr;
+#ifdef CONFIG_KPARSER
+	const struct kparser_parser *kparser;
+#endif
 	refcount_t parser_ref;
 	u32 parser_inst_id;
 };
@@ -341,12 +344,17 @@ struct p4tc_parser *tcf_parser_create(struct p4tc_pipeline *pipeline,
 				      const char *parser_name,
 				      u32 parser_inst_id,
 				      struct netlink_ext_ack *extack);
-struct p4tc_parser *tcf_parser_find(struct p4tc_pipeline *pipeline,
-				    struct nlattr *name_attr,
-				    u32 parser_inst_id,
-				    struct netlink_ext_ack *extack);
-int tcf_parser_del(struct p4tc_pipeline *pipeline, const char *parser_name,
-		   u32 parser_inst_id, struct netlink_ext_ack *extack);
+struct p4tc_parser *tcf_parser_find_byid(struct p4tc_pipeline *pipeline,
+					 const u32 parser_inst_id);
+struct p4tc_parser *tcf_parser_find_byany(struct p4tc_pipeline *pipeline,
+					  struct nlattr *name_attr,
+					  u32 parser_inst_id,
+					  struct netlink_ext_ack *extack);
+int tcf_parser_del(struct p4tc_pipeline *pipeline,
+		   struct p4tc_parser *parser, struct netlink_ext_ack *extack);
+bool tcf_parser_is_callable(struct p4tc_parser *parser);
+int tcf_skb_parse(struct sk_buff *skb, struct p4tc_skb_ext *p4tc_ext,
+		  struct p4tc_parser *parser);
 bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
 				struct p4tc_header_field *hdrfield);
 

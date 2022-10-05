@@ -223,7 +223,7 @@ static int p4t_be32_validate(struct p4_type *container, void *value, u8 bitstart
 		val = (__be32)(be32_to_cpu(*val_u32));
 
 	bitsz = bitend - bitstart + 1;
-	maxval = (1 << bitsz) - 1;
+	maxval = (1UL << bitsz) - 1;
 
 	if (val && (val > container_maxsz || val > maxval)) {
 		NL_SET_ERR_MSG_MOD(extack, "BE32 value out of range");
@@ -747,6 +747,44 @@ static void p4t_u128_print(const char *prefix, void *val)
 	pr_info("%s[64-127] %16llx", prefix, v[1]);
 }
 
+static int p4t_ipv4_validate(struct p4_type *container, void *value, u8 bitstart,
+			     u8 bitend, struct netlink_ext_ack *extack)
+{
+	/* Not allowing bit-slices for now */
+	if (bitstart != 0 || bitend != 31) {
+		NL_SET_ERR_MSG_MOD(extack, "Invalid bitstart or bitend");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static void p4t_ipv4_print(const char *prefix, void *val)
+{
+	u8 *v = val;
+
+	pr_info("%s %u.%u.%u.%u\n", prefix, v[0], v[1], v[2], v[3]);
+}
+
+static int p4t_mac_validate(struct p4_type *container, void *value, u8 bitstart,
+			    u8 bitend, struct netlink_ext_ack *extack)
+{
+	if (bitstart != 0 || bitend != 47) {
+		NL_SET_ERR_MSG_MOD(extack, "Invalid bitstart or bitend");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static void p4t_mac_print(const char *prefix, void *val)
+{
+	u8 *v = val;
+
+	pr_info("%s %02X:%02x:%02x:%02x:%02x:%02x\n", prefix, v[0], v[1], v[2],
+		v[3], v[4], v[5]);
+}
+
 static int p4t_dev_validate(struct p4_type *container, void *value, u8 bitstart,
 			    u8 bitend, struct netlink_ext_ack *extack)
 {
@@ -896,8 +934,19 @@ static struct p4_type_ops nullstring_ops = {};
 static struct p4_type_ops flag_ops = {};
 static struct p4_type_ops path_ops = {};
 static struct p4_type_ops msecs_ops = {};
-static struct p4_type_ops mac_ops = {};
-static struct p4_type_ops ipv4_ops = {};
+static struct p4_type_ops mac_ops = {
+	.validate_p4t = p4t_mac_validate,
+	.create_bitops = p4t_u64_bitops,
+	.host_read = p4t_u64_hread,
+	.host_write = p4t_u64_write,
+	.print = p4t_mac_print,
+};
+static struct p4_type_ops ipv4_ops = {
+	.validate_p4t = p4t_ipv4_validate,
+	.host_read = p4t_be32_hread,
+	.host_write = p4t_be32_write,
+	.print = p4t_ipv4_print,
+};
 static struct p4_type_ops bool_ops = {
 	.validate_p4t = p4t_bool_validate,
 	.host_read = p4t_bool_hread,
