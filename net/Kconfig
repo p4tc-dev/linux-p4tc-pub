@@ -471,4 +471,13 @@ config NETDEV_ADDR_LIST_TEST
 	default KUNIT_ALL_TESTS
 	depends on KUNIT
 
+config KPARSER
+	tristate "Parser in Kernel"
+	help
+          kParser stands for "The Kernel Parser". This is a programmable
+          network packet parser which is a ported version of the PANDA
+          parser. This module exposes kParser APIs in Kernel.
+
+	  If unsure, say N.
+
 endif   # if NET
