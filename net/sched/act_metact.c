@@ -24,6 +24,8 @@
 #include <uapi/linux/tc_act/tc_metact.h>
 #include <net/tc_act/tc_metact.h>
 #include <linux/etherdevice.h>
+#include <linux/netdevice.h>
+#include <linux/if_arp.h>
 
 #include <net/p4_types.h>
 
@@ -45,6 +47,9 @@ static void *fetch_result(struct sk_buff *skb, struct tca_meta_operand *op,
 static void *fetch_hdrfield(struct sk_buff *skb, struct tca_meta_operand *op,
 			    struct tcf_metact_info *metact,
 			    struct tcf_result *res);
+static void *fetch_dev(struct sk_buff *skb, struct tca_meta_operand *op,
+		       struct tcf_metact_info *metact,
+		       struct tcf_result *res);
 static int metact_SET(struct sk_buff *skb, struct tca_meta_operate *op,
 		      struct tcf_metact_info *metact, struct tcf_result *res);
 static int metact_ACT(struct sk_buff *skb, struct tca_meta_operate *op,
@@ -54,6 +59,9 @@ static int metact_PRINT(struct sk_buff *skb, struct tca_meta_operate *op,
 static int metact_TBLAPP(struct sk_buff *skb, struct tca_meta_operate *op,
 			 struct tcf_metact_info *metact,
 			 struct tcf_result *res);
+static int metact_SNDPORTEGR(struct sk_buff *skb, struct tca_meta_operate *op,
+			     struct tcf_metact_info *metact,
+			     struct tcf_result *res);
 
 static void kfree_opentry(struct tca_meta_operate *ope)
 {
@@ -355,6 +363,35 @@ static int validate_hdrfield_operand(struct tca_meta_operand *kopnd,
 	return 0;
 }
 
+int validate_dev_operand(struct net *net, struct tca_meta_operand *kopnd,
+			 struct netlink_ext_ack *extack)
+{
+	struct net_device *dev;
+
+	if (kopnd->oper_datatype->typeid != P4T_DEV) {
+		NL_SET_ERR_MSG_MOD(extack, "dev parameter must be dev");
+		return -EINVAL;
+	}
+
+	if (kopnd->oper_datatype->ops->validate_p4t(kopnd->oper_datatype,
+						    &kopnd->immedv,
+						    kopnd->oper_bitstart,
+						    kopnd->oper_bitend,
+						    extack) < 0) {
+		return -EINVAL;
+	}
+
+	dev = dev_get_by_index(net, kopnd->immedv);
+	if (!dev) {
+		NL_SET_ERR_MSG_MOD(extack, "Invalid ifindex");
+		return -EINVAL;
+	}
+
+	kopnd->priv = dev;
+
+	return 0;
+}
+
 static int validate_res_operand(struct tca_meta_operand *kopnd,
 				 struct netlink_ext_ack *extack)
 {
@@ -488,7 +525,7 @@ static int validate_immediate_operand(struct tca_meta_operand *kopnd,
 	return 0;
 }
 
-static int validate_operand(struct tca_meta_operand *kopnd,
+static int validate_operand(struct net *net, struct tca_meta_operand *kopnd,
 			    struct netlink_ext_ack *extack)
 {
 	int err = 0;
@@ -521,6 +558,9 @@ static int validate_operand(struct tca_meta_operand *kopnd,
 		break;
 	case METACT_OPER_HDRFIELD:
 		err = validate_hdrfield_operand(kopnd, extack);
+		break;
+	case METACT_OPER_DEV:
+		err = validate_dev_operand(net, kopnd, extack);
 		break;
 	default:
 		NL_SET_ERR_MSG_MOD(extack, "Unknown operand type");
@@ -762,11 +802,11 @@ int validate_SET(struct net *net, struct tca_meta_operand *A,
 		return -EINVAL;
 	}
 
-	err = validate_operand(A, extack);
+	err = validate_operand(net, A, extack);
 	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
 		return err;
 
-	err = validate_operand(B, extack);
+	err = validate_operand(net, B, extack);
 	if (err)
 		return err;
 
@@ -813,7 +853,8 @@ int validate_PRINT(struct net *net, struct tca_meta_operand *A,
 		return -EINVAL;
 	}
 
-	err = validate_operand(A, extack);
+	return validate_operand(net, A, extack);
+}
 
 int validate_TBLAPP(struct net *net, struct tca_meta_operand *A,
 		    struct tca_meta_operand *B, struct tca_meta_operand *C,
@@ -832,6 +873,25 @@ int validate_TBLAPP(struct net *net, struct tca_meta_operand *A,
 		return -EINVAL;
 	}
 
+
+	err = validate_operand(net, A, extack);
+	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
+		return err;
+
+	return 0;
+}
+
+int validate_SNDPORTEGR(struct net *net, struct tca_meta_operand *A,
+			struct tca_meta_operand *B, struct tca_meta_operand *C,
+			struct netlink_ext_ack *extack)
+{
+	int err = 0;
+
+	if (B || C) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Invalid send_port_egress operation with B or C\n");
+		return -EINVAL;
+	}
 
 	err = validate_operand(net, A, extack);
 	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
@@ -1005,11 +1065,11 @@ int validate_BRN(struct net *net, struct tca_meta_operand *A,
 		return -EINVAL;
 	}
 
-	err = validate_operand(A, extack);
+	err = validate_operand(net, A, extack);
 	if (err)
 		return err;
 
-	err = validate_operand(B, extack);
+	err = validate_operand(net, B, extack);
 	if (err)
 		return err;
 
@@ -1043,6 +1103,18 @@ static void free_op_TBLAPP(struct tca_meta_operate *ope,
 	return _free_operation(ope, A, NULL, NULL, extack);
 }
 
+static void free_op_SNDPORTEGR(struct tca_meta_operate *ope,
+			       struct netlink_ext_ack *extack)
+{
+
+	struct tca_meta_operand *A = ope->opA;
+	struct net_device *dev = A->priv;
+
+	netdev_put(dev, NULL);
+
+	return _free_operation(ope, A, NULL, NULL, extack);
+}
+
 static struct metact_cmd_s metact_cmds[] = {
 	{ METACT_OP_SET, validate_SET, free_op_SET, metact_SET },
 	{ METACT_OP_ACT, validate_ACT, free_op_ACT, metact_ACT },
@@ -1054,6 +1126,8 @@ static struct metact_cmd_s metact_cmds[] = {
 	{ METACT_OP_BLE, validate_BRN, free_op_BRN, metact_BLE },
 	{ METACT_OP_PRINT, validate_PRINT, free_op_PRINT, metact_PRINT },
 	{ METACT_OP_TBLAPP, validate_TBLAPP, free_op_TBLAPP, metact_TBLAPP },
+	{ METACT_OP_SNDPORTEGR, validate_SNDPORTEGR, free_op_SNDPORTEGR,
+	  metact_SNDPORTEGR },
 };
 
 static struct metact_cmd_s *get_cmd_byid(u16 cmdid)
@@ -1118,6 +1192,8 @@ static int metact_process_opnd(struct nlattr *nla,
 		kopnd->fetch = fetch_result;
 	} else if (uopnd->oper_type == METACT_OPER_HDRFIELD) {
 		kopnd->fetch = fetch_hdrfield;
+	} else if (uopnd->oper_type == METACT_OPER_DEV) {
+		kopnd->fetch = fetch_dev;
 	} else {
 		NL_SET_ERR_MSG_MOD(extack, "Unknown operand type");
 		return -EINVAL;
@@ -1579,6 +1655,13 @@ static void *fetch_key(struct sk_buff *skb, struct tca_meta_operand *op,
 	return p4tc_skb_ext->p4tc_ext->key;
 }
 
+static void *fetch_dev(struct sk_buff *skb, struct tca_meta_operand *op,
+		       struct tcf_metact_info *metact,
+		       struct tcf_result *res)
+{
+	return op->priv;
+}
+
 static void *fetch_metadata(struct sk_buff *skb, struct tca_meta_operand *op,
 			    struct tcf_metact_info *metact,
 			    struct tcf_result *res)
@@ -1691,10 +1774,77 @@ static int metact_PRINT(struct sk_buff *skb, struct tca_meta_operate *op,
 		else if (A->immedv == METACT_RESULTS_MISS)
 			val_t->ops->print("res.miss", val);
 	} else {
-		pr_info("We're only printing metadata\n");
+		pr_info("Unsupported operand for print\n");
 	}
 
 	return op->ctl1;
+}
+
+#define REDIRECT_RECURSION_LIMIT    4
+static DEFINE_PER_CPU(unsigned int, redirect_rec_level);
+
+static int metact_SNDPORTEGR(struct sk_buff *skb, struct tca_meta_operate *op,
+			     struct tcf_metact_info *metact,
+			     struct tcf_result *res)
+{
+	struct tca_meta_operand *A = op->opA;
+	struct net_device *dev = A->fetch(skb, A, metact, res);
+	struct sk_buff *skb2 = skb;
+	int retval = TC_ACT_STOLEN;
+	unsigned int rec_level;
+	bool expects_nh;
+	int mac_len;
+	bool at_nh;
+	int err;
+
+	rec_level = __this_cpu_inc_return(redirect_rec_level);
+	if (unlikely(rec_level > REDIRECT_RECURSION_LIMIT)) {
+		net_warn_ratelimited("SNDPORTEGR: exceeded redirect recursion limit on dev %s\n",
+				     netdev_name(skb->dev));
+		__this_cpu_dec(redirect_rec_level);
+		return TC_ACT_SHOT;
+	}
+
+	if (unlikely(!dev)) {
+		pr_notice_once("SNDPORTEGR: target device is gone\n");
+		__this_cpu_dec(redirect_rec_level);
+		return TC_ACT_SHOT;
+	}
+
+	if (unlikely(!(dev->flags & IFF_UP))) {
+		net_notice_ratelimited("SNDPORTEGR: device %s is down\n",
+				       dev->name);
+		__this_cpu_dec(redirect_rec_level);
+		return TC_ACT_SHOT;
+	}
+
+	nf_reset_ct(skb2);
+
+	expects_nh = !dev_is_mac_header_xmit(dev);
+	at_nh = skb->data == skb_network_header(skb);
+	if (at_nh != expects_nh) {
+		mac_len = skb_at_tc_ingress(skb) ? skb->mac_len :
+			  skb_network_header(skb) - skb_mac_header(skb);
+		if (expects_nh) {
+			/* target device/action expect data at nh */
+			skb_pull_rcsum(skb2, mac_len);
+		} else {
+			/* target device/action expect data at mac */
+			skb_push_rcsum(skb2, mac_len);
+		}
+	}
+
+	skb_set_redirected(skb2, skb2->tc_at_ingress);
+	skb2->skb_iif = skb->dev->ifindex;
+	skb2->dev = dev;
+
+	err  = dev_queue_xmit(skb2);
+	if (err)
+		retval = TC_ACT_SHOT;
+
+	 __this_cpu_dec(redirect_rec_level);
+
+	return retval;
 }
 
 static int metact_TBLAPP(struct sk_buff *skb, struct tca_meta_operate *op,

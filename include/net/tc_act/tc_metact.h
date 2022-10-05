@@ -30,6 +30,7 @@ struct tca_meta_operand {
 	struct p4_type_mask_shift *oper_mask_shift;
 	struct tc_action *action;
 	void *path_or_value;
+	void *priv;
 	u32 immedv;		/* one of: immediate value, metadata id, action id */
 	u32 immedv2;		/* one of: action instance */
 	u32 path_or_value_sz;
