@@ -33,12 +33,27 @@ static void *fetch_metadata(struct sk_buff *skb, struct tca_meta_operand *op,
 static void *fetch_constant(struct sk_buff *skb, struct tca_meta_operand *op,
 			    struct tcf_metact_info *metact,
 			    struct tcf_result *res);
+static void *fetch_key(struct sk_buff *skb, struct tca_meta_operand *op,
+		       struct tcf_metact_info *metact,
+		       struct tcf_result *res);
+static void *fetch_table(struct sk_buff *skb, struct tca_meta_operand *op,
+			 struct tcf_metact_info *metact,
+			 struct tcf_result *res);
+static void *fetch_result(struct sk_buff *skb, struct tca_meta_operand *op,
+			  struct tcf_metact_info *metact,
+			  struct tcf_result *res);
+static void *fetch_hdrfield(struct sk_buff *skb, struct tca_meta_operand *op,
+			    struct tcf_metact_info *metact,
+			    struct tcf_result *res);
 static int metact_SET(struct sk_buff *skb, struct tca_meta_operate *op,
 		      struct tcf_metact_info *metact, struct tcf_result *res);
 static int metact_ACT(struct sk_buff *skb, struct tca_meta_operate *op,
 		      struct tcf_metact_info *metact, struct tcf_result *res);
 static int metact_PRINT(struct sk_buff *skb, struct tca_meta_operate *op,
 			struct tcf_metact_info *metact, struct tcf_result *res);
+static int metact_TBLAPP(struct sk_buff *skb, struct tca_meta_operate *op,
+			 struct tcf_metact_info *metact,
+			 struct tcf_result *res);
 
 static void kfree_opentry(struct tca_meta_operate *ope)
 {
@@ -238,6 +253,119 @@ static int validate_metadata_operand(struct tca_meta_operand *kopnd,
 	return 0;
 }
 
+static int validate_table_operand(struct tca_meta_operand *kopnd,
+				  struct netlink_ext_ack *extack)
+{
+	struct p4tc_table_class *tclass;
+	struct p4tc_pipeline *pipeline;
+
+	pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
+	if (!pipeline) {
+		NL_SET_ERR_MSG_MOD(extack, "Unable to find pipeline");
+		return -EINVAL;
+	}
+
+	tclass = tcf_tclass_find_byid(pipeline, kopnd->immedv);
+	if (!tclass) {
+		NL_SET_ERR_MSG_MOD(extack, "Unknown table class");
+		return -EINVAL;
+	}
+
+	if (kopnd->immedv2) {
+		if (!tcf_table_key_find(tclass, kopnd->immedv2)) {
+			NL_SET_ERR_MSG_MOD(extack, "Unknown key id");
+			return -EINVAL;
+		}
+	} else {
+		kopnd->immedv2 = tclass->tbc_default_key;
+	}
+
+	kopnd->oper_value_ops = &tclass->tbc_value_ops;
+
+	return 0;
+}
+
+static int validate_key_operand(struct tca_meta_operand *kopnd,
+				struct netlink_ext_ack *extack)
+{
+	struct p4_type *t = kopnd->oper_datatype;
+	struct p4tc_table_class *tclass;
+	struct p4tc_pipeline *pipeline;
+
+	pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
+	if (!pipeline) {
+		NL_SET_ERR_MSG_MOD(extack, "Unable to find pipeline");
+		return -EINVAL;
+	}
+
+	tclass = tcf_tclass_find_byid(pipeline, kopnd->immedv);
+	if (!tclass) {
+		NL_SET_ERR_MSG_MOD(extack, "Unknown table class");
+		return -EINVAL;
+	}
+
+	if (!tcf_table_key_find(tclass, kopnd->immedv2)) {
+		NL_SET_ERR_MSG_MOD(extack, "Unknown key id");
+		return -EINVAL;
+	}
+
+	if (tclass->tbc_keysz != t->bitsz) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Type size doesn't match table class keysz");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int validate_hdrfield_operand(struct tca_meta_operand *kopnd,
+				     struct netlink_ext_ack *extack)
+{
+	struct p4tc_header_field *hdrfield;
+	struct p4tc_parser *parser;
+	struct p4tc_pipeline *pipeline;
+
+	pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
+	if (!pipeline) {
+		NL_SET_ERR_MSG_MOD(extack, "Unable to find pipeline");
+		return -EINVAL;
+	}
+
+	parser = tcf_parser_find_byid(pipeline, kopnd->immedv);
+	if (!parser) {
+		NL_SET_ERR_MSG_MOD(extack, "Unknown parser inst id");
+		return -EINVAL;
+	}
+
+	hdrfield = tcf_hdrfield_find_byid(parser, kopnd->immedv2);
+	if (!hdrfield) {
+		NL_SET_ERR_MSG_MOD(extack, "Unknown header field id");
+		return -EINVAL;
+	}
+
+	if (hdrfield->startbit != kopnd->oper_bitstart ||
+	    hdrfield->endbit != kopnd->oper_bitend ||
+	    hdrfield->datatype != kopnd->oper_datatype->typeid) {
+		NL_SET_ERR_MSG_MOD(extack, "Header field type mismatch");
+		return -EINVAL;
+	}
+
+	kopnd->oper_value_ops = &hdrfield->h_value_ops;
+
+	return 0;
+}
+
+static int validate_res_operand(struct tca_meta_operand *kopnd,
+				 struct netlink_ext_ack *extack)
+{
+	if (kopnd->immedv == METACT_RESULTS_HIT ||
+	    kopnd->immedv == METACT_RESULTS_MISS)
+		return 0;
+
+	NL_SET_ERR_MSG_MOD(extack, "Invalid result field");
+	return -EINVAL;
+}
+
 static int __validate_metadata_operand(struct tca_meta_operand *kopnd,
 				       struct netlink_ext_ack *extack)
 {
@@ -381,6 +509,18 @@ static int validate_operand(struct tca_meta_operand *kopnd,
 	case METACT_OPER_ACTID:
 		/* Need to write this */
 		err = 0;
+		break;
+	case METACT_OPER_TBL:
+		err = validate_table_operand(kopnd, extack);
+		break;
+	case METACT_OPER_KEY:
+		err = validate_key_operand(kopnd, extack);
+		break;
+	case METACT_OPER_RES:
+		err = validate_res_operand(kopnd, extack);
+		break;
+	case METACT_OPER_HDRFIELD:
+		err = validate_hdrfield_operand(kopnd, extack);
 		break;
 	default:
 		NL_SET_ERR_MSG_MOD(extack, "Unknown operand type");
@@ -586,6 +726,17 @@ int validate_SET(struct net *net, struct tca_meta_operand *A,
 		return -EINVAL;
 	}
 
+	if (A->oper_type == METACT_OPER_RES) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Operand A cannot be a results field\n");
+		return -EINVAL;
+	}
+
+	if (B->oper_type == METACT_OPER_KEY) {
+		NL_SET_ERR_MSG_MOD(extack, "Operand B cannot be key\n");
+		return -EINVAL;
+	}
+
 	if (C) {
 		NL_SET_ERR_MSG_MOD(extack, "Invalid set operation with C\n");
 		return -EINVAL;
@@ -663,6 +814,26 @@ int validate_PRINT(struct net *net, struct tca_meta_operand *A,
 	}
 
 	err = validate_operand(A, extack);
+
+int validate_TBLAPP(struct net *net, struct tca_meta_operand *A,
+		    struct tca_meta_operand *B, struct tca_meta_operand *C,
+		    struct netlink_ext_ack *extack)
+{
+	int err = 0;
+
+	if (A->oper_type != METACT_OPER_TBL) {
+		NL_SET_ERR_MSG_MOD(extack, "Operand A must be a table\n");
+		return -EINVAL;
+	}
+
+	if (B || C) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Invalid table apply operation with B or C\n");
+		return -EINVAL;
+	}
+
+
+	err = validate_operand(net, A, extack);
 	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
 		return err;
 
@@ -863,6 +1034,15 @@ static void free_op_PRINT(struct tca_meta_operate *ope,
 	return _free_operation(ope, A, NULL, NULL, extack);
 }
 
+static void free_op_TBLAPP(struct tca_meta_operate *ope,
+			   struct netlink_ext_ack *extack)
+{
+
+	struct tca_meta_operand *A = ope->opA;
+
+	return _free_operation(ope, A, NULL, NULL, extack);
+}
+
 static struct metact_cmd_s metact_cmds[] = {
 	{ METACT_OP_SET, validate_SET, free_op_SET, metact_SET },
 	{ METACT_OP_ACT, validate_ACT, free_op_ACT, metact_ACT },
@@ -873,6 +1053,7 @@ static struct metact_cmd_s metact_cmds[] = {
 	{ METACT_OP_BGE, validate_BRN, free_op_BRN, metact_BGE },
 	{ METACT_OP_BLE, validate_BRN, free_op_BRN, metact_BLE },
 	{ METACT_OP_PRINT, validate_PRINT, free_op_PRINT, metact_PRINT },
+	{ METACT_OP_TBLAPP, validate_TBLAPP, free_op_TBLAPP, metact_TBLAPP },
 };
 
 static struct metact_cmd_s *get_cmd_byid(u16 cmdid)
@@ -922,12 +1103,21 @@ static int metact_process_opnd(struct nlattr *nla,
 	}
 
 	uopnd = nla_data(tb[TCAA_METACT_OPND_INFO]);
+
 	if (uopnd->oper_type == METACT_OPER_META) {
 		kopnd->fetch = fetch_metadata;
 	} else if (uopnd->oper_type == METACT_OPER_CONST) {
 		kopnd->fetch = fetch_constant;
 	} else if (uopnd->oper_type == METACT_OPER_ACTID) {
 		kopnd->fetch = NULL;
+	} else if (uopnd->oper_type == METACT_OPER_TBL) {
+		kopnd->fetch = fetch_table;
+	} else if (uopnd->oper_type == METACT_OPER_KEY) {
+		kopnd->fetch = fetch_key;
+	} else if (uopnd->oper_type == METACT_OPER_RES) {
+		kopnd->fetch = fetch_result;
+	} else if (uopnd->oper_type == METACT_OPER_HDRFIELD) {
+		kopnd->fetch = fetch_hdrfield;
 	} else {
 		NL_SET_ERR_MSG_MOD(extack, "Unknown operand type");
 		return -EINVAL;
@@ -935,6 +1125,7 @@ static int metact_process_opnd(struct nlattr *nla,
 
 	wantbits = 1 + uopnd->oper_endbit - uopnd->oper_startbit;
 	if (uopnd->oper_type != METACT_OPER_ACTID &&
+	    uopnd->oper_type != METACT_OPER_TBL &&
 	    uopnd->oper_cbitsize < wantbits) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "Start and end bit dont fit in space");
@@ -1351,6 +1542,43 @@ static void *fetch_constant(struct sk_buff *skb, struct tca_meta_operand *op,
 	return NULL;
 }
 
+static void *fetch_table(struct sk_buff *skb, struct tca_meta_operand *op,
+			 struct tcf_metact_info *metact,
+			 struct tcf_result *res)
+{
+	return op->oper_value_ops->fetch(skb, op->oper_value_ops);
+}
+
+static void *fetch_result(struct sk_buff *skb, struct tca_meta_operand *op,
+			  struct tcf_metact_info *metact,
+			  struct tcf_result *res)
+{
+	if (op->immedv == METACT_RESULTS_HIT)
+		return &res->hit;
+	else
+		return &res->miss;
+}
+
+static void *fetch_hdrfield(struct sk_buff *skb, struct tca_meta_operand *op,
+			    struct tcf_metact_info *metact,
+			    struct tcf_result *res)
+{
+	return op->oper_value_ops->fetch(skb, op->oper_value_ops);
+}
+
+static void *fetch_key(struct sk_buff *skb, struct tca_meta_operand *op,
+		       struct tcf_metact_info *metact,
+		       struct tcf_result *res)
+{
+	struct p4tc_skb_ext *p4tc_skb_ext;
+
+	p4tc_skb_ext = skb_ext_find(skb, P4TC_SKB_EXT);
+	if (unlikely(!p4tc_skb_ext))
+		return NULL;
+
+	return p4tc_skb_ext->p4tc_ext->key;
+}
+
 static void *fetch_metadata(struct sk_buff *skb, struct tca_meta_operand *op,
 			    struct tcf_metact_info *metact,
 			    struct tcf_result *res)
@@ -1447,11 +1675,76 @@ static int metact_PRINT(struct sk_buff *skb, struct tca_meta_operate *op,
 			 hdrfield->common.name);
 
 		val_t->ops->print(name, val);
+	} else if (A->oper_type == METACT_OPER_KEY) {
+		struct p4tc_table_class *tclass;
+		struct p4tc_pipeline *pipeline;
+
+		pipeline = tcf_pipeline_find_byid(A->pipeid);
+		tclass = tcf_tclass_find_byid(pipeline, A->immedv);
+		snprintf(name, TEMPLATENAMSZ * 3, "key.%s.%s.%u",
+			 pipeline->common.name, tclass->common.name,
+			 A->immedv2);
+		val_t->ops->print(name, val);
+	} else if (A->oper_type == METACT_OPER_RES) {
+		if (A->immedv == METACT_RESULTS_HIT)
+			val_t->ops->print("res.hit", val);
+		else if (A->immedv == METACT_RESULTS_MISS)
+			val_t->ops->print("res.miss", val);
 	} else {
 		pr_info("We're only printing metadata\n");
 	}
 
 	return op->ctl1;
+}
+
+static int metact_TBLAPP(struct sk_buff *skb, struct tca_meta_operate *op,
+			 struct tcf_metact_info *metact,
+			 struct tcf_result *res)
+{
+	struct tca_meta_operand *A = op->opA;
+	struct p4tc_table_class *tclass = A->fetch(skb, A, metact, res);
+	struct p4tc_table_instance *tinst;
+	struct p4tc_table_entry *entry;
+	struct p4tc_table_key *key;
+	int ret;
+
+	if (unlikely(!tclass))
+		return TC_ACT_SHOT;
+
+	if (tclass->tbc_preacts) {
+		ret = tcf_action_exec(skb, tclass->tbc_preacts,
+				      tclass->tbc_num_preacts, res);
+		/* Should check what return code should cause return */
+		if (ret == TC_ACT_SHOT)
+			return ret;
+	}
+
+	/* Sets key */
+	key = tcf_table_key_find(tclass, A->immedv2);
+	ret = tcf_action_exec(skb, key->key_acts, key->key_num_acts, res);
+	if (ret != TC_ACT_PIPE)
+		return ret;
+
+	/* We assume one instance per table which has id 1 */
+	tinst = tcf_tinst_find_byany(NULL, 1, NULL, tclass, NULL);
+	if (!tinst)
+		return TC_ACT_OK;
+
+	entry = p4tc_table_entry_lookup(skb, tinst, tclass->tbc_keysz);
+	if (IS_ERR(entry))
+		entry = NULL;
+
+	res->hit = entry ? true : false;
+	res->miss = !res->hit;
+
+	if (res->hit && entry->acts) {
+		ret = tcf_action_exec(skb, entry->acts, entry->num_acts, res);
+		if (ret != TC_ACT_PIPE)
+			return ret;
+	}
+
+	return tcf_action_exec(skb, tclass->tbc_postacts,
+			       tclass->tbc_num_postacts, res);
 }
 
 static int tcf_metact_act(struct sk_buff *skb, const struct tc_action *a,
