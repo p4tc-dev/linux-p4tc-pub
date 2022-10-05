@@ -473,4 +473,15 @@ config NETDEV_ADDR_LIST_TEST
 	default KUNIT_ALL_TESTS
 	depends on KUNIT
 
+# config NET_KPARSER
+	#depends on NETFILTER
+config KPARSER
+	tristate "Parser in Kernel"
+	help
+	  Exposes Parser in Kernel.
+
+	  TODO.
+
+	  If unsure, say N.
+
 endif   # if NET
