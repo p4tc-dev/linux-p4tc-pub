@@ -355,6 +355,8 @@ int tcf_parser_del(struct p4tc_pipeline *pipeline,
 bool tcf_parser_is_callable(struct p4tc_parser *parser);
 int tcf_skb_parse(struct sk_buff *skb, struct p4tc_skb_ext *p4tc_ext,
 		  struct p4tc_parser *parser);
+struct p4tc_header_field *tcf_hdrfield_find_byid(struct p4tc_parser *parser,
+						 const u32 hdrfield_id);
 bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
 				struct p4tc_header_field *hdrfield);
 

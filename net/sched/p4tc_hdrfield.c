@@ -72,8 +72,11 @@ hdrfield_find_name(struct p4tc_parser *parser, const char *hdrfield_name)
 	return NULL;
 }
 
-#define hdrfield_find_id(parser, hdrfield_id) \
-	(idr_find(&(parser)->hdr_fields_idr, hdrfield_id))
+struct p4tc_header_field *tcf_hdrfield_find_byid(struct p4tc_parser *parser,
+						 const u32 hdrfield_id)
+{
+	return idr_find(&parser->hdr_fields_idr, hdrfield_id);
+}
 
 static struct p4tc_header_field *
 tcf_hdrfield_find(struct p4tc_parser *parser, struct nlattr *name_attr,
@@ -83,7 +86,7 @@ tcf_hdrfield_find(struct p4tc_parser *parser, struct nlattr *name_attr,
 	int err;
 
 	if (hdrfield_id) {
-		hdrfield = hdrfield_find_id(parser, hdrfield_id);
+		hdrfield = tcf_hdrfield_find_byid(parser, hdrfield_id);
 		if (!hdrfield) {
 			NL_SET_ERR_MSG(extack,
 				       "Unable to find hdrfield by id");
@@ -185,7 +188,7 @@ tcf_hdrfield_create(struct nlmsghdr *n, struct nlattr *nla,
 		hdrfield_name = nla_data(tb[P4TC_HDRFIELD_NAME]);
 
 	if ((hdrfield_name && hdrfield_find_name(parser, hdrfield_name)) ||
-	    hdrfield_find_id(parser, hdrfield_id)) {
+	    tcf_hdrfield_find_byid(parser, hdrfield_id)) {
 		NL_SET_ERR_MSG(extack,
 			       "Header field with same id or name was already inserted");
 		ret = -EEXIST;
