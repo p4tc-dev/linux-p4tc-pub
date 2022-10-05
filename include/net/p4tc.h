@@ -10,6 +10,7 @@
 #include <linux/rhashtable.h>
 #include <linux/rhashtable-types.h>
 #include <net/tc_act/p4tc.h>
+#include <net/p4_types.h>
 
 #define P4TC_DEFAULT_NUM_TCLASSES 1
 #define P4TC_DEFAULT_MAX_RULES 1
@@ -197,6 +198,7 @@ struct p4tc_ipv4_param_value {
 struct p4tc_act_param {
 	char            name[ACTPARAMNAMSIZ];
 	void            *value;
+	void            *mask;
 	u32             type;
 	u32             id;
 	struct rcu_head	rcu;
@@ -205,9 +207,9 @@ struct p4tc_act_param {
 struct p4tc_act_param_ops;
 
 struct p4tc_act_param_ops {
-	int (*init_value)(struct p4tc_act_param_ops *op,
+	int (*init_value)(struct net *net, struct p4tc_act_param_ops *op,
 			  struct p4tc_act_param *nparam,
-			  struct nlattr **tb);
+			  struct nlattr **tb, struct netlink_ext_ack *extack);
 	int (*dump_value)(struct sk_buff *skb, struct p4tc_act_param_ops *op,
 			   struct p4tc_act_param *param);
 	void (*free)(struct p4tc_act_param *param);

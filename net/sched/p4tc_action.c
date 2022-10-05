@@ -27,151 +27,138 @@
 #include <net/netlink.h>
 #include <net/flow_offload.h>
 #include <net/tc_act/p4tc.h>
+#include <linux/netdevice.h>
 
-static bool type_is_valid(u32 type)
+static int dev_init_param_value(struct net *net, struct p4tc_act_param_ops *op,
+				struct p4tc_act_param *nparam,
+				struct nlattr **tb,
+				struct netlink_ext_ack *extack)
 {
-	switch (type) {
-	case P4T_U8:
-	case P4T_U16:
-	case P4T_U32:
-	case P4T_IPV4ADDR:
-	case P4T_U64:
-	case P4T_MACADDR:
-		return true;
-	default:
-		return false;
-	}
-}
-
-static int ipv4_init_param_value(struct p4tc_act_param_ops *op,
-				 struct p4tc_act_param *nparam,
-				 struct nlattr **tb)
-{
-	const u32 len = op->len;
-	struct p4tc_ipv4_param_value *val;
-	int err;
+	struct net_device *dev;
 
 	if (tb[P4TC_ACT_PARAMS_VALUE]) {
-		const void *value = nla_data(tb[P4TC_ACT_PARAMS_VALUE]);
+		const u32 *ifindex = nla_data(tb[P4TC_ACT_PARAMS_VALUE]);
 
-		val = kmalloc(sizeof(*val), GFP_KERNEL);
-		if (!val) {
-			err = -ENOMEM;
-			goto out;
-		}
-		if (nla_len(tb[P4TC_ACT_PARAMS_VALUE]) != len) {
-			pr_err("Value length differs from template's\n");
-			err = -EINVAL;
-			goto free;
+		if (nla_len(tb[P4TC_ACT_PARAMS_VALUE]) != sizeof(u32)) {
+			NL_SET_ERR_MSG(extack, "Value length differs from template's");
+			return -EINVAL;
 		}
 
-		val->value = *((u32 *)value);
+		dev = dev_get_by_index(net, *ifindex);
+		if (!dev) {
+			NL_SET_ERR_MSG(extack, "Invalid ifindex");
+			return -EINVAL;
+		}
+		nparam->value = dev;
 	} else {
-		pr_err("Must specify param value\n");
-		err = -EINVAL;
-		goto out;
-	}
-
-	if (tb[P4TC_ACT_PARAMS_MASK]) {
-		const void *mask = nla_data(tb[P4TC_ACT_PARAMS_MASK]);
-
-		if (nla_len(tb[P4TC_ACT_PARAMS_MASK]) != len) {
-			pr_err("Mask length differs from template's\n");
-			err = -EINVAL;
-			goto free;
-		}
-
-		val->mask = *((u32 *)mask);
-	} else {
-		pr_err("Must specify param mask\n");
-		err = -EINVAL;
-		goto free;
-	}
-
-	nparam->value = val;
-
-	return 0;
-
-free:
-	kfree(val);
-out:
-	return err;
-}
-
-static int ipv4_dump_param_value(struct sk_buff *skb,
-				 struct p4tc_act_param_ops *op,
-				 struct p4tc_act_param *param)
-{
-	const struct p4tc_ipv4_param_value *val = param->value;
-	unsigned char *b = skb_tail_pointer(skb);
-
-	if (nla_put_u32(skb, P4TC_ACT_PARAMS_VALUE, val->value))
-		goto out_nlmsg_trim;
-
-	if (nla_put_u32(skb, P4TC_ACT_PARAMS_MASK, val->mask))
-		goto out_nlmsg_trim;
-
-	return 0;
-
-out_nlmsg_trim:
-	nlmsg_trim(skb, b);
-	return -1;
-}
-
-static void ipv4_free_param_value(struct p4tc_act_param *param)
-{
-	kfree(param->value);
-}
-
-static int generic_init_param_value(struct p4tc_act_param_ops *op,
-				    struct p4tc_act_param *nparam,
-				    struct nlattr **tb)
-{
-	int err;
-
-	if (tb[P4TC_ACT_PARAMS_MASK]) {
-		pr_err("Param of this type doesn't require mask\n");
+		NL_SET_ERR_MSG(extack, "Must specify param value");
 		return -EINVAL;
 	}
 
-	if (tb[P4TC_ACT_PARAMS_VALUE]) {
-		const void *value = nla_data(tb[P4TC_ACT_PARAMS_VALUE]);
-		const u32 alloc_len = op->alloc_len ? op->alloc_len : op->len;
-		const u32 len = op->len;
+	return 0;
 
-		nparam->value = kmalloc(alloc_len, GFP_KERNEL);
+}
+
+static void dev_free_param_value(struct p4tc_act_param *param)
+{
+	struct net_device *dev = param->value;
+
+	netdev_put(dev, NULL);
+}
+
+static int dev_dump_param_value(struct sk_buff *skb,
+				struct p4tc_act_param_ops *op,
+				struct p4tc_act_param *param)
+{
+	const struct net_device *dev = param->value;
+	unsigned char *b = skb_tail_pointer(skb);
+
+	if (nla_put_string(skb, P4TC_ACT_PARAMS_VALUE, dev->name)) {
+		nlmsg_trim(skb, b);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int generic_init_param_value(struct p4tc_act_param *nparam,
+				    struct p4_type *type,
+				    struct nlattr **tb,
+				    struct netlink_ext_ack *extack)
+{
+	const u32 alloc_len = BITS_TO_BYTES(type->container_bitsz);
+	const u32 len = BITS_TO_BYTES(type->bitsz);
+	int err;
+
+	if (tb[P4TC_ACT_PARAMS_VALUE]) {
+		void *value = nla_data(tb[P4TC_ACT_PARAMS_VALUE]);
+
+		nparam->value = kzalloc(alloc_len, GFP_KERNEL);
 		if (!nparam->value) {
 			err = -ENOMEM;
-			goto free;
+			goto free_value;
 		}
 
 		if (nla_len(tb[P4TC_ACT_PARAMS_VALUE]) != len) {
-			pr_err("Value length differs from template's\n");
 			err = -EINVAL;
-			goto free;
+			goto free_value;
+		}
+
+		if (type->ops->validate_p4t) {
+			err = type->ops->validate_p4t(type, value, 0,
+						      type->bitsz - 1, extack);
+			if (err < 0)
+				goto free_value;
 		}
 
 		memcpy(nparam->value, value, len);
 	} else {
 		pr_err("Must specify param value\n");
 		err = -EINVAL;
-		goto free;
+		goto free_value;
+	}
+
+	if (tb[P4TC_ACT_PARAMS_MASK]) {
+		const void *mask = nla_data(tb[P4TC_ACT_PARAMS_MASK]);
+
+		nparam->mask = kzalloc(alloc_len, GFP_KERNEL);
+		if (!nparam->mask) {
+			err = -ENOMEM;
+			goto free_value;
+		}
+
+		if (nla_len(tb[P4TC_ACT_PARAMS_MASK]) != len) {
+			pr_err("Mask length differs from template's\n");
+			err = -EINVAL;
+			goto free_mask;
+		}
+
+		memcpy(nparam->mask, mask, len);
 	}
 
 	return 0;
 
-free:
+free_mask:
+	kfree(nparam->mask);
+
+free_value:
 	kfree(nparam->value);
 	return err;
 }
 
-static int generic_dump_param_value(struct sk_buff *skb,
-				    struct p4tc_act_param_ops *op,
-				    struct p4tc_act_param *param)
+int generic_dump_param_value(struct sk_buff *skb, struct p4_type *type,
+			     struct p4tc_act_param *param)
 {
+	const u32 bytesz = BITS_TO_BYTES(type->container_bitsz);
 	unsigned char *b = skb_tail_pointer(skb);
 
-	if (nla_put(skb, P4TC_ACT_PARAMS_VALUE, op->len, param->value)) {
+	if (nla_put(skb, P4TC_ACT_PARAMS_VALUE, bytesz, param->value)) {
+		nlmsg_trim(skb, b);
+		return -1;
+	}
+
+	if (param->mask &&
+	    nla_put(skb, P4TC_ACT_PARAMS_MASK, bytesz, param->mask)) {
 		nlmsg_trim(skb, b);
 		return -1;
 	}
@@ -182,45 +169,14 @@ static int generic_dump_param_value(struct sk_buff *skb,
 static void generic_free_param_value(struct p4tc_act_param *param)
 {
 	kfree(param->value);
+	kfree(param->mask);
 }
 
-static const struct p4tc_act_param_ops param_ops[P4T_MAX] = {
-	[P4T_U8] = {
-		.init_value = generic_init_param_value,
-		.dump_value = generic_dump_param_value,
-		.free = generic_free_param_value,
-		.len = sizeof(u8),
-	},
-	[P4T_U16] = {
-		.init_value = generic_init_param_value,
-		.dump_value = generic_dump_param_value,
-		.free = generic_free_param_value,
-		.len = sizeof(u16),
-	},
-	[P4T_U32] = {
-		.init_value = generic_init_param_value,
-		.dump_value = generic_dump_param_value,
-		.free = generic_free_param_value,
-		.len = sizeof(u32),
-	},
-	[P4T_U64] = {
-		.init_value = generic_init_param_value,
-		.dump_value = generic_dump_param_value,
-		.free = generic_free_param_value,
-		.len = sizeof(u64),
-	},
-	[P4T_MACADDR] = {
-		.init_value = generic_init_param_value,
-		.dump_value = generic_dump_param_value,
-		.free = generic_free_param_value,
-		.len = ETH_ALEN,
-		.alloc_len = sizeof(u64),
-	},
-	[P4T_IPV4ADDR] = {
-		.init_value = ipv4_init_param_value,
-		.dump_value = ipv4_dump_param_value,
-		.free = ipv4_free_param_value,
-		.len = sizeof(u32),
+static const struct p4tc_act_param_ops param_ops[P4T_MAX + 1] = {
+	[P4T_DEV] = {
+		.init_value = dev_init_param_value,
+		.dump_value = dev_dump_param_value,
+		.free = dev_free_param_value,
 	},
 };
 
@@ -349,7 +305,10 @@ static void tcf_p4_act_params_destroy(struct tcf_p4act_params *params)
 
 		idr_remove(&params->params_idr, param_id);
 		op = (struct p4tc_act_param_ops *)&param_ops[param->type];
-		op->free(param);
+		if (op->free)
+			op->free(param);
+		else
+			generic_free_param_value(param);
 		kfree(param);
 	}
 
@@ -468,14 +427,17 @@ out:
 	return ERR_PTR(err);
 }
 
-static int tcf_p4_act_init_param(struct tcf_p4act_params *params,
+static int tcf_p4_act_init_param(struct net *net,
+				 struct tcf_p4act_params *params,
 				 struct p4tc_act *act,
-				 struct nlattr *nla)
+				 struct nlattr *nla,
+				 struct netlink_ext_ack *extack)
 {
 	u32 param_id = 0;
 	struct nlattr *tb[P4TC_ACT_PARAMS_MAX + 1];
 	struct p4tc_act_param *param, *nparam;
 	struct p4tc_act_param_ops *op;
+	struct p4_type *type;
 	int err;
 
 	err = nla_parse_nested_deprecated(tb, P4TC_ACT_PARAMS_MAX, nla,
@@ -503,15 +465,26 @@ static int tcf_p4_act_init_param(struct tcf_p4act_params *params,
 		return -EINVAL;
 	}
 
-	nparam = kmalloc(sizeof(*nparam), GFP_KERNEL);
+	nparam = kzalloc(sizeof(*nparam), GFP_KERNEL);
 	if (!nparam)
 		return -ENOMEM;
 
 	strscpy(nparam->name, param->name, ACTPARAMNAMSIZ);
 	nparam->type = param->type;
 
+	type = p4type_find_byid(param->type);
+	if (!type) {
+		pr_err("Invalid param type %u\n", param->type);
+		err = -EINVAL;
+		goto free;
+	}
+
 	op = (struct p4tc_act_param_ops *)&param_ops[param->type];
-	err = op->init_value(op, nparam, tb);
+	if (op->init_value)
+		err = op->init_value(net, op, nparam, tb, extack);
+	else
+		err = generic_init_param_value(nparam, type, tb, extack);
+
 	if (err < 0)
 		goto free;
 
@@ -525,16 +498,21 @@ static int tcf_p4_act_init_param(struct tcf_p4act_params *params,
 	return 0;
 
 free_val:
-	op->free(nparam);
+	if (op->free)
+		op->free(nparam);
+	else
+		generic_free_param_value(nparam);
 
 free:
 	kfree(nparam);
 	return err;
 }
 
-static int tcf_p4_act_init_params(struct tcf_p4act_params *params,
-				  struct p4tc_act *act,
-				  struct nlattr *nla)
+int tcf_p4_act_init_params(struct net *net,
+			   struct tcf_p4act_params *params,
+			   struct p4tc_act *act,
+			   struct nlattr *nla,
+			   struct netlink_ext_ack *extack)
 {
 	struct nlattr *tb[P4TC_MSGBATCH_SIZE + 1];
 	int err;
@@ -546,7 +524,7 @@ static int tcf_p4_act_init_params(struct tcf_p4act_params *params,
 		return err;
 
 	for (i = 1; i < P4TC_MSGBATCH_SIZE + 1 && tb[i]; i++) {
-		err = tcf_p4_act_init_param(params, act, tb[i]);
+		err = tcf_p4_act_init_param(net, params, act, tb[i], extack);
 		if (err < 0)
 			return err;
 	}
@@ -716,8 +694,8 @@ static int tcf_p4_act_init(struct net *net, struct nlattr *nla,
 
 	idr_init(&params->params_idr);
 	if (tb[P4TC_ACT_PARMS]) {
-		err = tcf_p4_act_init_params(params, act,
-					     tb[P4TC_ACT_PARMS]);
+		err = tcf_p4_act_init_params(net, params, act,
+					     tb[P4TC_ACT_PARMS], extack);
 		if (err < 0)
 			goto release_params;
 	} else {
@@ -799,8 +777,11 @@ p4_create_param(struct p4tc_act *act, struct nlattr **tb,
 	}
 
 	if (tb[P4TC_ACT_PARAMS_TYPE]) {
+		struct p4_type *type;
+
 		param->type = *((u32 *)nla_data(tb[P4TC_ACT_PARAMS_TYPE]));
-		if (!type_is_valid(param->type)) {
+		type = p4type_find_byid(param->type);
+		if (!type) {
 			NL_SET_ERR_MSG(extack, "Param type is invalid");
 			ret = -EINVAL;
 			goto free;
@@ -865,8 +846,11 @@ p4_update_param(struct p4tc_act *act, struct nlattr **tb,
 	param->id = param_old->id;
 
 	if (tb[P4TC_ACT_PARAMS_TYPE]) {
+		struct p4_type *type;
+
 		param->type = *((u32 *)nla_data(tb[P4TC_ACT_PARAMS_TYPE]));
-		if (!type_is_valid(param->type)) {
+		type = p4type_find_byid(param->type);
+		if (!type) {
 			NL_SET_ERR_MSG(extack, "Param type is invalid");
 			ret = -EINVAL;
 			goto out;
