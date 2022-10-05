@@ -186,7 +186,7 @@ static int p4t_s32_write(struct p4_type_mask_shift *mask_shift, void *sval,
 	s32 *dst = dval;
 	s32 *src = sval;
 
-	*src = *dst;
+	*dst = *src;
 
 	return 0;
 }
@@ -195,7 +195,7 @@ static void p4t_s32_print(const char *prefix, void *val)
 {
 	s32 *v = val;
 
-	pr_info("%s %d\n", prefix, *v);
+	pr_info("%s %x\n", prefix, *v);
 }
 
 static void p4t_s64_print(const char *prefix, void *val)
@@ -248,6 +248,26 @@ static int p4t_be32_hread(struct p4_type_mask_shift *mask_shift, void *sval,
 	}
 
 	*dst = be32_to_cpu(readval);
+
+	return 0;
+}
+
+static int p4t_be32_write(struct p4_type_mask_shift *mask_shift, void *sval,
+			  void *dval)
+{
+	__be32 *dst = dval;
+	u32 maskedst = 0;
+	u32 *src = sval;
+	u8 shift = 0;
+
+	if (mask_shift) {
+		u32 *dmask = (u32 *)mask_shift->mask;
+
+		maskedst = *dst & ~*dmask;
+		shift = mask_shift->shift;
+	}
+
+	*dst = cpu_to_be32(maskedst | (*src << shift));
 
 	return 0;
 }
@@ -602,20 +622,13 @@ static int p4t_u64_validate(struct p4_type *container, void *value, u8 bitstart,
 	u8 *val = value;
 	u64 container_maxsz = U64_MAX;
 	u64 maxval;
-	u8 bitsz;
 	int ret;
 
 	ret = p4t_validate_bitpos(bitstart, bitend, 63, 63, extack);
 	if (ret < 0)
 		return ret;
 
-	bitsz = bitend - bitstart + 1;
-	/* Trying to shift 64 bits causes kernel to crash */
-	if (bitsz == 64)
-		maxval = U64_MAX;
-	else
-		maxval = (1UL << bitsz) - 1;
-
+	maxval = GENMASK_ULL(bitend, bitstart);
 	if (val && (*val > container_maxsz || *val > maxval)) {
 		NL_SET_ERR_MSG_MOD(extack, "U64 value out of range");
 		return -EINVAL;
@@ -694,6 +707,109 @@ static int p4t_u64_hread(struct p4_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
+/* As of now, we are not allowing bitops for u128 */
+static int p4t_u128_validate(struct p4_type *container, void *value, u8 bitstart,
+			     u8 bitend, struct netlink_ext_ack *extack)
+{
+	if (bitstart != 0 || bitend != 127)
+		return -EINVAL;
+
+	return 0;
+}
+
+static int p4t_u128_hread(struct p4_type_mask_shift *mask_shift, void *sval,
+			  void *dval)
+{
+	__uint128_t *dst = dval;
+	__uint128_t *src = sval;
+
+	memcpy(dst, src, sizeof(__uint128_t));
+
+	return 0;
+}
+
+static int p4t_u128_write(struct p4_type_mask_shift *mask_shift, void *sval,
+			  void *dval)
+{
+	__uint128_t *dst = dval;
+	__uint128_t *src = sval;
+
+	memcpy(dst, src, sizeof(__uint128_t));
+
+	return 0;
+}
+
+static void p4t_u128_print(const char *prefix, void *val)
+{
+	u64 *v = val;
+
+	pr_info("%s[0-63] %16llx", prefix, v[0]);
+	pr_info("%s[64-127] %16llx", prefix, v[1]);
+}
+
+static int p4t_dev_validate(struct p4_type *container, void *value, u8 bitstart,
+			    u8 bitend, struct netlink_ext_ack *extack)
+{
+	if (bitstart != 0 || bitend != 31) {
+		NL_SET_ERR_MSG_MOD(extack, "Invalid start or endbit values");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static void p4t_dev_print(const char *prefix, void *val)
+{
+	const struct net_device *dev = val;
+
+	pr_info("%s %s\n", prefix, dev->name);
+}
+
+static int p4t_bool_validate(struct p4_type *container, void *value, u8 bitstart,
+			     u8 bitend, struct netlink_ext_ack *extack)
+{
+	bool *val = value;
+	int ret;
+
+	ret = p4t_validate_bitpos(bitstart, bitend, 31, 31, extack);
+	if (ret < 0)
+		return ret;
+
+	if (*val == true || *val == false)
+		return 0;
+
+	return -EINVAL;
+}
+
+static int p4t_bool_hread(struct p4_type_mask_shift *mask_shift, void *sval,
+			  void *dval)
+{
+	bool *dst = dval;
+	bool *src = sval;
+
+	*dst = *src;
+
+	return 0;
+}
+
+static int p4t_bool_write(struct p4_type_mask_shift *mask_shift, void *sval,
+			  void *dval)
+{
+	bool *dst = dval;
+	bool *src = sval;
+
+	*dst = *src;
+
+	return 0;
+}
+
+static void p4t_bool_print(const char *prefix, void *val)
+{
+	bool *v = val;
+
+	pr_info("%s %s", prefix, *v ? "true" : "false");
+}
+
 static struct p4_type_ops u8_ops = {
 	.validate_p4t = p4t_u8_validate,
 	.create_bitops = p4t_u8_bitops,
@@ -726,7 +842,12 @@ static struct p4_type_ops u64_ops = {
 	.print = p4t_u64_print,
 };
 
-static struct p4_type_ops u128_ops = {};
+static struct p4_type_ops u128_ops = {
+	.validate_p4t = p4t_u128_validate,
+	.host_read = p4t_u128_hread,
+	.host_write = p4t_u128_write,
+	.print = p4t_u128_print,
+};
 
 static struct p4_type_ops s8_ops = {
 	.validate_p4t = p4t_s8_validate,
@@ -765,6 +886,7 @@ static struct p4_type_ops be32_ops = {
 	.validate_p4t = p4t_be32_validate,
 	.create_bitops = p4t_u32_bitops,
 	.host_read = p4t_be32_hread,
+	.host_write = p4t_be32_write,
 	.print = p4t_be32_print,
 };
 
@@ -776,13 +898,28 @@ static struct p4_type_ops path_ops = {};
 static struct p4_type_ops msecs_ops = {};
 static struct p4_type_ops mac_ops = {};
 static struct p4_type_ops ipv4_ops = {};
+static struct p4_type_ops bool_ops = {
+	.validate_p4t = p4t_bool_validate,
+	.host_read = p4t_bool_hread,
+	.host_write = p4t_bool_write,
+	.print = p4t_bool_print,
+};
+
+static struct p4_type_ops dev_ops = {
+	.validate_p4t = p4t_dev_validate,
+	.host_read = p4t_u32_hread,
+	.host_write = p4t_u32_write,
+	.print = p4t_dev_print,
+};
 
 int p4t_copy(struct p4_type_mask_shift *dst_mask_shift,
 	     struct p4_type_ops *dsto, void *dstv,
 	     struct p4_type_mask_shift *src_mask_shift,
 	     struct p4_type_ops *srco, void *srcv)
 {
-	u64 readval[2] = {0};
+	__uint128_t readval;
+
+	memset(&readval, 0, sizeof(__uint128_t));
 
 	if (src_mask_shift) {
 		srco->host_read(src_mask_shift, srcv, &readval);
@@ -800,19 +937,12 @@ int p4t_cmp(struct p4_type_mask_shift *dst_mask_shift,
 	    struct p4_type_mask_shift *src_mask_shift,
 	    struct p4_type_ops *srco, void *srcv)
 {
-	// How do we compare 2 u128s?
 	u64 a[2] = {0}, b[2] = {0};
 
 	dsto->host_read(dst_mask_shift, dstv, a);
 	srco->host_read(src_mask_shift, srcv, b);
 
-	if (a[0] > b[0])
-		return 1;
-
-	if (a[0] < b[0])
-		return -1;
-
-	return 0;
+	return memcmp(a, b, sizeof(a));
 }
 EXPORT_SYMBOL(p4t_cmp);
 
@@ -834,8 +964,8 @@ static void clean_types_idr(void)
 	}
 }
 
-static int register_p4_type(int typeid, size_t bitsz, const char *t_name,
-			    struct p4_type_ops *ops)
+static int register_p4_type(int typeid, size_t bitsz, size_t container_bitsz,
+			    const char *t_name, struct p4_type_ops *ops)
 {
 	struct p4_type *type;
 	int err;
@@ -849,6 +979,9 @@ static int register_p4_type(int typeid, size_t bitsz, const char *t_name,
 	if (bitsz > P4T_MAX_BITSZ)
 		return -E2BIG;
 
+	if (container_bitsz > P4T_MAX_BITSZ)
+		return -E2BIG;
+
 	type = kzalloc(sizeof(*type), GFP_ATOMIC);
 	if (!type)
 		return -ENOMEM;
@@ -859,6 +992,7 @@ static int register_p4_type(int typeid, size_t bitsz, const char *t_name,
 
 	type->typeid = typeid;
 	type->bitsz = bitsz;
+	type->container_bitsz = container_bitsz;
 	type->ops = ops;
 	strscpy(type->name, t_name, P4T_MAX_STR_SZ);
 
@@ -879,10 +1013,11 @@ static int unregister_p4_type(int typeid)
 }
 
 static inline int register_or_abort(int typeid, size_t bitsz,
+				    size_t container_bitsz,
 				    const char *t_name,
 				    struct p4_type_ops *ops)
 {
-	if (register_p4_type(typeid, bitsz, t_name, ops) < 0) {
+	if (register_p4_type(typeid, bitsz, container_bitsz, t_name, ops) < 0) {
 		pr_warn("Unable to allocate p4 type %s\n", t_name);
 		clean_types_idr();
 		return -1;
@@ -893,48 +1028,54 @@ static inline int register_or_abort(int typeid, size_t bitsz,
 
 int register_p4_types(void)
 {
-	if (register_or_abort(P4T_U8, 8, "u8", &u8_ops) < 0)
+	if (register_or_abort(P4T_U8, 8, 8, "u8", &u8_ops) < 0)
 		return -1;
-	if (register_or_abort(P4T_U16, 16, "u16", &u16_ops) < 0)
+	if (register_or_abort(P4T_U16, 16, 16, "u16", &u16_ops) < 0)
 		return -1;
-	if (register_or_abort(P4T_U32, 32, "u32", &u32_ops) < 0)
+	if (register_or_abort(P4T_U32, 32, 32, "u32", &u32_ops) < 0)
 		return -1;
-	if (register_or_abort(P4T_U64, 64, "u64", &u64_ops) < 0)
+	if (register_or_abort(P4T_U64, 64, 64, "u64", &u64_ops) < 0)
 		return -1;
-	if (register_or_abort(P4T_U128, 128, "u128", &u128_ops) < 0)
-		return -1;
-
-	if (register_or_abort(P4T_S8, 8, "s8", &s8_ops) < 0)
-		return -1;
-	if (register_or_abort(P4T_BE16, 16, "be16", &be16_ops) < 0)
-		return -1;
-	if (register_or_abort(P4T_BE32, 32, "be32", &be32_ops) < 0)
-		return -1;
-	if (register_or_abort(P4T_S16, 16, "s16", &s16_ops) < 0)
-		return -1;
-	if (register_or_abort(P4T_S32, 32, "s32", &s32_ops) < 0)
-		return -1;
-	if (register_or_abort(P4T_S64, 64, "s64", &s64_ops) < 0)
-		return -1;
-	if (register_or_abort(P4T_S128, 128, "s128", &s128_ops) < 0)
+	if (register_or_abort(P4T_U128, 128, 128, "u128", &u128_ops) < 0)
 		return -1;
 
-	if (register_or_abort(P4T_STRING, P4T_MAX_STR_SZ * 4, "string",
+	if (register_or_abort(P4T_S8, 8, 8, "s8", &s8_ops) < 0)
+		return -1;
+	if (register_or_abort(P4T_BE16, 16, 16, "be16", &be16_ops) < 0)
+		return -1;
+	if (register_or_abort(P4T_BE32, 32, 32, "be32", &be32_ops) < 0)
+		return -1;
+	if (register_or_abort(P4T_S16, 16, 16, "s16", &s16_ops) < 0)
+		return -1;
+	if (register_or_abort(P4T_S32, 32, 32, "s32", &s32_ops) < 0)
+		return -1;
+	if (register_or_abort(P4T_S64, 64, 64, "s64", &s64_ops) < 0)
+		return -1;
+	if (register_or_abort(P4T_S128, 128, 128, "s128", &s128_ops) < 0)
+		return -1;
+
+	if (register_or_abort(P4T_STRING, P4T_MAX_STR_SZ * 4,
+			      P4T_MAX_STR_SZ * 4, "string",
 			      &string_ops) < 0)
 		return -1;
-	if (register_or_abort(P4T_NUL_STRING, P4T_MAX_STR_SZ * 4, "nullstr",
+	if (register_or_abort(P4T_NUL_STRING, P4T_MAX_STR_SZ * 4,
+			      P4T_MAX_STR_SZ * 4, "nullstr",
 			      &nullstring_ops) < 0)
 		return -1;
 
-	if (register_or_abort(P4T_FLAG, 32, "flag", &flag_ops) < 0)
+	if (register_or_abort(P4T_FLAG, 32, 32, "flag", &flag_ops) < 0)
 		return -1;
-	if (register_or_abort(P4T_PATH, 0, "path", &path_ops) < 0)
+	if (register_or_abort(P4T_PATH, 0, 0, "path", &path_ops) < 0)
 		return -1;
-	if (register_or_abort(P4T_MSECS, 0, "msecs", &msecs_ops) < 0)
+	if (register_or_abort(P4T_MSECS, 0, 0, "msecs", &msecs_ops) < 0)
 		return -1;
-	if (register_or_abort(P4T_MACADDR, 48, "mac", &mac_ops) < 0)
+	if (register_or_abort(P4T_MACADDR, 48, 64, "mac", &mac_ops) < 0)
 		return -1;
-	if (register_or_abort(P4T_IPV4ADDR, 32, "ipv4", &ipv4_ops) < 0)
+	if (register_or_abort(P4T_IPV4ADDR, 32, 32, "ipv4", &ipv4_ops) < 0)
+		return -1;
+	if (register_or_abort(P4T_BOOL, 32, 32, "bool", &bool_ops) < 0)
+		return -1;
+	if (register_or_abort(P4T_DEV, 32, 32, "dev", &dev_ops) < 0)
 		return -1;
 
 	return 0;
@@ -963,6 +1104,23 @@ int unregister_p4_types(void)
 	unregister_p4_type(P4T_MSECS);
 	unregister_p4_type(P4T_MACADDR);
 	unregister_p4_type(P4T_IPV4ADDR);
+	unregister_p4_type(P4T_BOOL);
+	unregister_p4_type(P4T_DEV);
 
 	return 0;
+}
+
+bool is_unsigned(int id)
+{
+	switch (id) {
+	case P4T_U8:
+	case P4T_U16:
+	case P4T_U32:
+	case P4T_U64:
+	case P4T_U128:
+	case P4T_BOOL:
+		return true;
+	default:
+		return false;
+	}
 }

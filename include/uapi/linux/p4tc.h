@@ -122,6 +122,8 @@ enum {
 	P4T_U128,
 	P4T_S128,
 	P4T_PATH,
+	P4T_BOOL,
+	P4T_DEV,
 	__P4T_MAX,
 };
 #define P4T_MAX (__P4T_MAX - 1)

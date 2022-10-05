@@ -8,6 +8,10 @@
 
 #define P4T_MAX_BITSZ 128
 
+#ifndef CONFIG_64BIT
+	typedef u32 __uint128_t[4];
+#endif
+
 struct p4_type_mask_shift {
 	void *mask;
 	u8 shift;
@@ -33,9 +37,12 @@ struct p4_type_ops {
 struct p4_type {
 	int typeid;
 	size_t bitsz;
+	size_t container_bitsz;
 	struct p4_type_ops *ops;
 	char name[P4T_MAX_STR_SZ];
 };
+
+bool is_unsigned(int id);
 
 int register_p4_types(void);
 int unregister_p4_types(void);
