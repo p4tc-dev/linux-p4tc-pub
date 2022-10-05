@@ -136,6 +136,7 @@ extern const struct p4tc_template_ops p4tc_meta_ops;
 
 struct p4tc_table_key {
 	struct tc_action **key_acts;
+	int              key_num_acts;
 	u32              key_id;
 };
 
@@ -143,8 +144,11 @@ struct p4tc_table_class {
 	struct p4tc_template_common common;
 	struct idr                  tbc_keys_idr;
 	struct idr                  tbc_ti_idr;
+	struct tca_meta_value_ops   tbc_value_ops;
 	struct tc_action            **tbc_preacts;
+	int                         tbc_num_preacts;
 	struct tc_action            **tbc_postacts;
+	int                         tbc_num_postacts;
 	u32                         tbc_count;
 	u32                         tbc_curr_count;
 	u32                         tbc_keysz;
@@ -330,8 +334,13 @@ static inline struct p4tc_skb_ext *p4tc_skb_ext_alloc(struct sk_buff *skb)
 }
 
 struct p4tc_table_class *
-tclass_find(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
-	    const u32 tbc_id, struct netlink_ext_ack *extack);
+tcf_tclass_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
+		      const u32 tbc_id, struct netlink_ext_ack *extack);
+struct p4tc_table_class *tcf_tclass_find_byid(struct p4tc_pipeline *pipeline,
+					      const u32 tbc_id);
+struct p4tc_table_key *tcf_table_key_find(struct p4tc_table_class *tclass,
+					  const u32 key_id);
+void *tcf_tclass_fetch(struct sk_buff *skb, void *tbc_value_ops);
 
 int p4tc_tinst_init(struct p4tc_table_instance *tinst,
 		    struct p4tc_pipeline *pipeline,

@@ -241,6 +241,22 @@ static int tcf_tclass_put(struct net *net, struct p4tc_template_common *tmpl,
 	return ret;
 }
 
+void *tcf_tclass_fetch(struct sk_buff *skb, void *tbc_value_ops)
+{
+	struct p4tc_table_class *tclass;
+
+	tclass = container_of(tbc_value_ops, struct p4tc_table_class,
+			      tbc_value_ops);
+
+	return tclass;
+}
+
+struct p4tc_table_key *
+tcf_table_key_find(struct p4tc_table_class *tclass, const u32 key_id)
+{
+	return idr_find(&tclass->tbc_keys_idr, key_id);
+}
+
 static inline struct p4tc_table_key *
 tcf_table_key_add_1(struct net *net,
 		    struct p4tc_table_class *tclass,
@@ -323,6 +339,7 @@ tcf_table_key_add_1(struct net *net,
 			kfree(key->key_acts);
 			goto free;
 		}
+		key->key_num_acts = ret;
 	} else {
 		NL_SET_ERR_MSG(extack, "Must specify table class key action");
 		ret = -EINVAL;
@@ -391,6 +408,7 @@ tcf_table_key_update_1(struct net *net,
 			kfree(key->key_acts);
 			goto free;
 		}
+		key->key_num_acts = ret;
 	}
 
 	return key;
@@ -443,6 +461,12 @@ err:
 	return ret;
 }
 
+struct p4tc_table_class *tcf_tclass_find_byid(struct p4tc_pipeline *pipeline,
+					      const u32 tbc_id)
+{
+	return idr_find(&pipeline->p_tbc_idr, tbc_id);
+}
+
 static struct p4tc_table_class *
 tclass_find_name(struct nlattr *name_attr, struct p4tc_pipeline *pipeline)
 {
@@ -459,14 +483,14 @@ tclass_find_name(struct nlattr *name_attr, struct p4tc_pipeline *pipeline)
 
 #define SEPARATOR '/'
 struct p4tc_table_class *
-tclass_find(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
+tcf_tclass_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
 	    const u32 tbc_id, struct netlink_ext_ack *extack)
 {
 	struct p4tc_table_class *tclass;
 	int err;
 
 	if (tbc_id) {
-		tclass = idr_find(&pipeline->p_tbc_idr, tbc_id);
+		tclass = tcf_tclass_find_byid(pipeline, tbc_id);
 		if (!tclass) {
 			NL_SET_ERR_MSG(extack,
 				       "Unable to find table class by id");
@@ -545,7 +569,7 @@ tcf_tclass_create(struct net *net, struct nlmsghdr *n,
 	}
 
 	if (tclass_find_name(tb[P4TC_TCLASS_NAME], pipeline) ||
-	    idr_find(&pipeline->p_tbc_idr, tbc_id)) {
+	    tcf_tclass_find_byid(pipeline, tbc_id)) {
 		NL_SET_ERR_MSG(extack, "Table class already exists");
 		ret = -EEXIST;
 		goto out;
@@ -680,6 +704,7 @@ tcf_tclass_create(struct net *net, struct nlmsghdr *n,
 			kfree(tclass->tbc_preacts);
 			goto idr_rm;
 		}
+		tclass->tbc_num_preacts = ret;
 	} else {
 		tclass->tbc_preacts = NULL;
 	}
@@ -699,6 +724,7 @@ tcf_tclass_create(struct net *net, struct nlmsghdr *n,
 			kfree(tclass->tbc_postacts);
 			goto preactions_destroy;
 		}
+		tclass->tbc_num_postacts = ret;
 	} else {
 		ret = -EINVAL;
 		NL_SET_ERR_MSG(extack, "Must specify table class postactions");
@@ -780,6 +806,8 @@ tcf_tclass_create(struct net *net, struct nlmsghdr *n,
 
 	tclass->common.ops = (struct p4tc_template_ops *)&p4tc_tclass_ops;
 
+	tclass->tbc_value_ops.fetch = tcf_tclass_fetch;
+
 	return tclass;
 
 keys_put:
@@ -831,7 +859,7 @@ tcf_tclass_update(struct net *net, struct nlmsghdr *n,
 	if (ret < 0)
 		goto out;
 
-	tclass = tclass_find(pipeline, tb[P4TC_TCLASS_NAME], tbc_id, extack);
+	tclass = tcf_tclass_find_byany(pipeline, tb[P4TC_TCLASS_NAME], tbc_id, extack);
 	if (IS_ERR(tclass))
 		return tclass;
 
@@ -1011,7 +1039,7 @@ tcf_tclass_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	struct p4tc_pipeline *pipeline;
 	struct p4tc_table_class *tclass;
 
-	pipeline = pipeline_find_unsealed(*p_name, pipeid, extack);
+	pipeline = tcf_pipeline_find_byany_unsealed(*p_name, pipeid, extack);
 	if (IS_ERR(pipeline))
 		return (void *)pipeline;
 
@@ -1095,9 +1123,9 @@ static int tcf_tclass_gd(struct net *net, struct sk_buff *skb,
 	struct p4tc_table_class *tclass;
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE) {
-		pipeline = pipeline_find_unsealed(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany_unsealed(*p_name, pipeid, extack);
 	} else {
-		pipeline = pipeline_find(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany(*p_name, pipeid, extack);
 	}
 	if (IS_ERR(pipeline))
 		return PTR_ERR(pipeline);
@@ -1119,7 +1147,7 @@ static int tcf_tclass_gd(struct net *net, struct sk_buff *skb,
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE && (n->nlmsg_flags & NLM_F_ROOT))
 		return tcf_tclass_flush(net, skb, pipeline, extack);
 
-	tclass = tclass_find(pipeline, tb[P4TC_TCLASS_NAME], tbc_id, extack);
+	tclass = tcf_tclass_find_byany(pipeline, tb[P4TC_TCLASS_NAME], tbc_id, extack);
 	if (IS_ERR(tclass))
 		return PTR_ERR(tclass);
 
@@ -1154,7 +1182,7 @@ static int tcf_tclass_dump(struct sk_buff *skb,
 	struct p4tc_pipeline *pipeline;
 
 	if (!ctx->ids[P4TC_PID_IDX]) {
-		pipeline = pipeline_find(*p_name, ids[P4TC_PID_IDX], extack);
+		pipeline = tcf_pipeline_find_byany(*p_name, ids[P4TC_PID_IDX], extack);
 		if (IS_ERR(pipeline))
 			return PTR_ERR(pipeline);
 		ctx->ids[P4TC_PID_IDX] = pipeline->common.p_id;
