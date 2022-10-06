@@ -47,6 +47,9 @@ static void *fetch_result(struct sk_buff *skb, struct tca_meta_operand *op,
 static void *fetch_hdrfield(struct sk_buff *skb, struct tca_meta_operand *op,
 			    struct tcf_metact_info *metact,
 			    struct tcf_result *res);
+static void *fetch_param(struct sk_buff *skb, struct tca_meta_operand *op,
+			 struct tcf_metact_info *metact,
+			 struct tcf_result *res);
 static void *fetch_dev(struct sk_buff *skb, struct tca_meta_operand *op,
 		       struct tcf_metact_info *metact,
 		       struct tcf_result *res);
@@ -394,6 +397,46 @@ int validate_dev_operand(struct net *net, struct tca_meta_operand *kopnd,
 	return 0;
 }
 
+static int validate_param_operand(struct tca_meta_operand *kopnd,
+				  struct netlink_ext_ack *extack)
+{
+	struct p4tc_pipeline *pipeline;
+	struct p4tc_act_param *param;
+	struct p4_type *t;
+	struct p4tc_act *act;
+
+	pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
+	if (!pipeline) {
+		NL_SET_ERR_MSG_MOD(extack, "Unable to find pipeline");
+		return -EINVAL;
+	}
+
+	act = tcf_action_find_byid(pipeline, kopnd->immedv);
+	if (!act) {
+		NL_SET_ERR_MSG_MOD(extack, "Unknown to find action template");
+		return -EINVAL;
+	}
+
+	param = tcf_param_find_byid(&act->params_idr, kopnd->immedv2);
+	if (!param) {
+		NL_SET_ERR_MSG_MOD(extack, "Unknown param id");
+		return -EINVAL;
+	}
+
+	t = p4type_find_byid(param->type);
+	if (t->typeid != kopnd->oper_datatype->typeid) {
+		NL_SET_ERR_MSG_MOD(extack, "Param type mismatch");
+		return -EINVAL;
+	}
+
+	if (t->bitsz != kopnd->oper_datatype->bitsz) {
+		NL_SET_ERR_MSG_MOD(extack, "Param size mismatch");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int validate_res_operand(struct tca_meta_operand *kopnd,
 				 struct netlink_ext_ack *extack)
 {
@@ -580,6 +623,9 @@ static int validate_operand(struct net *net, struct tca_meta_operand *kopnd,
 		break;
 	case METACT_OPER_HDRFIELD:
 		err = validate_hdrfield_operand(kopnd, extack);
+		break;
+	case METACT_OPER_PARAM:
+		err = validate_param_operand(kopnd, extack);
 		break;
 	case METACT_OPER_DEV:
 		err = validate_dev_operand(net, kopnd, extack);
@@ -791,6 +837,11 @@ int validate_SET(struct net *net, struct tca_meta_operand *A,
 	if (A->oper_type == METACT_OPER_RES) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "Operand A cannot be a results field\n");
+		return -EINVAL;
+	}
+
+	if (A->oper_type == METACT_OPER_PARAM) {
+		NL_SET_ERR_MSG_MOD(extack, "Operand A cannot be a param");
 		return -EINVAL;
 	}
 
@@ -1214,6 +1265,8 @@ static int metact_process_opnd(struct nlattr *nla,
 		kopnd->fetch = fetch_result;
 	} else if (uopnd->oper_type == METACT_OPER_HDRFIELD) {
 		kopnd->fetch = fetch_hdrfield;
+	} else if (uopnd->oper_type == METACT_OPER_PARAM) {
+		kopnd->fetch = fetch_param;
 	} else if (uopnd->oper_type == METACT_OPER_DEV) {
 		kopnd->fetch = fetch_dev;
 	} else {
@@ -2035,6 +2088,19 @@ static void *fetch_hdrfield(struct sk_buff *skb, struct tca_meta_operand *op,
 	return op->oper_value_ops->fetch(skb, op->oper_value_ops);
 }
 
+static void *fetch_param(struct sk_buff *skb, struct tca_meta_operand *op,
+			 struct tcf_metact_info *metact,
+			 struct tcf_result *res)
+{
+	struct tcf_p4act_params *params;
+	struct p4tc_act_param *param;
+
+	params = rcu_dereference(metact->params);
+	param = idr_find(&params->params_idr, op->immedv);
+
+	return param->value;
+}
+
 static void *fetch_key(struct sk_buff *skb, struct tca_meta_operand *op,
 		       struct tcf_metact_info *metact,
 		       struct tcf_result *res)
@@ -2161,6 +2227,8 @@ static int metact_PRINT(struct sk_buff *skb, struct tca_meta_operate *op,
 			 pipeline->common.name, tclass->common.name,
 			 A->immedv2);
 		val_t->ops->print(name, val);
+	} else if (A->oper_type == METACT_OPER_PARAM) {
+		val_t->ops->print("param", val);
 	} else if (A->oper_type == METACT_OPER_RES) {
 		if (A->immedv == METACT_RESULTS_HIT)
 			val_t->ops->print("res.hit", val);
