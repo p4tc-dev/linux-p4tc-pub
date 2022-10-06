@@ -253,7 +253,11 @@ param_find_byname(struct idr *params_idr, struct nlattr *name_attr)
 	return NULL;
 }
 
-#define param_find_byid idr_find
+struct p4tc_act_param *tcf_param_find_byid(struct idr *params_idr,
+					   const u32 param_id)
+{
+	return idr_find(params_idr, param_id);
+}
 
 static struct p4tc_act_param *
 param_find(struct idr *params_idr, struct nlattr *name_attr, const u32 param_id,
@@ -263,7 +267,7 @@ param_find(struct idr *params_idr, struct nlattr *name_attr, const u32 param_id,
 	int err;
 
 	if (param_id) {
-		param = param_find_byid(params_idr, param_id);
+		param = tcf_param_find_byid(params_idr, param_id);
 		if (!param) {
 			if (extack)
 				NL_SET_ERR_MSG(extack, "Unable to find param by id");
@@ -409,8 +413,8 @@ int tcf_p4_act_init_params(struct net *net,
 	return 0;
 }
 
-static struct p4tc_act *
-action_find_byname(const char *act_name, struct p4tc_pipeline *pipeline)
+struct p4tc_act *
+tcf_action_find_byname(const char *act_name, struct p4tc_pipeline *pipeline)
 {
 	char full_act_name[ACTPARAMNAMSIZ];
 	struct p4tc_act *act;
@@ -425,18 +429,22 @@ action_find_byname(const char *act_name, struct p4tc_pipeline *pipeline)
 	return NULL;
 }
 
-#define action_find_byid(pipeline, a_id) (idr_find(&((pipeline)->p_act_idr), a_id))
+struct p4tc_act *tcf_action_find_byid(struct p4tc_pipeline *pipeline,
+				      const u32 a_id)
+{
+	return idr_find(&pipeline->p_act_idr, a_id);
+}
 
-static struct p4tc_act *action_find(struct nlattr *act_name_attr,
-				    const u32 a_id,
-				    struct p4tc_pipeline *pipeline,
-				    struct netlink_ext_ack *extack)
+struct p4tc_act *tcf_action_find_byany(struct nlattr *act_name_attr,
+			     const u32 a_id,
+			     struct p4tc_pipeline *pipeline,
+			     struct netlink_ext_ack *extack)
 {
 	struct p4tc_act *act;
 	int err;
 
 	if (a_id) {
-		act = action_find_byid(pipeline, a_id);
+		act = tcf_action_find_byid(pipeline, a_id);
 		if (!act) {
 			NL_SET_ERR_MSG(extack, "Unable to find action by id");
 			err = -ENOENT;
@@ -446,7 +454,7 @@ static struct p4tc_act *action_find(struct nlattr *act_name_attr,
 		if (act_name_attr) {
 			const char *act_name = nla_data(act_name_attr);
 
-			act = action_find_byname(act_name, pipeline);
+			act = tcf_action_find_byname(act_name, pipeline);
 			if (!act) {
 				NL_SET_ERR_MSG(extack, "Action name not found");
 				err = -ENOENT;
@@ -504,7 +512,7 @@ p4_create_param(struct p4tc_act *act, struct nlattr **tb,
 		goto out;
 	}
 
-	if (param_find_byid(&act->params_idr, param_id) ||
+	if (tcf_param_find_byid(&act->params_idr, param_id) ||
 	    param_find_byname(&act->params_idr, tb[P4TC_ACT_PARAMS_NAME])) {
 		NL_SET_ERR_MSG(extack, "Param already exists");
 		ret = -EEXIST;
@@ -689,7 +697,7 @@ idr_destroy:
 }
 
 static const struct nla_policy p4tc_act_policy[P4TC_ACT_MAX + 1] = {
-	[P4TC_ACT_NAME] = { .type = P4T_STRING, .len = IFNAMSIZ },
+	[P4TC_ACT_NAME] = { .type = P4T_STRING, .len = ACTNAMSIZ },
 	[P4TC_ACT_PARMS] = { .type = P4T_NESTED },
 	[P4TC_ACT_OPT] = { .len = sizeof(struct tcf_p4act) },
 	[P4TC_ACT_METACT_LIST] = { .type = P4T_NESTED },
@@ -702,9 +710,9 @@ static int _tcf_act_put(struct net *net, struct p4tc_pipeline *pipeline,
 	unsigned long param_id, tmp;
 	int ret;
 
-	if (act->active) {
+	if (refcount_read(&act->ops.dyn_ref) > 1) {
 		NL_SET_ERR_MSG(extack,
-			       "Unable to delete active action template");
+			       "Unable to delete referenced action template");
 		return -EBUSY;
 	}
 
@@ -855,9 +863,9 @@ static int tcf_act_gd(struct net *net, struct sk_buff *skb, struct nlmsghdr *n,
 	struct p4tc_act *act;
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE)
-		pipeline = pipeline_find_unsealed(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany_unsealed(*p_name, pipeid, extack);
 	else
-		pipeline = pipeline_find(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany(*p_name, pipeid, extack);
 	if (IS_ERR(pipeline))
 		return PTR_ERR(pipeline);
 
@@ -877,7 +885,7 @@ static int tcf_act_gd(struct net *net, struct sk_buff *skb, struct nlmsghdr *n,
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE && (n->nlmsg_flags & NLM_F_ROOT))
 		return tcf_act_flush(skb, net, pipeline, extack);
 
-	act = action_find(tb[P4TC_ACT_NAME], a_id, pipeline, extack);
+	act = tcf_action_find_byany(tb[P4TC_ACT_NAME], a_id, pipeline, extack);
 	if (IS_ERR(act))
 		return PTR_ERR(act);
 
@@ -966,12 +974,12 @@ tcf_act_create(struct net *net, struct nlattr **tb,
 		return ERR_PTR(-EINVAL);
 	}
 
-	if ((action_find_byname(act_name, pipeline))) {
+	if ((tcf_action_find_byname(act_name, pipeline))) {
 		NL_SET_ERR_MSG(extack, "Action already exists with same name");
 		return ERR_PTR(-EEXIST);
 	}
 
-	if (action_find_byid(pipeline, a_id)) {
+	if (tcf_action_find_byid(pipeline, a_id)) {
 		NL_SET_ERR_MSG(extack, "Action already exists with same id");
 		return ERR_PTR(-EEXIST);
 	}
@@ -1093,7 +1101,7 @@ tcf_act_update(struct net *net, struct nlattr **tb,
 	if (ret < 0)
 		goto out;
 
-	act = action_find(tb[P4TC_ACT_NAME], a_id, pipeline, extack);
+	act = tcf_action_find_byany(tb[P4TC_ACT_NAME], a_id, pipeline, extack);
 	if (IS_ERR(act))
 		return act;
 
@@ -1102,7 +1110,7 @@ tcf_act_update(struct net *net, struct nlattr **tb,
 
 	if (act->active) {
 		if (!active) {
-			if (!refcount_dec_if_one(&act->ops.dyn_ref)) {
+			if (refcount_read(&act->ops.dyn_ref) > 1) {
 				NL_SET_ERR_MSG(extack,
 					       "Unable to inactivate referenced action");
 				return ERR_PTR(-EINVAL);
@@ -1160,7 +1168,7 @@ tcf_act_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	struct p4tc_pipeline *pipeline;
 	int ret;
 
-	pipeline = pipeline_find_unsealed(*p_name, pipeid, extack);
+	pipeline = tcf_pipeline_find_byany_unsealed(*p_name, pipeid, extack);
 	if (IS_ERR(pipeline))
 		return (void *)pipeline;
 
@@ -1196,7 +1204,7 @@ static int tcf_act_dump(struct sk_buff *skb,
 	struct p4tc_pipeline *pipeline;
 
 	if (!ctx->ids[P4TC_PID_IDX]) {
-		pipeline = pipeline_find(*p_name, ids[P4TC_PID_IDX], extack);
+		pipeline = tcf_pipeline_find_byany(*p_name, ids[P4TC_PID_IDX], extack);
 		if (IS_ERR(pipeline))
 			return PTR_ERR(pipeline);
 		ctx->ids[P4TC_PID_IDX] = pipeline->common.p_id;

@@ -342,6 +342,17 @@ static inline struct p4tc_skb_ext *p4tc_skb_ext_alloc(struct sk_buff *skb)
 	return p4tc_skb_ext;
 }
 
+struct p4tc_act *tcf_action_find_byid(struct p4tc_pipeline *pipeline,
+				      const u32 a_id);
+struct p4tc_act *
+tcf_action_find_byname(const char *act_name, struct p4tc_pipeline *pipeline);
+struct p4tc_act *tcf_action_find_byany(struct nlattr *act_name_attr,
+			     const u32 a_id,
+			     struct p4tc_pipeline *pipeline,
+			     struct netlink_ext_ack *extack);
+struct p4tc_act_param *tcf_param_find_byid(struct idr *params_idr,
+					   const u32 param_id);
+
 struct p4tc_table_class *
 tcf_tclass_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
 		      const u32 tbc_id, struct netlink_ext_ack *extack);
