@@ -96,7 +96,9 @@ struct p4tc_pipeline {
 	struct idr                  p_parser_idr;
 	struct rcu_head             rcu;
 	struct tc_action            **preacts;
+	int                         num_preacts;
 	struct tc_action            **postacts;
+	int                         num_postacts;
 	u32                         max_rules;
 	u32                         p_meta_offset;
 	refcount_t                  p_ref;
@@ -265,12 +267,15 @@ struct p4tc_header_field {
 extern const struct p4tc_template_ops p4tc_hdrfield_ops;
 
 struct p4tc_pipeline *
-pipeline_find(const char *p_name, const u32 pipeid,
+tcf_pipeline_find_byany(const char *p_name, const u32 pipeid,
 	      struct netlink_ext_ack *extack);
 struct p4tc_pipeline *tcf_pipeline_find_byid(const u32 pipeid);
+struct p4tc_pipeline *tcf_pipeline_get(const char *p_name, const u32 pipeid,
+				       struct netlink_ext_ack *extack);
+void __tcf_pipeline_put(struct p4tc_pipeline *pipeline);
 struct p4tc_pipeline *
-pipeline_find_unsealed(const char *p_name, const u32 pipeid,
-	      struct netlink_ext_ack *extack);
+tcf_pipeline_find_byany_unsealed(const char *p_name, const u32 pipeid,
+				 struct netlink_ext_ack *extack);
 struct p4tc_metadata *
 tcf_meta_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
 		    const u32 m_id, struct netlink_ext_ack *extack);

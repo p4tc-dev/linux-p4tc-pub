@@ -121,7 +121,7 @@ struct p4tc_pipeline *tcf_pipeline_find_byid(const u32 pipeid)
 	return idr_find(&pipeline_idr, pipeid);
 }
 
-static struct p4tc_pipeline *pipeline_find_name(const char *name)
+static struct p4tc_pipeline *tcf_pipeline_find_byname(const char *name)
 {
 	struct p4tc_pipeline *pipeline;
 	unsigned long tmp, id;
@@ -163,7 +163,8 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		goto err;
 	}
 
-	if (pipeline_find_name(p_name) || tcf_pipeline_find_byid(pipeid)) {
+	if (tcf_pipeline_find_byname(p_name) ||
+	    pipeid != P4TC_KERNEL_PIPEID && tcf_pipeline_find_byid(pipeid)) {
 		NL_SET_ERR_MSG(extack, "Pipeline was already created");
 		ret = -EEXIST;
 		goto err;
@@ -221,6 +222,7 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 			kfree(pipeline->preacts);
 			goto idr_rm;
 		}
+		pipeline->num_preacts = ret;
 	} else {
 		NL_SET_ERR_MSG(extack, "Must specify pipeline preactions");
 		ret = -EINVAL;
@@ -242,6 +244,7 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 			kfree(pipeline->postacts);
 			goto preactions_destroy;
 		}
+		pipeline->num_postacts = ret;
 	} else {
 		NL_SET_ERR_MSG(extack, "Must specify pipeline postactions");
 		ret = -EINVAL;
@@ -279,8 +282,8 @@ err:
 }
 
 static struct p4tc_pipeline *
-__pipeline_find(const char *p_name, const u32 pipeid,
-	      struct netlink_ext_ack *extack)
+__tcf_pipeline_find_byany(const char *p_name, const u32 pipeid,
+			  struct netlink_ext_ack *extack)
 {
 	struct p4tc_pipeline *pipeline = NULL;
 	int err;
@@ -294,7 +297,7 @@ __pipeline_find(const char *p_name, const u32 pipeid,
 		}
 	} else {
 		if (p_name) {
-			pipeline = pipeline_find_name(p_name);
+			pipeline = tcf_pipeline_find_byname(p_name);
 			if (!pipeline) {
 				NL_SET_ERR_MSG(extack, "Pipeline name not found");
 				err = -EINVAL;
@@ -310,11 +313,11 @@ out:
 }
 
 struct p4tc_pipeline *
-pipeline_find(const char *p_name, const u32 pipeid,
+tcf_pipeline_find_byany(const char *p_name, const u32 pipeid,
 	      struct netlink_ext_ack *extack)
 {
 	struct p4tc_pipeline *pipeline =
-		__pipeline_find(p_name, pipeid, extack);
+		__tcf_pipeline_find_byany(p_name, pipeid, extack);
 	if (!pipeline) {
 		NL_SET_ERR_MSG(extack, "Must specify pipeline name or id");
 		return ERR_PTR(-EINVAL);
@@ -324,10 +327,34 @@ pipeline_find(const char *p_name, const u32 pipeid,
 }
 
 struct p4tc_pipeline *
-pipeline_find_unsealed(const char *p_name, const u32 pipeid,
-		       struct netlink_ext_ack *extack)
+tcf_pipeline_get(const char *p_name, const u32 pipeid,
+		 struct netlink_ext_ack *extack)
 {
-	struct p4tc_pipeline *pipeline = pipeline_find(p_name, pipeid, extack);
+	struct p4tc_pipeline *pipeline = __tcf_pipeline_find_byany(p_name,
+								   pipeid, extack);
+	if (!pipeline) {
+		NL_SET_ERR_MSG(extack, "Must specify pipeline name or id");
+		return ERR_PTR(-EINVAL);
+	} else if (IS_ERR(pipeline))
+		return pipeline;
+
+	/* Should never happen */
+	WARN_ON(!refcount_inc_not_zero(&pipeline->p_ref));
+
+	return pipeline;
+}
+
+void __tcf_pipeline_put(struct p4tc_pipeline *pipeline)
+{
+	refcount_dec(&pipeline->p_ref);
+}
+
+struct p4tc_pipeline *
+tcf_pipeline_find_byany_unsealed(const char *p_name, const u32 pipeid,
+				 struct netlink_ext_ack *extack)
+{
+	struct p4tc_pipeline *pipeline = tcf_pipeline_find_byany(p_name, pipeid,
+								 extack);
 	if (IS_ERR(pipeline))
 		return pipeline;
 
@@ -351,6 +378,7 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 	int ret = 0;
 	struct nlattr *tb[P4TC_PIPELINE_MAX + 1];
 	struct p4tc_pipeline *pipeline;
+	int num_preacts, num_postacts;
 
 	ret = nla_parse_nested_deprecated(tb, P4TC_PIPELINE_MAX,
 					  nla, tc_pipeline_policy, extack);
@@ -358,7 +386,7 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 	if (ret < 0)
 		goto out;
 
-	pipeline = pipeline_find_unsealed(p_name, pipeid, extack);
+	pipeline = tcf_pipeline_find_byany_unsealed(p_name, pipeid, extack);
 	if (IS_ERR(pipeline))
 		return pipeline;
 
@@ -383,6 +411,7 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 			kfree(preacts);
 			goto out;
 		}
+		num_preacts = ret;
 	}
 
 	if (tb[P4TC_PIPELINE_POSTACTIONS]) {
@@ -399,6 +428,7 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 			kfree(postacts);
 			goto preactions_destroy;
 		}
+		num_postacts = ret;
 	}
 
 	if (tb[P4TC_PIPELINE_STATE]) {
@@ -419,11 +449,13 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 		tcf_action_destroy(pipeline->preacts, TCA_ACT_UNBIND);
 		kfree(pipeline->preacts);
 		pipeline->preacts = preacts;
+		pipeline->num_preacts = num_preacts;
 	}
 	if (postacts) {
 		tcf_action_destroy(pipeline->postacts, TCA_ACT_UNBIND);
 		kfree(pipeline->postacts);
 		pipeline->postacts = postacts;
+		pipeline->num_postacts = num_postacts;
 	}
 
 	return pipeline;
@@ -546,7 +578,7 @@ static int tcf_pipeline_gd(struct net *net, struct sk_buff *skb,
 		return -EOPNOTSUPP;
 	}
 
-	pipeline = pipeline_find(*p_name, pipeid, extack);
+	pipeline = tcf_pipeline_find_byany(*p_name, pipeid, extack);
 	if (IS_ERR(pipeline))
 		return PTR_ERR(pipeline);
 
