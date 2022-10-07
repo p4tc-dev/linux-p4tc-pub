@@ -108,7 +108,7 @@ tinst_find_name(struct nlattr *name_attr, struct p4tc_table_class *tclass)
 }
 
 struct p4tc_table_instance *
-tinst_find(struct nlattr *name_attr,
+tcf_tinst_find_byany(struct nlattr *name_attr,
 	   const u32 ti_id,
 	   struct p4tc_pipeline *pipeline,
 	   struct p4tc_table_class *tclass,
@@ -274,7 +274,7 @@ tcf_tinst_update(struct nlattr **tb, u32 *ids,
 	u32 ti_id = ids[P4TC_TIID_IDX];
 	struct p4tc_table_instance *tinst;
 
-	tinst = tinst_find(tb[P4TC_TINST_NAME], ti_id, pipeline, tclass, extack);
+	tinst = tcf_tinst_find_byany(tb[P4TC_TINST_NAME], ti_id, pipeline, tclass, extack);
 	if (IS_ERR(tinst))
 		return tinst;
 
@@ -311,7 +311,7 @@ tcf_tinst_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	struct p4tc_table_class *tclass;
 	int ret;
 
-	pipeline = pipeline_find_unsealed(*p_name, pipeid, extack);
+	pipeline = tcf_pipeline_find_byany_unsealed(*p_name, pipeid, extack);
 	if (IS_ERR(pipeline))
 		return (void *)pipeline;
 
@@ -320,7 +320,8 @@ tcf_tinst_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	if (ret < 0)
 		return ERR_PTR(ret);
 
-	tclass = tclass_find(pipeline, tb[P4TC_TINST_CLASS], tbc_id, extack);
+	tclass = tcf_tclass_find_byany(pipeline, tb[P4TC_TINST_CLASS], tbc_id,
+				       extack);
 	if (IS_ERR(tclass))
 		return (void *)tclass;
 
@@ -439,9 +440,9 @@ static int tcf_tinst_gd(struct net *net, struct sk_buff *skb,
 	struct p4tc_table_class *tclass;
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE) {
-		pipeline = pipeline_find_unsealed(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany_unsealed(*p_name, pipeid, extack);
 	} else {
-		pipeline = pipeline_find(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany(*p_name, pipeid, extack);
 	}
 	if (IS_ERR(pipeline))
 		return PTR_ERR(pipeline);
@@ -460,14 +461,16 @@ static int tcf_tinst_gd(struct net *net, struct sk_buff *skb,
 	if (!ids[P4TC_PID_IDX])
 		ids[P4TC_PID_IDX] = pipeline->common.p_id;
 
-	tclass = tclass_find(pipeline, tb[P4TC_TINST_CLASS], tbc_id, extack);
+	tclass = tcf_tclass_find_byany(pipeline, tb[P4TC_TINST_CLASS], tbc_id,
+				       extack);
 	if (IS_ERR(tclass))
 		return PTR_ERR(tclass);
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE && (n->nlmsg_flags & NLM_F_ROOT))
 		return tcf_tinst_flush(skb, pipeline, tb, tclass, extack);
 
-	tinst = tinst_find(tb[P4TC_TINST_NAME], ti_id, pipeline, tclass, extack);
+	tinst = tcf_tinst_find_byany(tb[P4TC_TINST_NAME], ti_id, pipeline,
+				     tclass, extack);
 	if (IS_ERR(tinst))
 		return PTR_ERR(tinst);
 
@@ -518,7 +521,7 @@ static int tcf_tinst_dump(struct sk_buff *skb,
 	int ret;
 
 	if (!ctx->ids[P4TC_PID_IDX]) {
-		pipeline = pipeline_find(*p_name, ids[P4TC_PID_IDX], extack);
+		pipeline = tcf_pipeline_find_byany(*p_name, ids[P4TC_PID_IDX], extack);
 		if (IS_ERR(pipeline))
 			return PTR_ERR(pipeline);
 		ctx->ids[P4TC_PID_IDX] = pipeline->common.p_id;
@@ -534,8 +537,8 @@ static int tcf_tinst_dump(struct sk_buff *skb,
 			if (ret < 0)
 				return ret;
 		}
-		tclass = tclass_find(pipeline, tb[P4TC_TINST_CLASS],
-				     ids[P4TC_TBCID_IDX], extack);
+		tclass = tcf_tclass_find_byany(pipeline, tb[P4TC_TINST_CLASS],
+					       ids[P4TC_TBCID_IDX], extack);
 		if (IS_ERR(tclass))
 			return PTR_ERR(tclass);
 		ctx->ids[P4TC_TBCID_IDX] = tclass->tbc_id;

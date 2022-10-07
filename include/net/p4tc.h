@@ -169,7 +169,7 @@ struct p4tc_table_instance {
 };
 
 extern struct p4tc_table_instance *
-tinst_find(struct nlattr *name_attr,
+tcf_tinst_find_byany(struct nlattr *name_attr,
 	   const u32 ti_id,
 	   struct p4tc_pipeline *pipeline,
 	   struct p4tc_table_class *tclass,
