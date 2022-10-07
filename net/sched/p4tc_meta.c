@@ -397,7 +397,7 @@ tcf_meta_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	struct p4tc_pipeline *pipeline;
 	struct p4tc_metadata *meta;
 
-	pipeline = pipeline_find_unsealed(*p_name, pipeid, extack);
+	pipeline = tcf_pipeline_find_byany_unsealed(*p_name, pipeid, extack);
 	if (IS_ERR(pipeline))
 		return (void *)pipeline;
 
@@ -521,9 +521,9 @@ static int tcf_meta_gd(struct net *net, struct sk_buff *skb, struct nlmsghdr *n,
 	struct p4tc_metadata *meta;
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE)
-		pipeline = pipeline_find_unsealed(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany_unsealed(*p_name, pipeid, extack);
 	else
-		pipeline = pipeline_find(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany(*p_name, pipeid, extack);
 	if (IS_ERR(pipeline))
 		return PTR_ERR(pipeline);
 
@@ -585,12 +585,12 @@ static int tcf_meta_dump(struct sk_buff *skb,
 	unsigned long tmp;
 
 	if (!ctx->ids[P4TC_PID_IDX]) {
-		pipeline = pipeline_find(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany(*p_name, pipeid, extack);
 		if (IS_ERR(pipeline))
 			return PTR_ERR(pipeline);
 		ctx->ids[P4TC_PID_IDX] = pipeline->common.p_id;
 	} else {
-		pipeline = pipeline_find_id(ctx->ids[P4TC_PID_IDX]);
+		pipeline = tcf_pipeline_find_byid(ctx->ids[P4TC_PID_IDX]);
 	}
 
 	m_id = ctx->ids[P4TC_MID_IDX];
