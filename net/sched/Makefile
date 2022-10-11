@@ -10,7 +10,7 @@ obj-$(CONFIG_NET_SCHED)		+= sch_api.o sch_blackhole.o
 obj-$(CONFIG_NET_CLS)		+= cls_api.o
 obj-$(CONFIG_NET_P4_TC)		+= p4_types.o p4tc_pipeline.o p4tc_tmpl_api.o p4tc_meta.o \
 				   p4tc_tclass.o p4tc_tinst.o p4tc_parser_api.o \
-				   p4tc_hdrfield.o p4tc_action.o p4tc_tbl_api.o
+				   p4tc_hdrfield.o p4tc_tbl_api.o
 obj-$(CONFIG_NET_CLS_ACT)	+= act_api.o
 obj-$(CONFIG_NET_ACT_POLICE)	+= act_police.o
 obj-$(CONFIG_NET_ACT_GACT)	+= act_gact.o
@@ -28,7 +28,7 @@ obj-$(CONFIG_NET_ACT_BPF)	+= act_bpf.o
 obj-$(CONFIG_NET_ACT_CONNMARK)	+= act_connmark.o
 obj-$(CONFIG_NET_ACT_CTINFO)	+= act_ctinfo.o
 obj-$(CONFIG_NET_ACT_SKBMOD)	+= act_skbmod.o
-obj-$(CONFIG_NET_ACT_METACT)	+= act_metact.o
+obj-$(CONFIG_NET_ACT_METACT)	+= act_metact.o p4tc_action.o
 obj-$(CONFIG_NET_ACT_IFE)	+= act_ife.o
 obj-$(CONFIG_NET_IFE_SKBMARK)	+= act_meta_mark.o
 obj-$(CONFIG_NET_IFE_SKBPRIO)	+= act_meta_skbprio.o

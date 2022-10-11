@@ -7,6 +7,23 @@
 #include <linux/rtnetlink.h>
 #include <uapi/linux/tc_act/tc_metact.h>
 #include <net/p4tc.h>
+#include <net/tc_act/p4tc.h>
+
+int tcf_p4_metact_init(struct net *net, struct nlattr *nla,
+		       struct nlattr *est, struct tc_action **a,
+		       struct tcf_proto *tp, struct tc_action_ops *a_o,
+		       u32 flags, struct netlink_ext_ack *extack);
+int tcf_metact_parse_cmds(struct net *net, struct list_head *meta_operations,
+			  struct nlattr *nla, bool ovr,
+			  struct netlink_ext_ack *extack);
+
+int tcf_metact_act(struct sk_buff *skb, const struct tc_action *a,
+		   struct tcf_result *res);
+int tcf_metact_dump(struct sk_buff *skb, struct tc_action *a, int bind,
+		    int ref);
+void tcf_metact_cleanup(struct tc_action *a);
+int fillup_metact_cmds(struct sk_buff *skb, struct list_head *meta_ops);
+void release_ope_list(struct list_head *entries);
 
 struct tca_meta_operate {
 	struct list_head meta_operations;
@@ -60,6 +77,10 @@ struct tcf_metact_info {
 	struct tc_action common;
 	/* list of operations */
 	struct list_head meta_operations;
+	/* Params IDR reference passed during runtime */
+	struct tcf_p4act_params __rcu *params;
+	u32 p_id;
 };
 #define to_metact(a) ((struct tcf_metact_info *)a)
+
 #endif /* __NET_TC_METACT_H */

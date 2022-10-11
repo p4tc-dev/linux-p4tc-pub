@@ -112,7 +112,7 @@ static int copy_u2k_operand(struct tca_u_meta_operand *uopnd,
 }
 
 /* under spin lock */
-static int fillup_metact_cmds(struct sk_buff *skb, struct tcf_metact_info *m)
+int fillup_metact_cmds(struct sk_buff *skb, struct list_head *meta_operations)
 {
 	unsigned char *b = skb_tail_pointer(skb);
 	struct tca_u_meta_operand oper = { };
@@ -121,7 +121,9 @@ static int fillup_metact_cmds(struct sk_buff *skb, struct tcf_metact_info *m)
 	struct tca_meta_operate *entry;
 	struct nlattr *nest_op, *nest_opnd;
 
-	list_for_each_entry(entry, &m->meta_operations, meta_operations) {
+	list_for_each_entry(entry, meta_operations, meta_operations) {
+		if (!entry)
+			continue;
 		nest_op = nla_nest_start_noflag(skb, i);
 
 		op.op_type = entry->op_id;
@@ -196,7 +198,7 @@ nla_put_failure:
 	return -1;
 }
 
-static void release_ope_list(struct list_head *entries)
+void release_ope_list(struct list_head *entries)
 {
 	struct tca_meta_operate *entry, *e;
 
@@ -403,6 +405,23 @@ static int validate_res_operand(struct tca_meta_operand *kopnd,
 	return -EINVAL;
 }
 
+static struct p4_type_mask_shift *
+create_metadata_bitops(struct tca_meta_operand *kopnd,
+		       struct p4tc_metadata *meta, struct p4_type *t,
+		       struct netlink_ext_ack *extack)
+{
+	struct p4_type_mask_shift *mask_shift;
+	u8 bitstart, bitend;
+	u32 bitsz;
+
+	bitstart = meta->m_startbit + kopnd->oper_bitstart;
+	bitend = bitstart + kopnd->oper_bitend;
+	bitsz = meta->m_endbit - meta->m_startbit + 1;
+	mask_shift = t->ops->create_bitops(bitsz, bitstart, bitend,
+					   extack);
+	return mask_shift;
+}
+
 static int __validate_metadata_operand(struct tca_meta_operand *kopnd,
 				       struct netlink_ext_ack *extack)
 {
@@ -458,21 +477,29 @@ static int __validate_metadata_operand(struct tca_meta_operand *kopnd,
 
 	if (container_type->ops->create_bitops) {
 		struct p4_type_mask_shift *mask_shift;
-		u8 bitstart, bitend;
 
-		bitstart = meta->m_startbit + kopnd->oper_bitstart;
-		bitend = bitstart + kopnd->oper_bitend;
-		mask_shift = container_type->ops->create_bitops(bitsz,
-								bitstart,
-								bitend,
-								extack);
+		mask_shift = create_metadata_bitops(kopnd, meta,
+						    container_type, extack);
 		if (IS_ERR(mask_shift))
 			return -EINVAL;
+
 		kopnd->oper_mask_shift = mask_shift;
 	}
 	kopnd->oper_value_ops = &meta->m_value_ops;
 
 	return 0;
+}
+
+static struct p4_type_mask_shift *
+create_constant_bitops(struct tca_meta_operand *kopnd, struct p4_type *t,
+		       struct netlink_ext_ack *extack)
+{
+	struct p4_type_mask_shift *mask_shift;
+
+	mask_shift = t->ops->create_bitops(t->bitsz,
+					   kopnd->oper_bitstart,
+					   kopnd->oper_bitend, extack);
+	return mask_shift;
 }
 
 static int validate_large_operand(struct tca_meta_operand *kopnd,
@@ -487,11 +514,10 @@ static int validate_large_operand(struct tca_meta_operand *kopnd,
 	if (t->ops->create_bitops) {
 		struct p4_type_mask_shift *mask_shift;
 
-		mask_shift = t->ops->create_bitops(t->bitsz,
-						   kopnd->oper_bitstart,
-						   kopnd->oper_bitend, extack);
+		mask_shift = create_constant_bitops(kopnd, t, extack);
 		if (IS_ERR(mask_shift))
 			return -EINVAL;
+
 		kopnd->oper_mask_shift = mask_shift;
 	}
 
@@ -511,14 +537,10 @@ static int validate_immediate_operand(struct tca_meta_operand *kopnd,
 	if (t->ops->create_bitops) {
 		struct p4_type_mask_shift *mask_shift;
 
-		mask_shift = t->ops->create_bitops(t->bitsz,
-						   kopnd->oper_bitstart,
-						   kopnd->oper_bitend, extack);
-		if (IS_ERR(mask_shift)) {
-			NL_SET_ERR_MSG_MOD(extack,
-					   "constant create_bitops failed");
+		mask_shift = create_constant_bitops(kopnd, t, extack);
+		if (IS_ERR(mask_shift))
 			return -EINVAL;
-		}
+
 		kopnd->oper_mask_shift = mask_shift;
 	}
 
@@ -1415,6 +1437,363 @@ static const struct nla_policy metact_policy[TCA_METACT_MAX + 1] = {
 	[TCA_METACT_LIST] = {.type = NLA_NESTED },	/*Max=TCA_METACT_LIST_MAX */
 };
 
+static void metact_ops_pass_to_list(struct tca_meta_operate **oplist,
+				    struct list_head *meta_operations)
+{
+	int i;
+
+	for (i = 0; i < TCA_METACT_LIST_MAX && oplist[i]; i++) {
+		struct tca_meta_operate *ope = oplist[i];
+
+		list_add_tail(&ope->meta_operations, meta_operations);
+	}
+}
+
+static void metact_ops_del_list(struct list_head *meta_operations)
+{
+	struct tca_meta_operate *ope, *tmp;
+
+	list_for_each_entry_safe(ope, tmp, meta_operations, meta_operations) {
+		list_del(&ope->meta_operations);
+		kfree_opentry(ope);
+	}
+}
+
+static int metact_copy_opnd(struct tca_meta_operand **new_kopnd,
+			    struct tca_meta_operand *kopnd,
+			    struct netlink_ext_ack *extack)
+{
+	struct p4_type_mask_shift *mask_shift = NULL;
+	struct tca_meta_operand *_new_kopnd;
+
+	_new_kopnd = kzalloc(sizeof(*_new_kopnd), GFP_KERNEL);
+	if (!_new_kopnd)
+		return -ENOMEM;
+
+	memcpy(_new_kopnd, kopnd, sizeof(*_new_kopnd));
+
+	if (kopnd->oper_type == METACT_OPER_CONST) {
+		mask_shift = create_constant_bitops(kopnd,
+						    kopnd->oper_datatype,
+						    extack);
+		if (IS_ERR(mask_shift))
+			return -EINVAL;
+	} else if (kopnd->oper_type == METACT_OPER_META) {
+		struct p4tc_pipeline *pipeline;
+		struct p4tc_metadata *meta;
+
+		pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
+		if (!pipeline)
+			return -EINVAL;
+
+		meta = tcf_meta_find_byid(pipeline, kopnd->immedv);
+		if (!meta)
+			return -EINVAL;
+
+		mask_shift = create_metadata_bitops(kopnd, meta,
+						    kopnd->oper_datatype,
+						    extack);
+		if (IS_ERR(mask_shift))
+			return -EINVAL;
+	}
+
+	_new_kopnd->path_or_value = kzalloc(kopnd->path_or_value_sz,
+					    GFP_KERNEL);
+	if (!_new_kopnd->path_or_value)
+		return -ENOMEM;
+	memcpy(_new_kopnd->path_or_value, kopnd->path_or_value,
+	       kopnd->path_or_value_sz);
+
+	_new_kopnd->oper_mask_shift = mask_shift;
+
+	*new_kopnd = _new_kopnd;
+
+	return 0;
+}
+
+static int metact_copy_ops(struct tca_meta_operate **new_op_entry,
+			   struct tca_meta_operate *op_entry,
+			   struct netlink_ext_ack *extack)
+{
+	struct tca_meta_operand *opndA = NULL;
+	struct tca_meta_operand *opndB = NULL;
+	struct tca_meta_operand *opndC = NULL;
+	struct tca_meta_operate *_new_op_entry;
+	int err;
+
+	_new_op_entry = kzalloc(sizeof(*_new_op_entry), GFP_KERNEL);
+	if (!_new_op_entry)
+		return -ENOMEM;
+
+	if (op_entry->opA) {
+		err = metact_copy_opnd(&opndA, op_entry->opA, extack);
+		if (err < 0)
+			goto set_results;
+	}
+
+	if (op_entry->opB) {
+		err = metact_copy_opnd(&opndB, op_entry->opB, extack);
+		if (err < 0)
+			goto set_results;
+	}
+
+	if (op_entry->opC) {
+		err = metact_copy_opnd(&opndC, op_entry->opC, extack);
+		if (err < 0)
+			goto set_results;
+	}
+
+	_new_op_entry->op_id = op_entry->op_id;
+	_new_op_entry->op_flags = op_entry->op_flags;
+	_new_op_entry->op_cnt = op_entry->op_cnt;
+
+	_new_op_entry->ctl1 = op_entry->ctl1;
+	_new_op_entry->ctl2 = op_entry->ctl2;
+	_new_op_entry->cmd = op_entry->cmd;
+
+set_results:
+	*new_op_entry = _new_op_entry;
+	_new_op_entry->opA = opndA;
+	_new_op_entry->opB = opndB;
+	_new_op_entry->opC = opndC;
+
+	return err;
+}
+
+static int tcf_metact_copy_cmds(struct list_head *new_meta_operations,
+				struct list_head *meta_operations,
+				bool delete_old, struct netlink_ext_ack *extack)
+{
+	struct tca_meta_operate *oplist[TCA_METACT_LIST_MAX] = {NULL};
+	int i = 0;
+	struct tca_meta_operate *op;
+	int err;
+
+	if (delete_old)
+		metact_ops_del_list(new_meta_operations);
+
+	list_for_each_entry(op, meta_operations, meta_operations) {
+		err = metact_copy_ops(&oplist[i], op, extack);
+		if (err < 0)
+			goto free_oplist;
+
+		i++;
+	}
+
+	metact_ops_pass_to_list(oplist, new_meta_operations);
+
+	return 0;
+
+free_oplist:
+	kfree_tmp_oplist(oplist);
+	return err;
+}
+
+#define SEPARATOR "/"
+
+int tcf_p4_metact_init(struct net *net, struct nlattr *nla,
+		       struct nlattr *est, struct tc_action **a,
+		       struct tcf_proto *tp, struct tc_action_ops *a_o,
+		       u32 flags, struct netlink_ext_ack *extack)
+{
+	bool bind = flags & TCA_ACT_FLAGS_BIND;
+	struct tcf_chain *goto_ch = NULL;
+	bool exists = false;
+	int ret = 0;
+	struct nlattr *tb[P4TC_ACT_MAX + 1];
+	char *act_name_clone, *act_name;
+	struct tcf_p4act_params *params;
+	struct p4tc_pipeline *pipeline;
+	struct tcf_metact_info *p;
+	struct tc_action_net *tn;
+	struct tc_act_dyna *parm;
+	struct p4tc_act *act;
+	char *p_name;
+	u32 index;
+	int err;
+
+	if (!nla) {
+		pr_err("Has no nla\n");
+		return -EINVAL;
+	}
+
+	err = nla_parse_nested_deprecated(tb, P4TC_ACT_MAX, nla, NULL,
+					  NULL);
+	if (err < 0) {
+		pr_err("Failed parsing\n");
+		return err;
+	}
+
+	if (!tb[P4TC_ACT_OPT]) {
+		pr_err("Has no ACT_OPT\n");
+		return -EINVAL;
+	}
+
+	parm = nla_data(tb[P4TC_ACT_OPT]);
+	index = parm->index;
+
+	act_name_clone = act_name = kstrdup(a_o->kind, GFP_KERNEL);
+	if (!act_name)
+		return -ENOMEM;
+
+	p_name = strsep(&act_name, SEPARATOR);
+	pipeline = tcf_pipeline_find_byany(p_name, 0, NULL);
+	act = tcf_action_find_byname(act_name, pipeline);
+	if (!act->active) {
+		pr_err("Is not active\n");
+		kfree(act_name_clone);
+		return -EINVAL;
+	}
+
+	kfree(act_name_clone);
+
+	tn = net_generic(net, a_o->net_id);
+	err = tcf_idr_check_alloc(tn, &index, a, bind);
+	if (err < 0)
+		return err;
+
+	exists = err;
+	if (!exists) {
+		ret = tcf_idr_create(tn, index, est, a,
+				     a_o, bind, false, flags);
+		if (ret) {
+			tcf_idr_cleanup(tn, index);
+			return ret;
+		}
+
+		/* dyn_ref here should never be 0, because if we are here, it
+		 * means that a template action of this kind was created. Thus
+		 * dyn_ref should be at least 1. Also since this operation and
+		 * others that add or delete action templates run with
+		 * rtnl_lock held, we cannot do this op and a deletion op in
+		 * parallel.
+		 */
+		WARN_ON(!refcount_inc_not_zero(&a_o->dyn_ref));
+		/* p_ref here should never be 0, because if we are here, it
+		 * means that a template action of this kind was created. Thus
+		 * p_ref should be at least 1. Also since this operation and
+		 * others that add or delete pipelines and action templates run
+		 * with rtnl_lock held, we cannot do this op and a deletion op
+		 * in parallel.
+		 */
+		WARN_ON(!refcount_inc_not_zero(&pipeline->p_ref));
+		ret = ACT_P_CREATED;
+	} else {
+		if (bind) /* dont override defaults */
+			return 0;
+		if (!(flags & TCA_ACT_FLAGS_REPLACE)) {
+			tcf_idr_cleanup(tn, index);
+			return -EEXIST;
+		}
+	}
+
+	p = to_metact(*a);
+	p->p_id = pipeline->common.p_id;
+	err = tcf_action_check_ctrlact(parm->action, tp, &goto_ch, extack);
+	if (err < 0)
+		goto release_idr;
+
+	params = kzalloc(sizeof(*params), GFP_KERNEL);
+	if (!params) {
+		err = -ENOMEM;
+		goto release_idr;
+	}
+
+	INIT_LIST_HEAD(&p->meta_operations);
+	idr_init(&params->params_idr);
+	if (tb[P4TC_ACT_PARMS]) {
+		err = tcf_p4_act_init_params(net, params, act,
+					     tb[P4TC_ACT_PARMS], extack);
+		if (err < 0)
+			goto release_params;
+	} else {
+		if (!idr_is_empty(&act->params_idr)) {
+			pr_err("Must specify action parameters\n");
+			err = -EINVAL;
+			goto release_params;
+		}
+	}
+
+	p->p_id = pipeline->common.p_id;
+
+	if (exists)
+		spin_lock_bh(&p->tcf_lock);
+	goto_ch = tcf_action_set_ctrlact(*a, parm->action, goto_ch);
+
+	err = tcf_metact_copy_cmds(&p->meta_operations, &act->meta_operations,
+				   exists, extack);
+	if (err < 0)
+		goto release_params;
+
+	params = rcu_replace_pointer(p->params, params, 1);
+	if (exists)
+		spin_unlock_bh(&p->tcf_lock);
+
+	if (goto_ch)
+		tcf_chain_put_by_act(goto_ch);
+	if (params)
+		call_rcu(&params->rcu, tcf_p4_act_params_destroy_rcu);
+
+	return ret;
+
+release_params:
+	tcf_p4_act_params_destroy(params);
+
+release_idr:
+	tcf_idr_release(*a, bind);
+	return err;
+}
+
+int tcf_metact_parse_cmds(struct net *net,
+			  struct list_head *meta_operations,
+			  struct nlattr *nla, bool ovr,
+			  struct netlink_ext_ack *extack)
+{
+	/* XXX: oplist and oplist_attr
+	 * could bloat the stack depending on TCA_METACT_LIST_MAX
+	 */
+	struct tca_meta_operate *oplist[TCA_METACT_LIST_MAX] = {NULL};
+	struct nlattr *oplist_attr[TCA_METACT_LIST_MAX + 1];
+	int err;
+	int i;
+
+	err = nla_parse_nested_deprecated(oplist_attr, TCA_METACT_LIST_MAX,
+					  nla, NULL, extack);
+	if (err < 0)
+		return err;
+
+	for (i = 1; i < TCA_METACT_LIST_MAX && oplist_attr[i]; i++) {
+		struct tca_meta_operate *o = oplist[i - 1];
+
+		err =
+		    metact_process_ops(net, oplist_attr[i], &oplist[i - 1],
+				       extack);
+		o = oplist[i - 1];
+		if (err) {
+			kfree_tmp_oplist(oplist);
+
+			if (err == METACT_POLICY)
+				err = -EINVAL;
+
+			return err;
+		}
+	}
+
+	err = metact_brn_validate(oplist, i, extack);
+	if (err < 0) {
+		kfree_tmp_oplist(oplist);
+		return err;
+	}
+
+	if (ovr)
+		metact_ops_del_list(meta_operations);
+
+	/*XXX: At this point we have all the cmds and they are valid */
+	metact_ops_pass_to_list(oplist, meta_operations);
+
+	return 0;
+}
+
 static unsigned int metact_net_id;
 static struct tc_action_ops act_metact_ops;
 
@@ -1424,17 +1803,14 @@ static int tcf_metact_init(struct net *net, struct nlattr *nla,
 			   struct netlink_ext_ack *extack)
 {
 	struct tc_action_net *tn = net_generic(net, metact_net_id);
-	struct tca_meta_operate *oplist[TCA_METACT_LIST_MAX] = { };
 	bool bind = flags & TCA_ACT_FLAGS_BIND;
 	bool ovr = flags & TCA_ACT_FLAGS_REPLACE;
 	struct tcf_chain *goto_ch = NULL;
 	int err = 0, ret = 0;
-	struct nlattr *oplist_attr[TCA_METACT_LIST_MAX + 1];
 	struct nlattr *tb[TCA_METACT_MAX + 1];
 	struct tcf_metact_info *m;
 	struct tc_metact *parm;
 	u32 index;
-	int i;
 
 	if (!nla) {
 		NL_SET_ERR_MSG_MOD(extack, "attributes MUST be provided");
@@ -1509,40 +1885,8 @@ static int tcf_metact_init(struct net *net, struct nlattr *nla,
 		return -EINVAL;
 	}
 
-	err = nla_parse_nested_deprecated(oplist_attr, TCA_METACT_LIST_MAX,
-					  tb[TCA_METACT_LIST], NULL, extack);
-	if (err < 0) {
-		tcf_idr_release(*a, bind);
-		return err;
-	}
-
-	for (i = 1; i < TCA_METACT_LIST_MAX && oplist_attr[i]; i++) {
-		struct tca_meta_operate *o = oplist[i - 1];
-
-		err =
-		    metact_process_ops(net, oplist_attr[i], &oplist[i - 1],
-				       extack);
-		o = oplist[i - 1];
-		if (err) {
-			kfree_tmp_oplist(oplist);
-			tcf_idr_release(*a, bind);
-
-			if (err == METACT_POLICY)
-				err = -EINVAL;
-
-			return err;
-		}
-	}
-
-	err = metact_brn_validate(oplist, i, extack);
-	if (err < 0) {
-		kfree_tmp_oplist(oplist);
-		tcf_idr_release(*a, bind);
-		return err;
-	}
-
 	err = tcf_action_check_ctrlact(parm->action, tp, &goto_ch, extack);
-	if (err < 0) {
+	if (err < 0) {		//XXX: extack?
 		tcf_idr_release(*a, bind);
 		return err;
 	}
@@ -1550,11 +1894,11 @@ static int tcf_metact_init(struct net *net, struct nlattr *nla,
 	if (ovr)
 		spin_lock_bh(&m->tcf_lock);
 
-	/*XXX: At this point we have all the cmds and they are valid */
-	for (i = 0; i < TCA_METACT_LIST_MAX && oplist[i]; i++) {
-		struct tca_meta_operate *ope = oplist[i];
-
-		list_add_tail(&ope->meta_operations, &m->meta_operations);
+	err = tcf_metact_parse_cmds(net, &m->meta_operations,
+				    tb[TCA_METACT_LIST], ovr, extack);
+	if (err < 0) {
+		tcf_idr_release(*a, bind);
+		return err;
 	}
 
 	goto_ch = tcf_action_set_ctrlact(*a, parm->action, goto_ch);
@@ -1567,8 +1911,8 @@ static int tcf_metact_init(struct net *net, struct nlattr *nla,
 	return ret;
 }
 
-static int tcf_metact_dump(struct sk_buff *skb, struct tc_action *a, int bind,
-			   int ref)
+int tcf_metact_dump(struct sk_buff *skb, struct tc_action *a, int bind,
+		    int ref)
 {
 	unsigned char *b = skb_tail_pointer(skb);
 	struct tcf_metact_info *metact = to_metact(a);
@@ -1577,8 +1921,13 @@ static int tcf_metact_dump(struct sk_buff *skb, struct tc_action *a, int bind,
 		.refcnt = refcount_read(&metact->tcf_refcnt) - ref,
 		.bindcnt = atomic_read(&metact->tcf_bindcnt) - bind,
 	};
+	int i = 1;
+	struct tcf_p4act_params *params;
+	struct p4tc_act_param *parm;
+	struct nlattr *nest_parms;
 	struct nlattr *nest;
 	struct tcf_t t;
+	int id;
 
 	spin_lock_bh(&metact->tcf_lock);
 
@@ -1587,13 +1936,57 @@ static int tcf_metact_dump(struct sk_buff *skb, struct tc_action *a, int bind,
 		goto nla_put_failure;
 
 	nest = nla_nest_start_noflag(skb, TCA_METACT_LIST);
-	if (fillup_metact_cmds(skb, metact))
+	if (fillup_metact_cmds(skb, &metact->meta_operations))
 		goto nla_put_failure;
 	nla_nest_end(skb, nest);
+
+	if (nla_put_string(skb, TCA_METACT_ACT_NAME, a->ops->kind))
+		goto nla_put_failure;
 
 	tcf_tm_dump(&t, &metact->tcf_tm);
 	if (nla_put_64bit(skb, TCA_METACT_TM, sizeof(t), &t, TCA_METACT_PAD))
 		goto nla_put_failure;
+
+	nest_parms = nla_nest_start_noflag(skb, TCA_METACT_ACT_PARMS);
+	if (!nest_parms)
+		goto nla_put_failure;
+
+	params = rcu_dereference(metact->params);
+	if (params) {
+		idr_for_each_entry(&params->params_idr, parm, id) {
+			struct p4tc_act_param_ops *op;
+			struct nlattr *nest_count;
+
+			nest_count = nla_nest_start_noflag(skb, i);
+			if (!nest_count)
+				goto nla_put_failure;
+
+			if (nla_put_string(skb, P4TC_ACT_PARAMS_NAME, parm->name))
+				goto nla_put_failure;
+
+			if (nla_put_u32(skb, P4TC_ACT_PARAMS_ID, parm->id))
+				goto nla_put_failure;
+
+			op = (struct p4tc_act_param_ops *)&param_ops[parm->type];
+			if (op->dump_value) {
+				if (op->dump_value(skb, op, parm) < 0)
+					goto nla_put_failure;
+			} else {
+				struct p4_type *type;
+
+				type = p4type_find_byid(parm->type);
+				if (generic_dump_param_value(skb, type, parm))
+					goto nla_put_failure;
+			}
+
+			if (nla_put_u32(skb, P4TC_ACT_PARAMS_TYPE, parm->type))
+				goto nla_put_failure;
+
+			nla_nest_end(skb, nest_count);
+			i++;
+		}
+	}
+	nla_nest_end(skb, nest_parms);
 
 	spin_unlock_bh(&metact->tcf_lock);
 
@@ -1897,8 +2290,8 @@ static int metact_TBLAPP(struct sk_buff *skb, struct tca_meta_operate *op,
 			       tclass->tbc_num_postacts, res);
 }
 
-static int tcf_metact_act(struct sk_buff *skb, const struct tc_action *a,
-			  struct tcf_result *res)
+int tcf_metact_act(struct sk_buff *skb, const struct tc_action *a,
+		   struct tcf_result *res)
 {
 	struct tcf_metact_info *metact = to_metact(a);
 	int ret = 0;
@@ -1929,8 +2322,12 @@ static int tcf_metact_act(struct sk_buff *skb, const struct tc_action *a,
 	if (ret == TC_ACT_SHOT)
 		tcf_action_inc_drop_qstats(&metact->common);
 
+	if (ret == TC_ACT_STOLEN ||
+	    ret == TC_ACT_TRAP)
+		ret = TC_ACT_CONSUMED;
+
 	if (ret == TC_ACT_OK)
-		return metact->tcf_action;
+		ret = metact->tcf_action;
 
 	return ret;
 }
@@ -1955,12 +2352,26 @@ static int tcf_metact_search(struct net *net, struct tc_action **a, u32 index)
 	return ret;
 }
 
-static void tcf_metact_cleanup(struct tc_action *a)
+void tcf_metact_cleanup(struct tc_action *a)
 {
+	struct tc_action_ops *ops = (struct tc_action_ops *)a->ops;
 	struct tcf_metact_info *m = to_metact(a);
+	struct tcf_p4act_params *params;
+	struct p4tc_pipeline *pipeline;
+
+	pipeline = m->p_id ? tcf_pipeline_find_byid(m->p_id) : NULL;
+	params = rcu_dereference_protected(m->params, 1);
+
+	if (refcount_read(&ops->dyn_ref) > 1)
+		refcount_dec(&ops->dyn_ref);
+	if (pipeline)
+		WARN_ON(!refcount_dec_not_one(&pipeline->p_ref));
 
 	spin_lock_bh(&m->tcf_lock);
 	release_ope_list(&m->meta_operations);
+	/* XXX: Need to do this correctly */
+	if (params)
+		call_rcu(&params->rcu, tcf_p4_act_params_destroy_rcu);
 	spin_unlock_bh(&m->tcf_lock);
 }
 

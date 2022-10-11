@@ -220,6 +220,7 @@ struct p4tc_act_param_ops {
 struct p4tc_act {
 	struct p4tc_template_common common;
 	struct tc_action_ops        ops;
+	struct list_head            meta_operations;
 	struct pernet_operations    *p4_net_ops;
 	struct idr                  params_idr;
 	struct tcf_exts             exts;
@@ -377,6 +378,30 @@ struct p4tc_header_field *tcf_hdrfield_find_byid(struct p4tc_parser *parser,
 						 const u32 hdrfield_id);
 bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
 				struct p4tc_header_field *hdrfield);
+
+/* Will be removed from here once we pass all to metact */
+int p4tc_init_net_ops(struct net *net, unsigned int id);
+void p4tc_exit_net_ops(struct list_head *net_list, unsigned int id);
+int tcf_p4_act_init_params(struct net *net,
+			   struct tcf_p4act_params *params,
+			   struct p4tc_act *act,
+			   struct nlattr *nla, struct netlink_ext_ack *extack);
+void tcf_p4_act_params_destroy(struct tcf_p4act_params *params);
+int p4_act_init(struct p4tc_act *act, struct nlattr *nla,
+		struct p4tc_act_param *params[],
+		struct netlink_ext_ack *extack);
+void p4_put_many_params(struct idr *params_idr,
+			struct p4tc_act_param *params[],
+			int params_count);
+void tcf_p4_act_params_destroy_rcu(struct rcu_head *head);
+int p4_act_init_params(struct p4tc_act *act,
+		       struct nlattr *nla,
+		       struct p4tc_act_param *params[],
+		       bool update,
+		       struct netlink_ext_ack *extack);
+extern const struct p4tc_act_param_ops param_ops[P4T_MAX + 1];
+int generic_dump_param_value(struct sk_buff *skb, struct p4_type *type,
+			     struct p4tc_act_param *param);
 
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
 #define to_meta(t) ((struct p4tc_metadata *)t)
