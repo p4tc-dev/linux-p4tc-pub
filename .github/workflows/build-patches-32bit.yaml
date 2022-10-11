@@ -25,7 +25,10 @@ jobs:
           ./scripts/config --enable NET_CLS
           ./scripts/config --enable NET_CLS_ACT
           ./scripts/config --enable NET_TC_SKB_EXT
+          ./scripts/config --enable NET_ACT_METACT
+          ./scripts/config --enable NET_CLS_P4
           ./scripts/config --enable KSM
+          ./scripts/config --enable KPARSER
           make listnewconfig >> .config
           for commit in $(git rev-list origin/master-6.0..HEAD); do
               git checkout $commit
