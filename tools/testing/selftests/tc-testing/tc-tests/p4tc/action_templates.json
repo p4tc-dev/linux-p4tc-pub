@@ -1516,7 +1516,7 @@
     },
     {
         "id": "b711",
-        "name": "Try to create action template with name > IFNAMSIZ",
+        "name": "Try to create action template with name > ACTNAMSIZ",
         "category": [
             "p4tc",
             "template"
@@ -1551,7 +1551,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create action/ptables/h2JJtC9xHN9Vqz2CB actid 1 param param1 type u32",
+        "cmdUnderTest": "$TC p4template create action/ptables/CMPCQGOzcLG8HILTQxsQYKfDg4zQQdtmNfosyAhQxhqDTC8cg10QediAAzIMvel2Y actid 1 param param1 type u32",
         "expExitCode": "255",
         "verifyCmd": "$TC -j p4template get action/ptables/ actid 1",
         "matchCount": "1",
