@@ -2102,7 +2102,7 @@ static void *fetch_param(struct sk_buff *skb, struct tca_meta_operand *op,
 	struct p4tc_act_param *param;
 
 	params = rcu_dereference(metact->params);
-	param = idr_find(&params->params_idr, op->immedv);
+	param = idr_find(&params->params_idr, op->immedv2);
 
 	return param->value;
 }
