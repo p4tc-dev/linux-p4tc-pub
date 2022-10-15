@@ -65,6 +65,10 @@ static int metact_TBLAPP(struct sk_buff *skb, struct tca_meta_operate *op,
 static int metact_SNDPORTEGR(struct sk_buff *skb, struct tca_meta_operate *op,
 			     struct tcf_metact_info *metact,
 			     struct tcf_result *res);
+static int metact_MIRPORTEGR(struct sk_buff *skb, struct tca_meta_operate *op,
+			     struct tcf_metact_info *metact,
+			     struct tcf_result *res);
+
 
 static void kfree_opentry(struct tca_meta_operate *ope)
 {
@@ -413,7 +417,7 @@ static int validate_param_operand(struct tca_meta_operand *kopnd,
 
 	act = tcf_action_find_byid(pipeline, kopnd->immedv);
 	if (!act) {
-		NL_SET_ERR_MSG_MOD(extack, "Unknown to find action template");
+		NL_SET_ERR_MSG_MOD(extack, "Unknown action template id");
 		return -EINVAL;
 	}
 
@@ -1201,6 +1205,8 @@ static struct metact_cmd_s metact_cmds[] = {
 	{ METACT_OP_TBLAPP, validate_TBLAPP, free_op_TBLAPP, metact_TBLAPP },
 	{ METACT_OP_SNDPORTEGR, validate_SNDPORTEGR, free_op_SNDPORTEGR,
 	  metact_SNDPORTEGR },
+	{ METACT_OP_MIRPORTEGR, validate_SNDPORTEGR, free_op_SNDPORTEGR,
+	  metact_MIRPORTEGR },
 };
 
 static struct metact_cmd_s *get_cmd_byid(u16 cmdid)
@@ -2296,6 +2302,76 @@ static int metact_SNDPORTEGR(struct sk_buff *skb, struct tca_meta_operate *op,
 	}
 
 	skb_set_redirected(skb2, skb2->tc_at_ingress);
+	skb2->skb_iif = skb->dev->ifindex;
+	skb2->dev = dev;
+
+	err  = dev_queue_xmit(skb2);
+	if (err)
+		retval = TC_ACT_SHOT;
+
+	 __this_cpu_dec(redirect_rec_level);
+
+	return retval;
+}
+
+static int metact_MIRPORTEGR(struct sk_buff *skb, struct tca_meta_operate *op,
+			     struct tcf_metact_info *metact,
+			     struct tcf_result *res)
+{
+	struct tca_meta_operand *A = op->opA;
+	struct net_device *dev = A->fetch(skb, A, metact, res);
+	struct sk_buff *skb2 = skb;
+	int retval = TC_ACT_PIPE;
+	unsigned int rec_level;
+	bool expects_nh;
+	int mac_len;
+	bool at_nh;
+	int err;
+
+	rec_level = __this_cpu_inc_return(redirect_rec_level);
+	if (unlikely(rec_level > REDIRECT_RECURSION_LIMIT)) {
+		net_warn_ratelimited("MIRPORTEGR: exceeded redirect recursion limit on dev %s\n",
+				     netdev_name(skb->dev));
+		__this_cpu_dec(redirect_rec_level);
+		return TC_ACT_SHOT;
+	}
+
+	if (unlikely(!dev)) {
+		pr_notice_once("MIRPORTEGR: target device is gone\n");
+		__this_cpu_dec(redirect_rec_level);
+		return TC_ACT_SHOT;
+	}
+
+	if (unlikely(!(dev->flags & IFF_UP))) {
+		net_notice_ratelimited("MIRPORTEGR: device %s is down\n",
+				       dev->name);
+		__this_cpu_dec(redirect_rec_level);
+		return TC_ACT_SHOT;
+	}
+
+	skb2 = skb_clone(skb, GFP_ATOMIC);
+	if (!skb2) {
+		 __this_cpu_dec(redirect_rec_level);
+		return retval;
+	}
+
+	nf_reset_ct(skb2);
+
+	expects_nh = !dev_is_mac_header_xmit(dev);
+	at_nh = skb->data == skb_network_header(skb);
+	if (at_nh != expects_nh) {
+		mac_len = skb_at_tc_ingress(skb) ? skb->mac_len :
+			  skb_network_header(skb) - skb_mac_header(skb);
+		if (expects_nh) {
+			/* target device/action expect data at nh */
+			skb_pull_rcsum(skb2, mac_len);
+		} else {
+			/* target device/action expect data at mac */
+			skb_push_rcsum(skb2, mac_len);
+		}
+	}
+
+
 	skb2->skb_iif = skb->dev->ifindex;
 	skb2->dev = dev;
 
