@@ -160,8 +160,13 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		goto err;
 	}
 
-	if (tcf_pipeline_find_byname(p_name) ||
-	    pipeid != P4TC_KERNEL_PIPEID && tcf_pipeline_find_byid(pipeid)) {
+	if (pipeid != P4TC_KERNEL_PIPEID && tcf_pipeline_find_byid(pipeid)) {
+		NL_SET_ERR_MSG(extack, "Pipeline was already created");
+		ret = -EEXIST;
+		goto err;
+	}
+
+	if (tcf_pipeline_find_byname(p_name)) {
 		NL_SET_ERR_MSG(extack, "Pipeline was already created");
 		ret = -EEXIST;
 		goto err;
