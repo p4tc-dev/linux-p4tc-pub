@@ -173,5 +173,5 @@ else
       --show-boot-console \
       --rwdir="$KDIR" \
       --cwd "$WD" \
-      --script-sh "$CMD"
+      --script-sh "$CMD" < /dev/zero
 fi
