@@ -699,7 +699,7 @@ idr_destroy:
 static const struct nla_policy p4tc_act_policy[P4TC_ACT_MAX + 1] = {
 	[P4TC_ACT_NAME] = { .type = P4T_STRING, .len = ACTNAMSIZ },
 	[P4TC_ACT_PARMS] = { .type = P4T_NESTED },
-	[P4TC_ACT_OPT] = { .len = sizeof(struct tcf_p4act) },
+	[P4TC_ACT_OPT] = { .len = sizeof(struct tc_act_dyna) },
 	[P4TC_ACT_METACT_LIST] = { .type = P4T_NESTED },
 };
 
