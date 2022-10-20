@@ -1951,11 +1951,19 @@
             [
                 "$TC p4template create metadata/ptables/cb/mname3 type bit128",
                 0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname4 type bit128",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname5 type bit128",
+                0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname4 type bit1",
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname6 type bit1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname4",
+        "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname6",
         "matchCount": "1",
         "matchPattern": "Error: Metadatum name not found.*",
         "teardown": [
@@ -2011,7 +2019,7 @@
                 0
             ],
             [
-                "$TC p4template create metadata/ptables/cb/mname2 mid 22 type bit64",
+                "$TC p4template create metadata/ptables/cb/mname2 mid 22 type bit32",
                 0
             ],
             [
@@ -2019,11 +2027,19 @@
                 0
             ],
             [
-                "$TC p4template create metadata/ptables/cb/mname4 type bit32",
+                "$TC p4template create metadata/ptables/cb/mname4 type bit64",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname5 type bit128",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/cb/mname6 type bit128",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update metadata/ptables/cb/mname2 mid 22 type bit128",
+        "cmdUnderTest": "$TC p4template update metadata/ptables/cb/mname2 type bit128",
         "expExitCode": "255",
         "verifyCmd": "$TC -j p4template get metadata/ptables/cb/mname2",
         "matchCount": "1",
@@ -2039,7 +2055,7 @@
                         "mid": 22,
                         "mname": "cb/mname2",
                         "mtype": "bit",
-                        "msize": 64
+                        "msize": 32
                     }
                 ]
             }
@@ -2221,13 +2237,9 @@
             [
                 "$TC p4template create metadata/ptables/cb/mname15 type bit1",
                 0
-            ],
-            [
-                "$TC p4template create metadata/ptables/cb/mname16 type bit7",
-                0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname17 mid 2147483647 type bit5",
+        "cmdUnderTest": "$TC p4template create metadata/ptables/cb/mname16 mid 2147483647 type bit5",
         "expExitCode": "0",
         "verifyCmd": "$TC -j p4template get metadata/ptables/",
         "matchCount": "1",
@@ -2286,18 +2298,6 @@
                     },
                     {
                         "mname": "cb/mname16"
-                    }
-                ]
-            },
-            {
-                "pname": "ptables",
-                "pipeid": 22,
-                "obj": "metadata"
-            },
-            {
-                "templates": [
-                    {
-                        "mname": "cb/mname17"
                     }
                 ]
             }
