@@ -369,6 +369,8 @@ static int validate_hdrfield_operand(struct tca_meta_operand *kopnd,
 
 	kopnd->oper_value_ops = &hdrfield->h_value_ops;
 
+	refcount_inc(&pipeline->p_hdrs_used);
+
 	return 0;
 }
 
@@ -642,32 +644,36 @@ static int validate_operand(struct net *net, struct tca_meta_operand *kopnd,
 	return err;
 }
 
+static void _free_operand(struct tca_meta_operand *op)
+{
+	if (op->oper_type == METACT_OPER_HDRFIELD) {
+		struct p4tc_pipeline *pipeline;
+
+		pipeline = tcf_pipeline_find_byid(op->pipeid);
+		/* Should never be NULL */
+		if (pipeline)
+			refcount_dec(&pipeline->p_hdrs_used);
+	}
+	if (op->oper_mask_shift)
+		p4t_release(op->oper_mask_shift);
+	kfree(op->path_or_value);
+	kfree(op);
+}
+
 static void _free_operation(struct tca_meta_operate *ope,
 			    struct tca_meta_operand *A,
 			    struct tca_meta_operand *B,
 			    struct tca_meta_operand *C,
 			    struct netlink_ext_ack *extack)
 {
-	if (A) {
-		if (A->oper_mask_shift)
-			p4t_release(A->oper_mask_shift);
-		kfree(A->path_or_value);
-		kfree(A);
-	}
+	if (A)
+		_free_operand(A);
 
-	if (B) {
-		if (B->oper_mask_shift)
-			p4t_release(B->oper_mask_shift);
-		kfree(B->path_or_value);
-		kfree(B);
-	}
+	if (B)
+		_free_operand(B);
 
-	if (C) {
-		if (C->oper_mask_shift)
-			p4t_release(C->oper_mask_shift);
-		kfree(C->path_or_value);
-		kfree(C);
-	}
+	if (C)
+		_free_operand(C);
 
 	kfree(ope);
 }

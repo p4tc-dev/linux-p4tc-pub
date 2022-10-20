@@ -108,6 +108,7 @@ struct p4tc_pipeline {
 	u16                         num_table_classes;
 	u16                         curr_table_classes;
 	u8                          p_state;
+	refcount_t                  p_hdrs_used;
 };
 
 int tcf_p4_tmpl_generic_dump(struct sk_buff *skb,

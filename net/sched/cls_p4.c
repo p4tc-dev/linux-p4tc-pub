@@ -46,7 +46,8 @@ static int p4_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 			return TC_ACT_SHOT;
 	}
 
-	tcf_skb_parse(skb, p4tc_ext, pipeline->parser);
+	if (refcount_read(&pipeline->p_hdrs_used) > 1)
+		tcf_skb_parse(skb, p4tc_ext, pipeline->parser);
 
 	rc = tcf_action_exec(skb, pipeline->preacts, pipeline->num_preacts,
 			     &p4res);
@@ -183,7 +184,8 @@ static int p4_change(struct net *net, struct sk_buff *in_skb,
 		goto pipeline_put;
 	}
 
-	if (!tcf_parser_is_callable(pipeline->parser)) {
+	if (refcount_read(&pipeline->p_hdrs_used) > 1 &&
+	    !tcf_parser_is_callable(pipeline->parser)) {
 		err = -EINVAL;
 		NL_SET_ERR_MSG(extack, "Pipeline doesn't have callable parser");
 		goto pipeline_put;
