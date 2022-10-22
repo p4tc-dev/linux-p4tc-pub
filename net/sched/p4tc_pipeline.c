@@ -177,25 +177,18 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 	if (pipeid) {
 		ret = idr_alloc_u32(&pipeline_idr, pipeline, &pipeid, pipeid,
 				    GFP_KERNEL);
-
-		if (ret < 0) {
-			NL_SET_ERR_MSG(extack, "Unable to allocate pipeline id");
-			goto err;
-		}
-
-		pipeline->common.p_id = pipeid;
 	} else {
-		pipeline->common.p_id = 1;
-
-		ret = idr_alloc_u32(&pipeline_idr, pipeline,
-				    &pipeline->common.p_id, UINT_MAX,
+		pipeid = 1;
+		ret = idr_alloc_u32(&pipeline_idr, pipeline, &pipeid, UINT_MAX,
 				    GFP_KERNEL);
-
-		if (ret < 0) {
-			NL_SET_ERR_MSG(extack, "Unable to allocate pipeline id");
-			goto err;
-		}
 	}
+
+	if (ret < 0) {
+		NL_SET_ERR_MSG(extack, "Unable to allocate pipeline id");
+		goto err;
+	}
+
+	pipeline->common.p_id = pipeid;
 
 	if (tb[P4TC_PIPELINE_MAXRULES])
 		pipeline->max_rules =
