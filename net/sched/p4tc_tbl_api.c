@@ -1295,7 +1295,7 @@ static int tc_ctl_p4_cu_1(struct sk_buff *skb, struct net *net,
 		return -EINVAL;
 	}
 
-	if ((nla_len(p4tca[P4TC_PATH]) / sizeof(u32)) > P4TC_PATH_MAX - 1) {
+	if (nla_len(p4tca[P4TC_PATH]) > (P4TC_PATH_MAX - 1) * sizeof(u32)) {
 		NL_SET_ERR_MSG(extack, "Path is too big");
 		return -E2BIG;
 	}
