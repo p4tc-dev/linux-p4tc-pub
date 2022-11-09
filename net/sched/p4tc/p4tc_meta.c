@@ -167,38 +167,38 @@ static inline void *tcf_meta_fetch_kernel(struct sk_buff *skb,
 					  const u32 kernel_meta_id)
 {
 	switch (kernel_meta_id) {
-	case METACT_LMETA_QMAP:
+	case P4TC_KERNEL_META_QMAP:
 		return &skb->queue_mapping;
-	case METACT_LMETA_PKTLEN:
+	case P4TC_KERNEL_META_PKTLEN:
 		return &skb->len;
-	case METACT_LMETA_DATALEN:
+	case P4TC_KERNEL_META_DATALEN:
 		return &skb->data_len;
-	case METACT_LMETA_SKBMARK:
+	case P4TC_KERNEL_META_SKBMARK:
 		return &skb->mark;
-	case METACT_LMETA_TCINDEX:
+	case P4TC_KERNEL_META_TCINDEX:
 		return &skb->tc_index;
-	case METACT_LMETA_SKBHASH:
+	case P4TC_KERNEL_META_SKBHASH:
 		return &skb->hash;
-	case METACT_LMETA_SKBPRIO:
+	case P4TC_KERNEL_META_SKBPRIO:
 		return &skb->priority;
-	case METACT_LMETA_IFINDEX:
+	case P4TC_KERNEL_META_IFINDEX:
 		return &skb->dev->ifindex;
-	case METACT_LMETA_SKBIIF:
+	case P4TC_KERNEL_META_SKBIIF:
 		return &skb->skb_iif;
-	case METACT_LMETA_PROTOCOL:
+	case P4TC_KERNEL_META_PROTOCOL:
 		return &skb->protocol;
-	case METACT_LMETA_PKTYPE:
-	case METACT_LMETA_IDF:
-	case METACT_LMETA_IPSUM:
-	case METACT_LMETA_OOOK:
-	case METACT_LMETA_PTYPEOFF:
-	case METACT_LMETA_PTCLNOFF:
+	case P4TC_KERNEL_META_PKTYPE:
+	case P4TC_KERNEL_META_IDF:
+	case P4TC_KERNEL_META_IPSUM:
+	case P4TC_KERNEL_META_OOOK:
+	case P4TC_KERNEL_META_PTYPEOFF:
+	case P4TC_KERNEL_META_PTCLNOFF:
 		return &skb->__pkt_type_offset;
-	case METACT_LMETA_FCLONE:
-	case METACT_LMETA_PEEKED:
-	case METACT_LMETA_CLONEOFF:
+	case P4TC_KERNEL_META_FCLONE:
+	case P4TC_KERNEL_META_PEEKED:
+	case P4TC_KERNEL_META_CLONEOFF:
 		return &skb->__cloned_offset;
-	case METACT_LMETA_DIRECTION:
+	case P4TC_KERNEL_META_DIRECTION:
 		return &skb->__pkt_vlan_present_offset;
 	default:
 		return NULL;
@@ -749,46 +749,46 @@ static void tcf_meta_init(void)
 		return;
 	}
 
-	p4tc_register_kmeta(pipeline, METACT_LMETA_PKTLEN, "pktlen", 0, 31,
-			     P4T_U32);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_DATALEN, "datalen", 0, 31,
-			     P4T_U32);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_SKBMARK, "skbmark", 0, 31,
-			     P4T_U32);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_TCINDEX, "tcindex", 0, 15,
-			     P4T_U16);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_SKBHASH, "skbhash", 0, 31,
-			     P4T_U32);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_SKBPRIO, "skbprio", 0, 31,
-			     P4T_U32);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_IFINDEX, "ifindex", 0, 31,
-			     P4T_S32);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_SKBIIF, "skbiif", 0, 31,
-			     P4T_S32);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_PROTOCOL, "protocol", 0, 15,
-			     P4T_BE16);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_PKTYPE, "pktype", 0, 2,
-			     P4T_U8);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_IDF, "idf", 3, 3,
-			     P4T_U8);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_IPSUM, "ipsum", 5, 6,
-			     P4T_U8);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_OOOK, "oook", 7, 7,
-			     P4T_U8);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_FCLONE, "fclone", 2, 3,
-			     P4T_U8);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_PEEKED, "peeked", 4, 4,
-			     P4T_U8);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_QMAP, "qmap", 0, 15,
-			     P4T_U16);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_PTYPEOFF, "ptypeoff", 0, 7,
-			     P4T_U8);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_CLONEOFF, "cloneoff", 0, 7,
-			     P4T_U8);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_PTCLNOFF, "ptclnoff", 0, 15,
-			     P4T_U16);
-	p4tc_register_kmeta(pipeline, METACT_LMETA_DIRECTION, "direction", 7, 7,
-			     P4T_U8);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PKTLEN, "pktlen", 0, 31,
+			    P4T_U32);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_DATALEN, "datalen", 0,
+			    31, P4T_U32);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_SKBMARK, "skbmark", 0,
+			    31, P4T_U32);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_TCINDEX, "tcindex", 0,
+			    15, P4T_U16);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_SKBHASH, "skbhash", 0,
+			    31, P4T_U32);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_SKBPRIO, "skbprio", 0,
+			    31, P4T_U32);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_IFINDEX, "ifindex", 0,
+			    31, P4T_S32);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_SKBIIF, "skbiif", 0, 31,
+			    P4T_S32);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PROTOCOL, "protocol", 0,
+			    15, P4T_BE16);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PKTYPE, "pktype", 0, 2,
+			    P4T_U8);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_IDF, "idf", 3, 3,
+			    P4T_U8);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_IPSUM, "ipsum", 5, 6,
+			    P4T_U8);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_OOOK, "oook", 7, 7,
+			    P4T_U8);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_FCLONE, "fclone", 2, 3,
+			    P4T_U8);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PEEKED, "peeked", 4, 4,
+			    P4T_U8);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_QMAP, "qmap", 0, 15,
+			    P4T_U16);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PTYPEOFF, "ptypeoff", 0,
+			    7, P4T_U8);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_CLONEOFF, "cloneoff", 0,
+			    7, P4T_U8);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PTCLNOFF, "ptclnoff", 0,
+			    15, P4T_U16);
+	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_DIRECTION, "direction",
+			    7, 7, P4T_U8);
 }
 
 const struct p4tc_template_ops p4tc_meta_ops = {

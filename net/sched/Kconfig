@@ -765,7 +765,6 @@ config NET_EMATCH_IPT
 config NET_P4_TC
 	bool "P4 support"
 	select NET_CLS_ACT
-	select NET_ACT_METACT
 	help
 	  Say Y here if you want to use P4 features.
 	  The concept of Pipelines, Tables, metadata will be enabled
@@ -983,19 +982,6 @@ config NET_ACT_IFE
 
 	  To compile this code as a module, choose M here: the
 	  module will be called act_ife.
-
-config NET_ACT_METACT
-       tristate "P4 TC Metact"
-       depends on NET_CLS_ACT
-       depends on NET_P4_TC
-       help
-	  Say Y here if you are using P4 TC.
-	  This enables metact actions such as SET, ACT, BRANCHING and PRINTING
-	  For details refer to netdev0x16 paper:
-	   "Your Network Datapath Will Be P4 Scripted"
-
-	  To compile this code as a module, choose M here: the
-	  module will be called act_metact.
 
 config NET_ACT_TUNNEL_KEY
 	tristate "IP tunnel metadata manipulation"

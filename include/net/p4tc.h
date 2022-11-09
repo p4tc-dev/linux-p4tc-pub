@@ -131,14 +131,14 @@ static inline bool pipeline_sealed(struct p4tc_pipeline *pipeline)
 	return pipeline->p_state == P4TC_STATE_READY;
 }
 
-struct tca_meta_value_ops {
+struct p4tc_cmd_value_ops {
 	void *(*fetch)(struct sk_buff *skb, void *value);
 };
 
 struct p4tc_metadata {
 	struct p4tc_template_common common;
 	struct rcu_head             rcu;
-	struct tca_meta_value_ops   m_value_ops;
+	struct p4tc_cmd_value_ops   m_value_ops;
 	u32                         m_id;
 	u32                         m_skb_off;
 	refcount_t                  m_ref;
@@ -161,7 +161,7 @@ struct p4tc_table_class {
 	struct p4tc_template_common common;
 	struct idr                  tbc_keys_idr;
 	struct idr                  tbc_ti_idr;
-	struct tca_meta_value_ops   tbc_value_ops;
+	struct p4tc_cmd_value_ops   tbc_value_ops;
 	struct tc_action            **tbc_preacts;
 	int                         tbc_num_preacts;
 	struct tc_action            **tbc_postacts;
@@ -236,7 +236,7 @@ struct p4tc_act_param_ops {
 struct p4tc_act {
 	struct p4tc_template_common common;
 	struct tc_action_ops        ops;
-	struct list_head            meta_operations;
+	struct list_head            cmd_operations;
 	struct pernet_operations    *p4_net_ops;
 	struct idr                  params_idr;
 	struct tcf_exts             exts;
@@ -297,7 +297,7 @@ struct p4tc_parser {
 struct p4tc_header_field {
 	struct p4tc_template_common common;
 	struct p4tc_parser          *parser;
-	struct tca_meta_value_ops   h_value_ops;
+	struct p4tc_cmd_value_ops   h_value_ops;
 	u32                         parser_inst_id;
 	u32                         hdr_field_id;
 	u16                         startbit;
@@ -394,7 +394,6 @@ struct p4tc_header_field *tcf_hdrfield_find_byid(struct p4tc_parser *parser,
 bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
 				struct p4tc_header_field *hdrfield);
 
-/* Will be removed from here once we pass all to metact */
 int p4tc_init_net_ops(struct net *net, unsigned int id);
 void p4tc_exit_net_ops(struct list_head *net_list, unsigned int id);
 int tcf_p4_act_init_params(struct net *net,
@@ -424,5 +423,64 @@ int generic_dump_param_value(struct sk_buff *skb, struct p4tc_type *type,
 #define to_tinst(t) ((struct p4tc_table_instance *)t)
 #define to_act(t) ((struct p4tc_act *)t)
 #define to_hdrfield(t) ((struct p4tc_header_field *)t)
+
+/* P4TC COMMANDS */
+int p4tc_cmds_parse(struct net *net, struct list_head *cmd_operations,
+		    struct nlattr *nla, bool ovr,
+		    struct netlink_ext_ack *extack);
+int p4tc_cmds_copy(struct list_head *new_cmd_operations,
+		   struct list_head *cmd_operations,
+		   bool delete_old, struct netlink_ext_ack *extack);
+
+int p4tc_cmds_fillup(struct sk_buff *skb, struct list_head *meta_ops);
+void p4tc_cmds_release_ope_list(struct list_head *entries);
+
+struct p4tc_cmd_operate {
+	struct list_head cmd_operations;
+	struct p4tc_cmd_operand *opA;
+	struct p4tc_cmd_operand *opB;
+	struct p4tc_cmd_operand *opC;
+	struct p4tc_cmd_s *cmd;
+	u32 ctl1;
+	u32 ctl2;
+	u16 op_id;		/* P4TC_CMD_OP_XXX */
+	u8 op_flags;
+	u8 op_cnt;
+};
+
+struct tcf_p4act;
+struct p4tc_cmd_operand {
+	struct p4tc_cmd_value_ops *oper_value_ops;
+	void *(*fetch)(struct sk_buff *skb, struct p4tc_cmd_operand *op,
+		       struct tcf_p4act *cmd, struct tcf_result *res);
+	struct p4tc_type *oper_datatype; /* what is stored in path_or_value - P4T_XXX */
+	struct p4tc_type_mask_shift *oper_mask_shift;
+	struct tc_action *action;
+	void *path_or_value;
+	void *priv;
+	u32 immedv;		/* one of: immediate value, metadata id, action id */
+	u32 immedv2;		/* one of: action instance */
+	u32 path_or_value_sz;
+	u32 pipeid;		/* 0 for kernel */
+	u8 oper_type;		/* P4TC_CMD_OPER_XXX */
+	u8 oper_cbitsize;	/* based on P4T_XXX container size */
+	u8 oper_bitsize;	/* diff between bitend - oper_bitend */
+	u8 oper_bitstart;
+	u8 oper_bitend;
+	u8 oper_flags;		/* TBA: DATA_IS_IMMEDIATE */
+};
+
+struct p4tc_cmd_s {
+	int cmdid;
+	int (*validate_operands)(struct net *net,
+				 struct p4tc_cmd_operand *A,
+				 struct p4tc_cmd_operand *B,
+				 struct p4tc_cmd_operand *C,
+				 struct netlink_ext_ack *extack);
+	void (*free_operation)(struct p4tc_cmd_operate *op,
+			       struct netlink_ext_ack *extack);
+	int (*run)(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+		   struct tcf_p4act *cmd, struct tcf_result *res);
+};
 
 #endif
