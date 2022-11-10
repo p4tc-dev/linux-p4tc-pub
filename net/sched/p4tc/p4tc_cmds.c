@@ -67,6 +67,12 @@ static int p4tc_cmd_SUB(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res);
 static int p4tc_cmd_CONCAT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			   struct tcf_p4act *cmd, struct tcf_result *res);
+static int p4tc_cmd_BAND(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			 struct tcf_p4act *cmd, struct tcf_result *res);
+static int p4tc_cmd_BOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			struct tcf_p4act *cmd, struct tcf_result *res);
+static int p4tc_cmd_BXOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			 struct tcf_p4act *cmd, struct tcf_result *res);
 
 static void kfree_opentry(struct p4tc_cmd_operate *ope)
 {
@@ -1358,6 +1364,9 @@ static struct p4tc_cmd_s cmds[] = {
 	{ P4TC_CMD_OP_PLUS, validate_BINARITH, free_op_BINARITH, p4tc_cmd_PLUS },
 	{ P4TC_CMD_OP_SUB, validate_BINARITH, free_op_BINARITH, p4tc_cmd_SUB },
 	{ P4TC_CMD_OP_CONCAT, validate_CONCAT, free_op_BINARITH, p4tc_cmd_CONCAT },
+	{ P4TC_CMD_OP_BAND, validate_BINARITH, free_op_BINARITH, p4tc_cmd_BAND },
+	{ P4TC_CMD_OP_BOR, validate_BINARITH, free_op_BINARITH, p4tc_cmd_BOR },
+	{ P4TC_CMD_OP_BXOR, validate_BINARITH, free_op_BINARITH, p4tc_cmd_BXOR },
 };
 
 static struct p4tc_cmd_s *p4tc_get_cmd_byid(u16 cmdid)
@@ -2275,6 +2284,42 @@ static int p4tc_cmd_SUB(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res)
 {
 	return p4tc_cmd_BINARITH(skb, op, cmd, res, sub_op);
+}
+
+static void band_op(u64 *res, u64 *opB, u64 *opC)
+{
+	res[0] = opB[0] & opC[0];
+	res[1] = opB[1] & opC[1];
+}
+
+static int p4tc_cmd_BAND(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			 struct tcf_p4act *cmd, struct tcf_result *res)
+{
+	return p4tc_cmd_BINARITH(skb, op, cmd, res, band_op);
+}
+
+static void bor_op(u64 *res, u64 *opB, u64 *opC)
+{
+	res[0] = opB[0] | opC[0];
+	res[1] = opB[1] | opC[1];
+}
+
+static int p4tc_cmd_BOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			struct tcf_p4act *cmd, struct tcf_result *res)
+{
+	return p4tc_cmd_BINARITH(skb, op, cmd, res, bor_op);
+}
+
+static void bxor_op(u64 *res, u64 *opB, u64 *opC)
+{
+	res[0] = opB[0] ^ opC[0];
+	res[1] = opB[1] ^ opC[1];
+}
+
+static int p4tc_cmd_BXOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			 struct tcf_p4act *cmd, struct tcf_result *res)
+{
+	return p4tc_cmd_BINARITH(skb, op, cmd, res, bxor_op);
 }
 
 static int p4tc_cmd_CONCAT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
