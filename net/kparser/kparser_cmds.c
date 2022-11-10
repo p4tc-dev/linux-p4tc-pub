@@ -31,6 +31,7 @@
 #include <linux/rhashtable.h>
 #include <linux/slab.h>
 #include <linux/sort.h>
+#include <linux/bitops.h>
 
 static DEFINE_MUTEX(kparser_config_lock);
 
@@ -572,7 +573,7 @@ static inline __u16 allocate_id(__u16 id, int *bv, size_t bvsize)
 	for (i = 0; i < bvsize; i++) {
 		// avoid bit vectors which are already full
 		if (bv[i]) {
-			id = __builtin_ffs(bv[i]);
+			id = ffs(bv[i]);
 			if (id) {
 				id--;
 				id += (i * BITS_IN_U32);

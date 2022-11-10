@@ -35,21 +35,16 @@
 
 #include <net/kparser/kparser_types.h>
 
-#include "linux/byteorder/little_endian.h"
-#define __BYTE_ORDER __LITTLE_ENDIAN
+#include <asm/byteorder.h>
 
-#define __BIG_ENDIAN 0
-
-#if __BYTE_ORDER == __BIG_ENDIAN
-#define kparser_htonll(x) (x)
-#define kparser_ntohll(x) (x)
-#elif __BYTE_ORDER == __LITTLE_ENDIAN
+#ifdef __LITTLE_ENDIAN
 #define kparser_htonll(x)						\
 	(((__u64)htonl((x) & 0xFFFFFFFF) << 32) | htonl((x) >> 32))
 #define kparser_ntohll(x)						\
 	(((__u64)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
 #else
-#error "Cannot determine endianness"
+#define kparser_htonll(x) (x)
+#define kparser_ntohll(x) (x)
 #endif
 
 /* Metadata extraction pseudo instructions
