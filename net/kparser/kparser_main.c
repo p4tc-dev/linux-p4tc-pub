@@ -133,8 +133,6 @@ static const struct nla_policy kparser_nl_policy[KPARSER_ATTR_MAX] = {
 static const struct genl_ops kparser_nl_ops[] = {
 	{
 		.cmd = KPARSER_CMD_CONFIGURE,
-		.validate = GENL_DONT_VALIDATE_STRICT |
-			GENL_DONT_VALIDATE_DUMP,
 		.doit = kparser_cli_cmd_handler,
 		.flags = GENL_ADMIN_PERM,
 	},
