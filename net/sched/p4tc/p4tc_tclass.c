@@ -30,6 +30,56 @@
 #define P4TC_P_UNSPEC 0
 #define P4TC_P_CREATED 1
 
+static int tcf_key_try_set_state_ready(struct p4tc_table_key *key,
+				       struct netlink_ext_ack *extack)
+{
+	if (!key->key_acts) {
+		NL_SET_ERR_MSG(extack,
+			       "All table keys must have actions before sealing pipelline");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int __tcf_tclass_try_set_state_ready(struct p4tc_table_class *tclass,
+					    struct netlink_ext_ack *extack)
+{
+	struct p4tc_table_key *key;
+	unsigned long tmp, id;
+	int ret;
+
+	if (!tclass->tbc_postacts) {
+		NL_SET_ERR_MSG(extack,
+			       "All table classes must have postactions before sealing pipelline");
+		return -EINVAL;
+	}
+
+	idr_for_each_entry_ul(&tclass->tbc_keys_idr, key, tmp, id) {
+		ret = tcf_key_try_set_state_ready(key, extack);
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
+}
+
+int tcf_tclass_try_set_state_ready(struct p4tc_pipeline *pipeline,
+				   struct netlink_ext_ack *extack)
+{
+	struct p4tc_table_class *tclass;
+	unsigned long tmp, id;
+	int ret;
+
+	idr_for_each_entry_ul(&pipeline->p_tbc_idr, tclass, tmp, id) {
+		ret = __tcf_tclass_try_set_state_ready(tclass, extack);
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
+}
+
 static const struct nla_policy p4tc_tclass_policy[P4TC_TCLASS_MAX + 1] = {
 	[P4TC_TCLASS_NAME] = { .type = NLA_STRING, .len = TCLASSNAMSIZ },
 	[P4TC_TCLASS_INFO] = { .type = NLA_BINARY,
@@ -55,11 +105,13 @@ static int tcf_tclass_key_fill_nlmsg(struct sk_buff *skb,
 	if (nla_put_u32(skb, P4TC_KEY_ID, key->key_id))
 		return -1;
 
-	nest_action = nla_nest_start(skb, P4TC_KEY_ACT);
-	ret = tcf_action_dump(skb, key->key_acts, 0, 0, false);
-	if (ret < 0)
-		return ret;
-	nla_nest_end(skb, nest_action);
+	if (key->key_acts) {
+		nest_action = nla_nest_start(skb, P4TC_KEY_ACT);
+		ret = tcf_action_dump(skb, key->key_acts, 0, 0, false);
+		if (ret < 0)
+			return ret;
+		nla_nest_end(skb, nest_action);
+	}
 
 	nla_nest_end(skb, nest_keys);
 
@@ -113,10 +165,12 @@ static int _tcf_tclass_fill_nlmsg(struct sk_buff *skb,
 		nla_nest_end(skb, preacts);
 	}
 
-	postacts = nla_nest_start(skb, P4TC_TCLASS_POSTACTIONS);
-	if (tcf_action_dump(skb, tclass->tbc_postacts, 0, 0, false) < 0)
-		goto out_nlmsg_trim;
-	nla_nest_end(skb, postacts);
+	if (tclass->tbc_postacts) {
+		postacts = nla_nest_start(skb, P4TC_TCLASS_POSTACTIONS);
+		if (tcf_action_dump(skb, tclass->tbc_postacts, 0, 0, false) < 0)
+			goto out_nlmsg_trim;
+		nla_nest_end(skb, postacts);
+	}
 
 	if (nla_put(skb, P4TC_TCLASS_INFO, sizeof(parm), &parm))
 		goto out_nlmsg_trim;
@@ -146,8 +200,10 @@ static int tcf_tclass_fill_nlmsg(struct net *net, struct sk_buff *skb,
 
 static inline void tcf_tclass_key_put(struct p4tc_table_key *key)
 {
-	tcf_action_destroy(key->key_acts, TCA_ACT_UNBIND);
-	kfree(key->key_acts);
+	if (key->key_acts) {
+		tcf_action_destroy(key->key_acts, TCA_ACT_UNBIND);
+		kfree(key->key_acts);
+	}
 
 	kfree(key);
 }
@@ -214,8 +270,10 @@ static inline int _tcf_tclass_put(struct net *net,
 		tcf_action_destroy(tclass->tbc_preacts, TCA_ACT_UNBIND);
 		kfree(tclass->tbc_preacts);
 	}
-	tcf_action_destroy(tclass->tbc_postacts, TCA_ACT_UNBIND);
-	kfree(tclass->tbc_postacts);
+	if (tclass->tbc_postacts) {
+		tcf_action_destroy(tclass->tbc_postacts, TCA_ACT_UNBIND);
+		kfree(tclass->tbc_postacts);
+	}
 
 	idr_destroy(&tclass->tbc_keys_idr);
 	idr_destroy(&tclass->tbc_ti_idr);
@@ -341,9 +399,8 @@ tcf_table_key_add_1(struct net *net,
 		}
 		key->key_num_acts = ret;
 	} else {
-		NL_SET_ERR_MSG(extack, "Must specify table class key action");
-		ret = -EINVAL;
-		goto free;
+		key->key_acts = NULL;
+		key->key_num_acts = 0;
 	}
 
 	tclass->tbc_keys_count++;
@@ -724,9 +781,8 @@ tcf_tclass_create(struct net *net, struct nlmsghdr *n,
 		}
 		tclass->tbc_num_postacts = ret;
 	} else {
-		ret = -EINVAL;
-		NL_SET_ERR_MSG(extack, "Must specify table class postactions");
-		goto preactions_destroy;
+		tclass->tbc_postacts = NULL;
+		tclass->tbc_num_postacts = 0;
 	}
 
 	idr_init(&tclass->tbc_keys_idr);
@@ -817,8 +873,10 @@ keys_put:
 idr_dest:
 	idr_destroy(&tclass->tbc_keys_idr);
 
-	tcf_action_destroy(tclass->tbc_postacts, TCA_ACT_UNBIND);
-	kfree(tclass->tbc_postacts);
+	if (tclass->tbc_postacts) {
+		tcf_action_destroy(tclass->tbc_postacts, TCA_ACT_UNBIND);
+		kfree(tclass->tbc_postacts);
+	}
 
 preactions_destroy:
 	if (tclass->tbc_preacts) {
@@ -843,11 +901,11 @@ tcf_tclass_update(struct net *net, struct nlmsghdr *n,
 		  struct netlink_ext_ack *extack)
 {
 	struct p4tc_table_key *keys[P4TC_MAXPARSE_KEYS] = {NULL};
+	int num_postacts = 0, num_preacts = 0, num_keys = 0;
 	int cu_res[P4TC_MAXPARSE_KEYS] = {P4TC_P_UNSPEC};
 	struct p4tc_table_class_parm *parm = NULL;
 	struct tc_action **postacts = NULL;
 	struct tc_action **preacts = NULL;
-	int num_keys = 0;
 	int ret = 0;
 	struct nlattr *tb[P4TC_TCLASS_MAX + 1];
 	struct p4tc_table_class *tclass;
@@ -876,6 +934,7 @@ tcf_tclass_update(struct net *net, struct nlmsghdr *n,
 			kfree(preacts);
 			goto out;
 		}
+		num_preacts = ret;
 	}
 
 	if (tb[P4TC_TCLASS_POSTACTIONS]) {
@@ -893,6 +952,7 @@ tcf_tclass_update(struct net *net, struct nlmsghdr *n,
 			kfree(postacts);
 			goto preactions_destroy;
 		}
+		num_postacts = ret;
 	}
 
 	if (tb[P4TC_TCLASS_KEYS]) {
@@ -993,15 +1053,22 @@ tcf_tclass_update(struct net *net, struct nlmsghdr *n,
 	}
 
 	if (preacts) {
-		tcf_action_destroy(tclass->tbc_preacts, TCA_ACT_UNBIND);
-		kfree(tclass->tbc_preacts);
+		if (tclass->tbc_preacts) {
+			tcf_action_destroy(tclass->tbc_preacts, TCA_ACT_UNBIND);
+			kfree(tclass->tbc_preacts);
+		}
 		tclass->tbc_preacts = preacts;
+		tclass->tbc_num_preacts = num_preacts;
 	}
 
 	if (postacts) {
-		tcf_action_destroy(tclass->tbc_postacts, TCA_ACT_UNBIND);
-		kfree(tclass->tbc_postacts);
+		if (tclass->tbc_postacts) {
+			tcf_action_destroy(tclass->tbc_postacts,
+					   TCA_ACT_UNBIND);
+			kfree(tclass->tbc_postacts);
+		}
 		tclass->tbc_postacts = postacts;
+		tclass->tbc_num_postacts = num_postacts;
 	}
 
 	if (tb[P4TC_TCLASS_KEYS])

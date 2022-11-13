@@ -113,6 +113,8 @@ static int tcf_pipeline_put(struct net *net,
 static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 					       struct netlink_ext_ack *extack)
 {
+	int ret;
+
 	if (pipeline->curr_table_classes != pipeline->num_table_classes) {
 		NL_SET_ERR_MSG(extack,
 			       "Must have all table classes defined to update state to ready");
@@ -130,6 +132,9 @@ static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 			       "Must specify pipeline postactions before sealing");
 		return -EINVAL;
 	}
+	ret = tcf_tclass_try_set_state_ready(pipeline, extack);
+	if (ret < 0)
+		return ret;
 
 	pipeline->p_state = P4TC_STATE_READY;
 	return true;

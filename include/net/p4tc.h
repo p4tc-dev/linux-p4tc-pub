@@ -364,6 +364,8 @@ struct p4tc_table_class *tcf_tclass_find_byid(struct p4tc_pipeline *pipeline,
 struct p4tc_table_key *tcf_table_key_find(struct p4tc_table_class *tclass,
 					  const u32 key_id);
 void *tcf_tclass_fetch(struct sk_buff *skb, void *tbc_value_ops);
+int tcf_tclass_try_set_state_ready(struct p4tc_pipeline *pipeline,
+				   struct netlink_ext_ack *extack);
 
 int p4tc_tinst_init(struct p4tc_table_instance *tinst,
 		    struct p4tc_pipeline *pipeline,
