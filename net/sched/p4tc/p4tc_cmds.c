@@ -2220,11 +2220,21 @@ static int p4tc_cmd_TBLAPP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	res->hit = entry ? true : false;
 	res->miss = !res->hit;
 
-	if (res->hit && entry->acts) {
-		ret = tcf_action_exec(skb, entry->acts, entry->num_acts, res);
-		if (ret != TC_ACT_PIPE)
-			return ret;
+	ret = TC_ACT_PIPE;
+	if (res->hit) {
+		if (entry->acts)
+			ret = tcf_action_exec(skb, entry->acts, entry->num_acts,
+					      res);
+		else if (tclass->tbc_default_hitact)
+			ret = tcf_action_exec(skb, tclass->tbc_default_hitact,
+					      1, res);
+	} else {
+		if (tclass->tbc_default_missact)
+			ret = tcf_action_exec(skb, tclass->tbc_default_missact,
+					      1, res);
 	}
+	if (ret != TC_ACT_PIPE)
+		return ret;
 
 	return tcf_action_exec(skb, tclass->tbc_postacts,
 			       tclass->tbc_num_postacts, res);
