@@ -191,6 +191,8 @@ enum {
 	P4TC_TCLASS_PREACTIONS, /* nested table preactions */
 	P4TC_TCLASS_KEYS, /* nested table keys */
 	P4TC_TCLASS_POSTACTIONS, /* nested table postactions */
+	P4TC_TCLASS_DEFAULT_HIT, /* default hit action */
+	P4TC_TCLASS_DEFAULT_MISS, /* default miss action */
 	__P4TC_TCLASS_MAX
 };
 #define P4TC_TCLASS_MAX __P4TC_TCLASS_MAX

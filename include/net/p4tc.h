@@ -165,6 +165,8 @@ struct p4tc_table_class {
 	struct tc_action            **tbc_preacts;
 	int                         tbc_num_preacts;
 	struct tc_action            **tbc_postacts;
+	struct tc_action            **tbc_default_hitact;
+	struct tc_action            **tbc_default_missact;
 	int                         tbc_num_postacts;
 	u32                         tbc_count;
 	u32                         tbc_curr_count;
