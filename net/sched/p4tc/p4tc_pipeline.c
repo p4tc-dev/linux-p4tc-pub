@@ -95,21 +95,46 @@ static int tcf_pipeline_put(struct net *net,
 	 * will use them. So there is no need to free them in the rcu
 	 * callback. We can just free them here
 	 */
-	tcf_action_destroy(pipeline->preacts, TCA_ACT_UNBIND);
-	kfree(pipeline->preacts);
+	if (pipeline->preacts) {
+		tcf_action_destroy(pipeline->preacts, TCA_ACT_UNBIND);
+		kfree(pipeline->preacts);
+	}
 
-	tcf_action_destroy(pipeline->postacts, TCA_ACT_UNBIND);
-	kfree(pipeline->postacts);
+	if (pipeline->postacts) {
+		tcf_action_destroy(pipeline->postacts, TCA_ACT_UNBIND);
+		kfree(pipeline->postacts);
+	}
 
 	call_rcu(&pipeline->rcu, tcf_pipeline_destroy);
 
 	return 0;
 }
 
-static inline bool pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline)
+static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
+					       struct netlink_ext_ack *extack)
 {
-	if (pipeline->curr_table_classes != pipeline->num_table_classes)
-		return false;
+	int ret;
+
+	if (pipeline->curr_table_classes != pipeline->num_table_classes) {
+		NL_SET_ERR_MSG(extack,
+			       "Must have all table classes defined to update state to ready");
+		return -EINVAL;
+	}
+
+	if (!pipeline->preacts) {
+		NL_SET_ERR_MSG(extack,
+			       "Must specify pipeline preactions before sealing");
+		return -EINVAL;
+	}
+
+	if (!pipeline->postacts) {
+		NL_SET_ERR_MSG(extack,
+			       "Must specify pipeline postactions before sealing");
+		return -EINVAL;
+	}
+	ret = tcf_tclass_try_set_state_ready(pipeline, extack);
+	if (ret < 0)
+		return ret;
 
 	pipeline->p_state = P4TC_STATE_READY;
 	return true;
@@ -221,9 +246,8 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		}
 		pipeline->num_preacts = ret;
 	} else {
-		NL_SET_ERR_MSG(extack, "Must specify pipeline preactions");
-		ret = -EINVAL;
-		goto idr_rm;
+		pipeline->preacts = NULL;
+		pipeline->num_preacts = 0;
 	}
 
 	if (tb[P4TC_PIPELINE_POSTACTIONS]) {
@@ -243,9 +267,8 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		}
 		pipeline->num_postacts = ret;
 	} else {
-		NL_SET_ERR_MSG(extack, "Must specify pipeline postactions");
-		ret = -EINVAL;
-		goto preactions_destroy;
+		pipeline->postacts = NULL;
+		pipeline->num_postacts = 0;
 	}
 
 	idr_init(&pipeline->p_act_idr);
@@ -268,8 +291,10 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 	return pipeline;
 
 preactions_destroy:
-	tcf_action_destroy(pipeline->preacts, TCA_ACT_UNBIND);
-	kfree(pipeline->preacts);
+	if (pipeline->preacts) {
+		tcf_action_destroy(pipeline->preacts, TCA_ACT_UNBIND);
+		kfree(pipeline->preacts);
+	}
 
 idr_rm:
 	idr_remove(&pipeline_idr, pipeid);
@@ -430,12 +455,9 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 	}
 
 	if (tb[P4TC_PIPELINE_STATE]) {
-		if (!pipeline_try_set_state_ready(pipeline)) {
-			NL_SET_ERR_MSG(extack,
-				       "Must have all table classes defined to update state to ready");
-			ret = -EINVAL;
+		ret = pipeline_try_set_state_ready(pipeline, extack);
+		if (ret < 0)
 			goto postactions_destroy;
-		}
 		tcf_meta_fill_user_offsets(pipeline);
 	}
 
@@ -444,14 +466,18 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 	if (num_table_classes)
 		pipeline->num_table_classes = num_table_classes;
 	if (preacts) {
-		tcf_action_destroy(pipeline->preacts, TCA_ACT_UNBIND);
-		kfree(pipeline->preacts);
+		if (pipeline->preacts) {
+			tcf_action_destroy(pipeline->preacts, TCA_ACT_UNBIND);
+			kfree(pipeline->preacts);
+		}
 		pipeline->preacts = preacts;
 		pipeline->num_preacts = num_preacts;
 	}
 	if (postacts) {
-		tcf_action_destroy(pipeline->postacts, TCA_ACT_UNBIND);
-		kfree(pipeline->postacts);
+		if (pipeline->postacts) {
+			tcf_action_destroy(pipeline->postacts, TCA_ACT_UNBIND);
+			kfree(pipeline->postacts);
+		}
 		pipeline->postacts = postacts;
 		pipeline->num_postacts = num_postacts;
 	}
@@ -518,15 +544,19 @@ static int _tcf_pipeline_fill_nlmsg(struct sk_buff *skb,
 	if (nla_put_u8(skb, P4TC_PIPELINE_STATE, pipeline->p_state))
 		goto out_nlmsg_trim;
 
-	preacts = nla_nest_start(skb, P4TC_PIPELINE_PREACTIONS);
-	if (tcf_action_dump(skb, pipeline->preacts, 0, 0, false) < 0)
-		goto out_nlmsg_trim;
-	nla_nest_end(skb, preacts);
+	if (pipeline->preacts) {
+		preacts = nla_nest_start(skb, P4TC_PIPELINE_PREACTIONS);
+		if (tcf_action_dump(skb, pipeline->preacts, 0, 0, false) < 0)
+			goto out_nlmsg_trim;
+		nla_nest_end(skb, preacts);
+	}
 
-	postacts = nla_nest_start(skb, P4TC_PIPELINE_POSTACTIONS);
-	if (tcf_action_dump(skb, pipeline->postacts, 0, 0, false) < 0)
-		goto out_nlmsg_trim;
-	nla_nest_end(skb, postacts);
+	if (pipeline->postacts) {
+		postacts = nla_nest_start(skb, P4TC_PIPELINE_POSTACTIONS);
+		if (tcf_action_dump(skb, pipeline->postacts, 0, 0, false) < 0)
+			goto out_nlmsg_trim;
+		nla_nest_end(skb, postacts);
+	}
 
 	nla_nest_end(skb, nest);
 

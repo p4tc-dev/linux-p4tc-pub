@@ -154,7 +154,7 @@
     },
     {
         "id": "c0dc",
-        "name": "Try to create pipeline without preactions",
+        "name": "Create pipeline without preactions",
         "category": [
             "p4tc",
             "template",
@@ -181,11 +181,51 @@
             ]
         ],
         "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 postactions action gact index 1",
-        "expExitCode": "255",
+        "expExitCode": "0",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
-        "matchPattern": "Error: Pipeline name not found.*",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "pipeline"
+            },
+            {
+                "templates": [
+                    {
+                        "pmaxrules": 1,
+                        "pnumtclasses": 2,
+                        "pstate": "not ready",
+                        "postactions": {
+                            "actions": [
+                                {
+                                    "order": 1,
+                                    "kind": "gact",
+                                    "control_action": {
+                                        "type": "pass"
+                                    },
+                                    "prob": {
+                                        "random_type": "none",
+                                        "control_action": {
+                                            "type": "pass"
+                                        },
+                                        "val": 0
+                                    },
+                                    "index": 1,
+                                    "ref": 2,
+                                    "bind": 1
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ],
         "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
             [
                 "$TC actions flush action gact",
                 0
@@ -221,11 +261,51 @@
             ]
         ],
         "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1",
-        "expExitCode": "255",
+        "expExitCode": "0",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
-        "matchPattern": "Error: Pipeline name not found.*",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "pipeline"
+            },
+            {
+                "templates": [
+                    {
+                        "pmaxrules": 1,
+                        "pnumtclasses": 2,
+                        "pstate": "not ready",
+                        "preactions": {
+                            "actions": [
+                                {
+                                    "order": 1,
+                                    "kind": "gact",
+                                    "index": 1,
+                                    "ref": 2,
+                                    "bind": 1,
+                                    "control_action": {
+                                        "type": "pass"
+                                    },
+                                    "prob": {
+                                        "random_type": "none",
+                                        "control_action": {
+                                            "type": "pass"
+                                        },
+                                        "val": 0
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ],
         "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
             [
                 "$TC actions flush action gact",
                 0
