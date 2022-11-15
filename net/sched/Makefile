@@ -25,7 +25,6 @@ obj-$(CONFIG_NET_ACT_BPF)	+= act_bpf.o
 obj-$(CONFIG_NET_ACT_CONNMARK)	+= act_connmark.o
 obj-$(CONFIG_NET_ACT_CTINFO)	+= act_ctinfo.o
 obj-$(CONFIG_NET_ACT_SKBMOD)	+= act_skbmod.o
-obj-$(CONFIG_NET_ACT_METACT)	+= act_metact.o p4tc/p4tc_action.o
 obj-$(CONFIG_NET_ACT_IFE)	+= act_ife.o
 obj-$(CONFIG_NET_IFE_SKBMARK)	+= act_meta_mark.o
 obj-$(CONFIG_NET_IFE_SKBPRIO)	+= act_meta_skbprio.o

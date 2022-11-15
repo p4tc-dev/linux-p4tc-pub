@@ -13,6 +13,9 @@ struct tcf_p4act_params {
 
 struct tcf_p4act {
 	struct tc_action common;
+	/* list of operations */
+	struct list_head cmd_operations;
+	/* Params IDR reference passed during runtime */
 	struct tcf_p4act_params __rcu *params;
 	u32 p_id;
 };
