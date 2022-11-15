@@ -61,6 +61,18 @@ static int p4tc_cmd_SNDPORTEGR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			       struct tcf_p4act *cmd, struct tcf_result *res);
 static int p4tc_cmd_MIRPORTEGR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			       struct tcf_p4act *cmd, struct tcf_result *res);
+static int p4tc_cmd_PLUS(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			 struct tcf_p4act *cmd, struct tcf_result *res);
+static int p4tc_cmd_SUB(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			struct tcf_p4act *cmd, struct tcf_result *res);
+static int p4tc_cmd_CONCAT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			   struct tcf_p4act *cmd, struct tcf_result *res);
+static int p4tc_cmd_BAND(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			 struct tcf_p4act *cmd, struct tcf_result *res);
+static int p4tc_cmd_BOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			struct tcf_p4act *cmd, struct tcf_result *res);
+static int p4tc_cmd_BXOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			 struct tcf_p4act *cmd, struct tcf_result *res);
 
 static void kfree_opentry(struct p4tc_cmd_operate *ope)
 {
@@ -745,6 +757,69 @@ static void free_op_ACT(struct p4tc_cmd_operate *ope,
 	return _free_operation(ope, A, B, C, extack);
 }
 
+static int __validate_BINARITH(struct p4tc_cmd_operand *A,
+			       struct p4tc_cmd_operand *B,
+			       struct p4tc_cmd_operand *C,
+			       struct netlink_ext_ack *extack)
+{
+	struct p4tc_type *Atype;
+	struct p4tc_type *Btype;
+	struct p4tc_type *Ctype;
+
+	switch (A->oper_type) {
+	case P4TC_OPER_META:
+	case P4TC_OPER_HDRFIELD:
+	case P4TC_OPER_KEY:
+		break;
+	default:
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Operand A must be key, metadata or hdrfield");
+		return -EINVAL;
+	}
+
+	switch (B->oper_type) {
+	case P4TC_OPER_ACTID:
+	case P4TC_OPER_TBL:
+	case P4TC_OPER_DEV:
+	case P4TC_OPER_RES:
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Operand B must be key, metadata, const, hdrfield or param");
+		return -EINVAL;
+	default:
+		break;
+	}
+
+	switch (C->oper_type) {
+	case P4TC_OPER_ACTID:
+	case P4TC_OPER_TBL:
+	case P4TC_OPER_DEV:
+	case P4TC_OPER_RES:
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Operand C must be key, metadata, const, hdrfield or param");
+		return -EINVAL;
+	default:
+		break;
+	}
+
+	Atype = A->oper_datatype;
+	Btype = B->oper_datatype;
+	Ctype = C->oper_datatype;
+
+	if (!Btype->ops->host_read || !Ctype->ops->host_read) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Operands B and C's types must have host_read op");
+		return -EINVAL;
+	}
+
+	if (!Atype->ops->host_write) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Operand A's type must have host_write op");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 /* Syntax: act ACTION_ID ACTION_INDEX
  * Operation: The tc action instance of kind ID ACTION_ID and index ACTION_INDEX
  * is executed.
@@ -966,6 +1041,93 @@ int validate_SNDPORTEGR(struct net *net, struct p4tc_cmd_operand *A,
 	return 0;
 }
 
+int validate_BINARITH(struct net *net, struct p4tc_cmd_operand *A,
+		      struct p4tc_cmd_operand *B, struct p4tc_cmd_operand *C,
+		      struct netlink_ext_ack *extack)
+{
+	struct p4tc_type *Atype;
+	struct p4tc_type *Btype;
+	struct p4tc_type *Ctype;
+
+	int err;
+
+	err = validate_operand(net, A, extack);
+	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
+		return err;
+
+	err = validate_operand(net, B, extack);
+	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
+		return err;
+
+	err = validate_operand(net, C, extack);
+	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
+		return err;
+
+	err = __validate_BINARITH(A, B, C, extack);
+	if (err)
+		return err;
+
+	Atype = A->oper_datatype;
+	Btype = B->oper_datatype;
+	Ctype = C->oper_datatype;
+
+	/* For now, they must be the same.
+	 * Will change that very soon.
+	 */
+	if (Atype != Btype || Atype != Ctype) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Type of A, B and C must be the same");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int validate_CONCAT(struct net *net, struct p4tc_cmd_operand *A,
+		    struct p4tc_cmd_operand *B, struct p4tc_cmd_operand *C,
+		    struct netlink_ext_ack *extack)
+{
+	struct p4tc_type *Atype;
+	struct p4tc_type *Btype;
+	struct p4tc_type *Ctype;
+	int err;
+
+	err = validate_operand(net, A, extack);
+	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
+		return err;
+
+	err = validate_operand(net, B, extack);
+	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
+		return err;
+
+	err = validate_operand(net, C, extack);
+	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
+		return err;
+
+	err = __validate_BINARITH(A, B, C, extack);
+	if (err)
+		return err;
+
+	Atype = A->oper_datatype;
+	Btype = B->oper_datatype;
+	Ctype = C->oper_datatype;
+
+	if (Atype->bitsz < Btype->bitsz + Ctype->bitsz) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Operands B and C concatenated must fit inside operand A");
+		return -EINVAL;
+	}
+
+	if (Btype->bitsz % 8 != 0 ||
+	    Ctype->bitsz % 8 != 0) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Operands B and C must have bitsz multiple of 8");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 /* Syntax: BRANCHOP A B
  * BRANCHOP := BEQ, BNEQ, etc
  * Operation: B's value is compared to A's value.
@@ -1166,13 +1328,22 @@ static void free_op_TBLAPP(struct p4tc_cmd_operate *ope,
 static void free_op_SNDPORTEGR(struct p4tc_cmd_operate *ope,
 			       struct netlink_ext_ack *extack)
 {
-
 	struct p4tc_cmd_operand *A = ope->opA;
 	struct net_device *dev = A->priv;
 
 	netdev_put(dev, NULL);
 
 	return _free_operation(ope, A, NULL, NULL, extack);
+}
+
+static void free_op_BINARITH(struct p4tc_cmd_operate *ope,
+			     struct netlink_ext_ack *extack)
+{
+	struct p4tc_cmd_operand *A = ope->opA;
+	struct p4tc_cmd_operand *B = ope->opB;
+	struct p4tc_cmd_operand *C = ope->opC;
+
+	return _free_operation(ope, A, B, C, extack);
 }
 
 static struct p4tc_cmd_s cmds[] = {
@@ -1190,6 +1361,12 @@ static struct p4tc_cmd_s cmds[] = {
 	  p4tc_cmd_SNDPORTEGR },
 	{ P4TC_CMD_OP_MIRPORTEGR, validate_SNDPORTEGR, free_op_SNDPORTEGR,
 	  p4tc_cmd_MIRPORTEGR },
+	{ P4TC_CMD_OP_PLUS, validate_BINARITH, free_op_BINARITH, p4tc_cmd_PLUS },
+	{ P4TC_CMD_OP_SUB, validate_BINARITH, free_op_BINARITH, p4tc_cmd_SUB },
+	{ P4TC_CMD_OP_CONCAT, validate_CONCAT, free_op_BINARITH, p4tc_cmd_CONCAT },
+	{ P4TC_CMD_OP_BAND, validate_BINARITH, free_op_BINARITH, p4tc_cmd_BAND },
+	{ P4TC_CMD_OP_BOR, validate_BINARITH, free_op_BINARITH, p4tc_cmd_BOR },
+	{ P4TC_CMD_OP_BXOR, validate_BINARITH, free_op_BINARITH, p4tc_cmd_BXOR },
 };
 
 static struct p4tc_cmd_s *p4tc_get_cmd_byid(u16 cmdid)
@@ -2051,4 +2228,129 @@ static int p4tc_cmd_TBLAPP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 
 	return tcf_action_exec(skb, tclass->tbc_postacts,
 			       tclass->tbc_num_postacts, res);
+}
+
+static int p4tc_cmd_BINARITH(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			     struct tcf_p4act *cmd, struct tcf_result *res,
+			     void (*p4tc_arith_op)(u64 *res, u64 *opB, u64 *opC))
+{
+	void *srcB = op->opB->fetch(skb, op->opB, cmd, res);
+	void *srcC = op->opC->fetch(skb, op->opC, cmd, res);
+	void *dst = op->opA->fetch(skb, op->opA, cmd, res);
+	struct p4tc_type *dst_t = op->opA->oper_datatype;
+	struct p4tc_type *srcB_t = op->opB->oper_datatype;
+	struct p4tc_type *srcC_t = op->opC->oper_datatype;
+	struct p4tc_type_ops *dst_ops = dst_t->ops;
+	struct p4tc_type_ops *srcB_ops = srcB_t->ops;
+	struct p4tc_type_ops *srcC_ops = srcC_t->ops;
+	u64 result[2] = {0};
+	u64 Bval[2] = {0};
+	u64 Cval[2] = {0};
+
+	if (!srcB || !srcC || !dst)
+		return TC_ACT_SHOT;
+
+	srcB_ops->host_read(op->opB->oper_mask_shift, srcB, Bval);
+	srcC_ops->host_read(op->opC->oper_mask_shift, srcC, Cval);
+
+	p4tc_arith_op(result, Bval, Cval);
+
+	dst_ops->host_write(op->opA->oper_mask_shift, result, dst);
+
+	return op->ctl1;
+}
+
+/* For this first implementation we are not handling overflows yet */
+static void plus_op(u64 *res, u64 *opB, u64 *opC)
+{
+	res[0] = opB[0] + opC[0];
+	res[1] = opB[1] + opC[1];
+}
+
+static int p4tc_cmd_PLUS(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			 struct tcf_p4act *cmd, struct tcf_result *res)
+{
+	return p4tc_cmd_BINARITH(skb, op, cmd, res, plus_op);
+}
+
+/* For this first implementation we are not handling overflows yet */
+static void sub_op(u64 *res, u64 *opB, u64 *opC)
+{
+	res[0] = opB[0] - opC[0];
+	res[1] = opB[1] - opC[1];
+}
+
+static int p4tc_cmd_SUB(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			struct tcf_p4act *cmd, struct tcf_result *res)
+{
+	return p4tc_cmd_BINARITH(skb, op, cmd, res, sub_op);
+}
+
+static void band_op(u64 *res, u64 *opB, u64 *opC)
+{
+	res[0] = opB[0] & opC[0];
+	res[1] = opB[1] & opC[1];
+}
+
+static int p4tc_cmd_BAND(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			 struct tcf_p4act *cmd, struct tcf_result *res)
+{
+	return p4tc_cmd_BINARITH(skb, op, cmd, res, band_op);
+}
+
+static void bor_op(u64 *res, u64 *opB, u64 *opC)
+{
+	res[0] = opB[0] | opC[0];
+	res[1] = opB[1] | opC[1];
+}
+
+static int p4tc_cmd_BOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			struct tcf_p4act *cmd, struct tcf_result *res)
+{
+	return p4tc_cmd_BINARITH(skb, op, cmd, res, bor_op);
+}
+
+static void bxor_op(u64 *res, u64 *opB, u64 *opC)
+{
+	res[0] = opB[0] ^ opC[0];
+	res[1] = opB[1] ^ opC[1];
+}
+
+static int p4tc_cmd_BXOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			 struct tcf_p4act *cmd, struct tcf_result *res)
+{
+	return p4tc_cmd_BINARITH(skb, op, cmd, res, bxor_op);
+}
+
+static int p4tc_cmd_CONCAT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			   struct tcf_p4act *cmd, struct tcf_result *res)
+{
+	void *srcB = op->opB->fetch(skb, op->opB, cmd, res);
+	void *srcC = op->opC->fetch(skb, op->opC, cmd, res);
+	void *dst = op->opA->fetch(skb, op->opA, cmd, res);
+	struct p4tc_type *dst_t = op->opA->oper_datatype;
+	struct p4tc_type *srcB_t = op->opB->oper_datatype;
+	struct p4tc_type *srcC_t = op->opC->oper_datatype;
+	struct p4tc_type_ops *dst_ops = dst_t->ops;
+	struct p4tc_type_ops *srcB_ops = srcB_t->ops;
+	struct p4tc_type_ops *srcC_ops = srcC_t->ops;
+	__uint128_t Bval;
+	__uint128_t Cval;
+
+	memset(&Bval, 0, sizeof(Bval));
+	memset(&Cval, 0, sizeof(Cval));
+
+	if (!srcB || !srcC || !dst)
+		return TC_ACT_SHOT;
+
+	srcB_ops->host_read(op->opB->oper_mask_shift, srcB, &Bval);
+	srcC_ops->host_read(op->opC->oper_mask_shift, srcC, &Cval);
+
+	/* operand B's bitsz must be a multiple of 8 */
+	memcpy((char *)&Bval + BITS_TO_BYTES(srcB_t->bitsz), &Cval,
+	       BITS_TO_BYTES(srcC_t->bitsz));
+
+	dst_ops->host_write(op->opA->oper_mask_shift, &Bval, dst);
+
+	return op->ctl1;
 }
