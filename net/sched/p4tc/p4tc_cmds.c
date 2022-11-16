@@ -30,6 +30,16 @@
 
 #include <uapi/linux/p4tc.h>
 
+#define GET_OPA(operands_list) \
+	(list_first_entry(operands_list, struct p4tc_cmd_operand, \
+			  oper_list_node))
+
+#define GET_OPB(operands_list) (list_next_entry(GET_OPA(operands_list), \
+						oper_list_node))
+
+#define GET_OPC(operands_list) (list_next_entry(GET_OPB(operands_list), \
+						oper_list_node))
+
 static void *p4tc_fetch_metadata(struct sk_buff *skb,
 				 struct p4tc_cmd_operand *op,
 				 struct tcf_p4act *cmd, struct tcf_result *res);
@@ -122,15 +132,49 @@ static int copy_u2k_operand(struct p4tc_u_operand *uopnd,
 	return 0;
 }
 
+static int p4tc_cmds_fill_operands_list(struct sk_buff *skb,
+					struct list_head *operands_list)
+{
+	unsigned char *b = skb_tail_pointer(skb);
+	struct p4tc_u_operand oper = {0};
+	int i = 1;
+	struct p4tc_cmd_operand *cursor;
+	struct nlattr *nest_count;
+	u32 plen;
+
+	list_for_each_entry(cursor, operands_list, oper_list_node) {
+		nest_count = nla_nest_start(skb, i);
+
+		copy_k2u_operand(cursor, &oper);
+		if (nla_put(skb, P4TC_CMD_OPND_INFO,
+			    sizeof(struct p4tc_u_operand), &oper))
+			goto nla_put_failure;
+
+		plen = cursor->path_or_value_sz;
+
+		if (plen && nla_put(skb, P4TC_CMD_OPND_PATH, plen,
+				    cursor->path_or_value))
+			goto nla_put_failure;
+		nla_nest_end(skb, nest_count);
+		i++;
+	}
+
+	return skb->len;
+
+nla_put_failure:
+	nlmsg_trim(skb, b);
+	return -1;
+}
+
 /* under spin lock */
 int p4tc_cmds_fillup(struct sk_buff *skb, struct list_head *cmd_operations)
 {
 	unsigned char *b = skb_tail_pointer(skb);
-	struct p4tc_u_operand oper = { };
 	struct p4tc_u_operate op = { };
-	int i = 1, plen = 4;
+	int i = 1;
+	struct nlattr *nest_op, *nest_opnds;
 	struct p4tc_cmd_operate *entry;
-	struct nlattr *nest_op, *nest_opnd;
+	int err;
 
 	list_for_each_entry(entry, cmd_operations, cmd_operations) {
 		if (!entry)
@@ -145,54 +189,13 @@ int p4tc_cmds_fillup(struct sk_buff *skb, struct list_head *cmd_operations)
 			    sizeof(struct p4tc_u_operate), &op))
 			goto nla_put_failure;
 
-		if (entry->opA) {
-			nest_opnd = nla_nest_start(skb, P4TC_CMD_OPER_A);
-			copy_k2u_operand(entry->opA, &oper);
-
-			if (nla_put(skb, P4TC_CMD_OPND_INFO,
-				    sizeof(struct p4tc_u_operand), &oper))
+		if (!list_empty(&entry->operands_list)) {
+			nest_opnds = nla_nest_start(skb, P4TC_CMD_OPER_LIST);
+			err = p4tc_cmds_fill_operands_list(skb,
+							   &entry->operands_list);
+			if (err < 0)
 				goto nla_put_failure;
-
-			plen = entry->opA->path_or_value_sz;
-
-			if (plen && nla_put(skb, P4TC_CMD_OPND_PATH, plen,
-					    entry->opA->path_or_value))
-				goto nla_put_failure;
-
-			nla_nest_end(skb, nest_opnd);
-		}
-
-		if (entry->opB) {
-			nest_opnd = nla_nest_start(skb, P4TC_CMD_OPER_B);
-			copy_k2u_operand(entry->opB, &oper);
-
-			if (nla_put(skb, P4TC_CMD_OPND_INFO,
-				    sizeof(struct p4tc_u_operand), &oper))
-				goto nla_put_failure;
-
-			plen = entry->opB->path_or_value_sz;
-			if (plen && nla_put(skb, P4TC_CMD_OPND_PATH, plen,
-					    entry->opB->path_or_value))
-				goto nla_put_failure;
-
-			nla_nest_end(skb, nest_opnd);
-		}
-
-		if (entry->opC) {
-			nest_opnd = nla_nest_start(skb, P4TC_CMD_OPER_C);
-
-			copy_k2u_operand(entry->opC, &oper);
-
-			if (nla_put(skb, P4TC_CMD_OPND_INFO,
-				    sizeof(struct p4tc_u_operand), &oper))
-				goto nla_put_failure;
-
-			plen = entry->opB->path_or_value_sz;
-			if (plen && nla_put(skb, P4TC_CMD_OPND_PATH, plen,
-					    entry->opC->path_or_value))
-				goto nla_put_failure;
-
-			nla_nest_end(skb, nest_opnd);
+			nla_nest_end(skb, nest_opnds);
 		}
 
 		nla_nest_end(skb, nest_op);
@@ -465,8 +468,8 @@ create_metadata_bitops(struct p4tc_cmd_operand *kopnd,
 	u32 bitsz;
 
 	bitstart = meta->m_startbit + kopnd->oper_bitstart;
-	bitend = bitstart + kopnd->oper_bitend;
-	bitsz = meta->m_endbit - meta->m_startbit + 1;
+	bitend = meta->m_startbit + kopnd->oper_bitend;
+	bitsz = bitend - bitstart + 1;
 	mask_shift = t->ops->create_bitops(bitsz, bitstart, bitend,
 					   extack);
 	return mask_shift;
@@ -661,20 +664,20 @@ static void _free_operand(struct p4tc_cmd_operand *op)
 	kfree(op);
 }
 
+static void _free_operand_list(struct list_head *operands_list)
+{
+	struct p4tc_cmd_operand *op, *tmp;
+
+	list_for_each_entry_safe(op, tmp, operands_list, oper_list_node) {
+		list_del(&op->oper_list_node);
+		_free_operand(op);
+	}
+}
+
 static void _free_operation(struct p4tc_cmd_operate *ope,
-			    struct p4tc_cmd_operand *A,
-			    struct p4tc_cmd_operand *B,
-			    struct p4tc_cmd_operand *C,
 			    struct netlink_ext_ack *extack)
 {
-	if (A)
-		_free_operand(A);
-
-	if (B)
-		_free_operand(B);
-
-	if (C)
-		_free_operand(C);
+	_free_operand_list(&ope->operands_list);
 
 	kfree(ope);
 }
@@ -682,11 +685,7 @@ static void _free_operation(struct p4tc_cmd_operate *ope,
 static void free_op_SET(struct p4tc_cmd_operate *ope,
 			struct netlink_ext_ack *extack)
 {
-	struct p4tc_cmd_operand *A = ope->opA;
-	struct p4tc_cmd_operand *B = ope->opB;
-	struct p4tc_cmd_operand *C = ope->opC;
-
-	return _free_operation(ope, A, B, C, extack);
+	return _free_operation(ope, extack);
 }
 
 /* XXX: copied from act_api::tcf_free_cookie_rcu - at some point share the code */
@@ -728,11 +727,10 @@ static void _free_tcf(struct tc_action *p)
 static void free_op_ACT(struct p4tc_cmd_operate *ope,
 			struct netlink_ext_ack *extack)
 {
-	struct p4tc_cmd_operand *A = ope->opA;
-	struct p4tc_cmd_operand *B = ope->opB;
-	struct p4tc_cmd_operand *C = ope->opC;
+	struct p4tc_cmd_operand *A;
 	struct tc_action *p = NULL;
 
+	A = GET_OPA(&ope->operands_list);
 	if (A)
 		p = A->action;
 
@@ -754,22 +752,28 @@ static void free_op_ACT(struct p4tc_cmd_operate *ope,
 		atomic_dec(&p->tcfa_bindcnt);
 	}
 
-	return _free_operation(ope, A, B, C, extack);
+	return _free_operation(ope, extack);
 }
 
-static int __validate_BINARITH(struct p4tc_cmd_operand *A,
-			       struct p4tc_cmd_operand *B,
-			       struct p4tc_cmd_operand *C,
+static int __validate_BINARITH(struct net *net,
+			       struct list_head *operands_list,
+			       const size_t max_operands,
 			       struct netlink_ext_ack *extack)
 {
+	struct p4tc_cmd_operand *A, *cursor;
 	struct p4tc_type *Atype;
-	struct p4tc_type *Btype;
-	struct p4tc_type *Ctype;
+	int err;
+	int i = 0;
+
+	A = GET_OPA(operands_list);
+	err = validate_operand(net, A, extack);
+	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
+		return err;
 
 	switch (A->oper_type) {
+	case P4TC_OPER_KEY:
 	case P4TC_OPER_META:
 	case P4TC_OPER_HDRFIELD:
-	case P4TC_OPER_KEY:
 		break;
 	default:
 		NL_SET_ERR_MSG_MOD(extack,
@@ -777,40 +781,48 @@ static int __validate_BINARITH(struct p4tc_cmd_operand *A,
 		return -EINVAL;
 	}
 
-	switch (B->oper_type) {
-	case P4TC_OPER_ACTID:
-	case P4TC_OPER_TBL:
-	case P4TC_OPER_DEV:
-	case P4TC_OPER_RES:
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Operand B must be key, metadata, const, hdrfield or param");
-		return -EINVAL;
-	default:
-		break;
-	}
+	cursor = A;
+	list_for_each_entry_continue(cursor, operands_list, oper_list_node) {
+		struct p4tc_type *cursor_type;
 
-	switch (C->oper_type) {
-	case P4TC_OPER_ACTID:
-	case P4TC_OPER_TBL:
-	case P4TC_OPER_DEV:
-	case P4TC_OPER_RES:
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Operand C must be key, metadata, const, hdrfield or param");
-		return -EINVAL;
-	default:
-		break;
+		if (i == max_operands - 1) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "Operands list exceeds maximum allowed value");
+			return -EINVAL;
+		}
+
+		switch (cursor->oper_type) {
+		case P4TC_OPER_KEY:
+		case P4TC_OPER_META:
+		case P4TC_OPER_CONST:
+		case P4TC_OPER_HDRFIELD:
+		case P4TC_OPER_PARAM:
+			break;
+		default:
+			NL_SET_ERR_MSG_MOD(extack,
+					   "Rvalue operand must be key, metadata, const, hdrfield or param");
+			return -EINVAL;
+		}
+
+		cursor_type = cursor->oper_datatype;
+		if (!cursor_type->ops->host_read) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "Rvalue operand's types must have host_read op");
+			return -EINVAL;
+		}
+
+		err = validate_operand(net, cursor, extack);
+		if (err < 0)
+			return err;
+		if (cursor->oper_bitsize % 8 != 0) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "All Rvalues must have bitsize multiple of 8");
+			return -EINVAL;
+		}
+		i++;
 	}
 
 	Atype = A->oper_datatype;
-	Btype = B->oper_datatype;
-	Ctype = C->oper_datatype;
-
-	if (!Btype->ops->host_read || !Ctype->ops->host_read) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Operands B and C's types must have host_read op");
-		return -EINVAL;
-	}
-
 	if (!Atype->ops->host_write) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "Operand A's type must have host_write op");
@@ -820,27 +832,37 @@ static int __validate_BINARITH(struct p4tc_cmd_operand *A,
 	return 0;
 }
 
+static int validate_num_opnds(struct p4tc_cmd_operate *ope, u32 cmd_num_opnds)
+{
+	if (ope->num_opnds != cmd_num_opnds)
+		return -EINVAL;
+
+	return 0;
+}
+
 /* Syntax: act ACTION_ID ACTION_INDEX
  * Operation: The tc action instance of kind ID ACTION_ID and index ACTION_INDEX
  * is executed.
  * Restriction: The action instance must exist.
  */
-int validate_ACT(struct net *net, struct p4tc_cmd_operand *A,
-		 struct p4tc_cmd_operand *B, struct p4tc_cmd_operand *C,
-		 struct netlink_ext_ack *extack)
+int validate_ACT(struct net *net, struct p4tc_cmd_operate *ope,
+		 u32 cmd_num_opnds, struct netlink_ext_ack *extack)
 {
 	struct tc_action_ops *action_ops;
+	struct p4tc_cmd_operand *A;
 	struct tc_action *action;
+	int err;
 
+	err = validate_num_opnds(ope, cmd_num_opnds);
+	if (err < 0) {
+		NL_SET_ERR_MSG_MOD(extack, "ACT must have only 1 operands");
+		return err;
+	}
+
+	A = GET_OPA(&ope->operands_list);
 	if (A->oper_type != P4TC_OPER_ACTID) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "ACT: Operand type MUST be P4TC_OPER_ACTID\n");
-		return -EINVAL;
-	}
-
-	if (B || C) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "ACT: Operand B and C are not allowed\n");
 		return -EINVAL;
 	}
 
@@ -889,13 +911,21 @@ int validate_ACT(struct net *net, struct p4tc_cmd_operand *A,
  * as long as B's value could be less bits than A
  * (example a U16 setting into a U32, etc)
  */
-int validate_SET(struct net *net, struct p4tc_cmd_operand *A,
-		 struct p4tc_cmd_operand *B, struct p4tc_cmd_operand *C,
-		 struct netlink_ext_ack *extack)
+int validate_SET(struct net *net, struct p4tc_cmd_operate *ope,
+		 u32 cmd_num_opnds, struct netlink_ext_ack *extack)
 {
+	struct p4tc_cmd_operand *A, *B;
 	struct p4tc_type *Atype;
 	struct p4tc_type *Btype;
 	int err = 0;
+
+	err = validate_num_opnds(ope, cmd_num_opnds);
+	if (err < 0) {
+		NL_SET_ERR_MSG_MOD(extack, "SET must have only 2 operands");
+		return err;
+	}
+
+	A = GET_OPA(&ope->operands_list);
 
 	if (A->oper_type == P4TC_OPER_CONST) {
 		NL_SET_ERR_MSG_MOD(extack, "Operand A cannot be constant\n");
@@ -913,13 +943,9 @@ int validate_SET(struct net *net, struct p4tc_cmd_operand *A,
 		return -EINVAL;
 	}
 
+	B = GET_OPB(&ope->operands_list);
 	if (B->oper_type == P4TC_OPER_KEY) {
 		NL_SET_ERR_MSG_MOD(extack, "Operand B cannot be key\n");
-		return -EINVAL;
-	}
-
-	if (C) {
-		NL_SET_ERR_MSG_MOD(extack, "Invalid set operation with C\n");
 		return -EINVAL;
 	}
 
@@ -979,41 +1005,67 @@ int validate_SET(struct net *net, struct p4tc_cmd_operand *A,
 	return 0;
 }
 
-int validate_PRINT(struct net *net, struct p4tc_cmd_operand *A,
-		   struct p4tc_cmd_operand *B, struct p4tc_cmd_operand *C,
-		   struct netlink_ext_ack *extack)
+int validate_PRINT(struct net *net, struct p4tc_cmd_operate *ope,
+		   u32 cmd_num_opnds, struct netlink_ext_ack *extack)
 {
-	if (A->oper_type == P4TC_OPER_CONST) {
-		NL_SET_ERR_MSG_MOD(extack, "Operand A cannot be constant\n");
-		return -EINVAL;
+	struct p4tc_cmd_operand *A;
+	int err;
+
+	err = validate_num_opnds(ope, cmd_num_opnds);
+	if (err < 0) {
+		NL_SET_ERR_MSG_MOD(extack, "print must have only 1 operands");
+		return err;
 	}
 
-	if (B || C) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Invalid print operation with B or C\n");
+	A = GET_OPA(&ope->operands_list);
+
+	if (A->oper_type == P4TC_OPER_CONST) {
+		NL_SET_ERR_MSG_MOD(extack, "Operand A cannot be constant\n");
 		return -EINVAL;
 	}
 
 	return validate_operand(net, A, extack);
 }
 
-int validate_TBLAPP(struct net *net, struct p4tc_cmd_operand *A,
-		    struct p4tc_cmd_operand *B, struct p4tc_cmd_operand *C,
-		    struct netlink_ext_ack *extack)
+int validate_TBLAPP(struct net *net, struct p4tc_cmd_operate *ope,
+		    u32 cmd_num_opnds, struct netlink_ext_ack *extack)
 {
-	int err = 0;
+	struct p4tc_cmd_operand *A;
+	int err;
 
+	err = validate_num_opnds(ope, cmd_num_opnds);
+	if (err < 0) {
+		NL_SET_ERR_MSG_MOD(extack, "tableapply must have only 1 operands");
+		return err;
+	}
+
+	A = GET_OPA(&ope->operands_list);
 	if (A->oper_type != P4TC_OPER_TBL) {
 		NL_SET_ERR_MSG_MOD(extack, "Operand A must be a table\n");
 		return -EINVAL;
 	}
 
-	if (B || C) {
+	err = validate_operand(net, A, extack);
+	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
+		return err;
+
+	return 0;
+}
+
+int validate_SNDPORTEGR(struct net *net, struct p4tc_cmd_operate *ope,
+			u32 cmd_num_opnds, struct netlink_ext_ack *extack)
+{
+	struct p4tc_cmd_operand *A;
+	int err;
+
+	err = validate_num_opnds(ope, cmd_num_opnds);
+	if (err < 0) {
 		NL_SET_ERR_MSG_MOD(extack,
-				   "Invalid table apply operation with B or C\n");
-		return -EINVAL;
+				   "send_port_egress must have only 1 operands");
+		return err;
 	}
 
+	A = GET_OPA(&ope->operands_list);
 
 	err = validate_operand(net, A, extack);
 	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
@@ -1022,50 +1074,23 @@ int validate_TBLAPP(struct net *net, struct p4tc_cmd_operand *A,
 	return 0;
 }
 
-int validate_SNDPORTEGR(struct net *net, struct p4tc_cmd_operand *A,
-			struct p4tc_cmd_operand *B, struct p4tc_cmd_operand *C,
-			struct netlink_ext_ack *extack)
+int validate_BINARITH(struct net *net, struct p4tc_cmd_operate *ope,
+		      u32 cmd_num_opnds, struct netlink_ext_ack *extack)
 {
-	int err = 0;
-
-	if (B || C) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Invalid send_port_egress operation with B or C\n");
-		return -EINVAL;
-	}
-
-	err = validate_operand(net, A, extack);
-	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
-		return err;
-
-	return 0;
-}
-
-int validate_BINARITH(struct net *net, struct p4tc_cmd_operand *A,
-		      struct p4tc_cmd_operand *B, struct p4tc_cmd_operand *C,
-		      struct netlink_ext_ack *extack)
-{
+	struct p4tc_cmd_operand *A, *B, *C;
 	struct p4tc_type *Atype;
 	struct p4tc_type *Btype;
 	struct p4tc_type *Ctype;
-
 	int err;
 
-	err = validate_operand(net, A, extack);
-	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
-		return err;
-
-	err = validate_operand(net, B, extack);
-	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
-		return err;
-
-	err = validate_operand(net, C, extack);
-	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
-		return err;
-
-	err = __validate_BINARITH(A, B, C, extack);
+	err = __validate_BINARITH(net, &ope->operands_list, cmd_num_opnds,
+				  extack);
 	if (err)
 		return err;
+
+	A = GET_OPA(&ope->operands_list);
+	B = GET_OPB(&ope->operands_list);
+	C = GET_OPC(&ope->operands_list);
 
 	Atype = A->oper_datatype;
 	Btype = B->oper_datatype;
@@ -1083,45 +1108,41 @@ int validate_BINARITH(struct net *net, struct p4tc_cmd_operand *A,
 	return 0;
 }
 
-int validate_CONCAT(struct net *net, struct p4tc_cmd_operand *A,
-		    struct p4tc_cmd_operand *B, struct p4tc_cmd_operand *C,
-		    struct netlink_ext_ack *extack)
+int validate_CONCAT(struct net *net, struct p4tc_cmd_operate *ope,
+		    u32 cmd_num_opnds, struct netlink_ext_ack *extack)
 {
-	struct p4tc_type *Atype;
-	struct p4tc_type *Btype;
-	struct p4tc_type *Ctype;
+	struct p4tc_cmd_operand *cursor, *A;
+	size_t rvalue_tot_sz = 0;
 	int err;
+	int i = 0;
 
-	err = validate_operand(net, A, extack);
-	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
-		return err;
+	A = GET_OPA(&ope->operands_list);
 
-	err = validate_operand(net, B, extack);
-	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
-		return err;
-
-	err = validate_operand(net, C, extack);
-	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
-		return err;
-
-	err = __validate_BINARITH(A, B, C, extack);
+	err = __validate_BINARITH(net, &ope->operands_list,
+				  cmd_num_opnds, extack);
 	if (err)
 		return err;
 
-	Atype = A->oper_datatype;
-	Btype = B->oper_datatype;
-	Ctype = C->oper_datatype;
+	cursor = A;
+	list_for_each_entry_continue(cursor, &ope->operands_list, oper_list_node) {
+		if (cursor->oper_bitsize % 8 != 0) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "All Rvalues must have bitsize multiple of 8");
+			return -EINVAL;
+		}
+		rvalue_tot_sz += cursor->oper_bitsize;
+		i++;
+	}
 
-	if (Atype->bitsz < Btype->bitsz + Ctype->bitsz) {
+	if (i < 2) {
 		NL_SET_ERR_MSG_MOD(extack,
-				   "Operands B and C concatenated must fit inside operand A");
+				   "Concat must have at least 3 operands");
 		return -EINVAL;
 	}
 
-	if (Btype->bitsz % 8 != 0 ||
-	    Ctype->bitsz % 8 != 0) {
+	if (A->oper_bitsize < rvalue_tot_sz) {
 		NL_SET_ERR_MSG_MOD(extack,
-				   "Operands B and C must have bitsz multiple of 8");
+				   "Rvalue operands concatenated must fit inside operand A");
 		return -EINVAL;
 	}
 
@@ -1141,17 +1162,27 @@ int validate_CONCAT(struct net *net, struct p4tc_cmd_operand *A,
 static int p4tc_cmd_BEQ(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res)
 {
-	struct p4tc_type_ops *dst_ops = op->opA->oper_datatype->ops;
-	struct p4tc_type_ops *src_ops = op->opB->oper_datatype->ops;
-	void *Bval = op->opB->fetch(skb, op->opB, cmd, res);
-	void *Aval = op->opA->fetch(skb, op->opA, cmd, res);
+	struct p4tc_cmd_operand *A, *B;
+	struct p4tc_type_ops *dst_ops;
+	struct p4tc_type_ops *src_ops;
 	int res_cmp;
+	void *Bval;
+	void *Aval;
+
+	A = GET_OPA(&op->operands_list);
+	B = GET_OPB(&op->operands_list);
+
+	dst_ops = A->oper_datatype->ops;
+	src_ops = B->oper_datatype->ops;
+
+	Aval = A->fetch(skb, A, cmd, res);
+	Bval = B->fetch(skb, B, cmd, res);
 
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(op->opA->oper_mask_shift, dst_ops, Aval,
-			  op->opB->oper_mask_shift, src_ops, Bval);
+	res_cmp = p4t_cmp(A->oper_mask_shift, dst_ops, Aval,
+			  B->oper_mask_shift, src_ops, Bval);
 	if (!res_cmp)
 		return op->ctl1;
 
@@ -1162,17 +1193,27 @@ static int p4tc_cmd_BEQ(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 static int p4tc_cmd_BNE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res)
 {
-	struct p4tc_type_ops *dst_ops = op->opA->oper_datatype->ops;
-	struct p4tc_type_ops *src_ops = op->opB->oper_datatype->ops;
-	void *Bval = op->opB->fetch(skb, op->opB, cmd, res);
-	void *Aval = op->opA->fetch(skb, op->opA, cmd, res);
+	struct p4tc_cmd_operand *A, *B;
+	struct p4tc_type_ops *dst_ops;
+	struct p4tc_type_ops *src_ops;
 	int res_cmp;
+	void *Bval;
+	void *Aval;
+
+	A = GET_OPA(&op->operands_list);
+	B = GET_OPB(&op->operands_list);
+
+	dst_ops = A->oper_datatype->ops;
+	src_ops = B->oper_datatype->ops;
+
+	Aval = A->fetch(skb, A, cmd, res);
+	Bval = B->fetch(skb, B, cmd, res);
 
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(op->opA->oper_mask_shift, dst_ops, Aval,
-			  op->opB->oper_mask_shift, src_ops, Bval);
+	res_cmp = p4t_cmp(A->oper_mask_shift, dst_ops, Aval,
+			  B->oper_mask_shift, src_ops, Bval);
 	if (res_cmp)
 		return op->ctl1;
 
@@ -1183,17 +1224,27 @@ static int p4tc_cmd_BNE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 static int p4tc_cmd_BLT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res)
 {
-	struct p4tc_type_ops *dst_ops = op->opA->oper_datatype->ops;
-	struct p4tc_type_ops *src_ops = op->opB->oper_datatype->ops;
-	void *Bval = op->opB->fetch(skb, op->opB, cmd, res);
-	void *Aval = op->opA->fetch(skb, op->opA, cmd, res);
+	struct p4tc_cmd_operand *A, *B;
+	struct p4tc_type_ops *dst_ops;
+	struct p4tc_type_ops *src_ops;
 	int res_cmp;
+	void *Bval;
+	void *Aval;
+
+	A = GET_OPA(&op->operands_list);
+	B = GET_OPB(&op->operands_list);
+
+	dst_ops = A->oper_datatype->ops;
+	src_ops = B->oper_datatype->ops;
+
+	Aval = A->fetch(skb, A, cmd, res);
+	Bval = B->fetch(skb, B, cmd, res);
 
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(op->opA->oper_mask_shift, dst_ops, Aval,
-			  op->opB->oper_mask_shift, src_ops, Bval);
+	res_cmp = p4t_cmp(A->oper_mask_shift, dst_ops, Aval,
+			  B->oper_mask_shift, src_ops, Bval);
 	if (res_cmp < 0)
 		return op->ctl1;
 
@@ -1204,17 +1255,27 @@ static int p4tc_cmd_BLT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 static int p4tc_cmd_BLE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res)
 {
-	struct p4tc_type_ops *dst_ops = op->opA->oper_datatype->ops;
-	struct p4tc_type_ops *src_ops = op->opB->oper_datatype->ops;
-	void *Bval = op->opB->fetch(skb, op->opB, cmd, res);
-	void *Aval = op->opA->fetch(skb, op->opA, cmd, res);
+	struct p4tc_cmd_operand *A, *B;
+	struct p4tc_type_ops *dst_ops;
+	struct p4tc_type_ops *src_ops;
 	int res_cmp;
+	void *Bval;
+	void *Aval;
+
+	A = GET_OPA(&op->operands_list);
+	B = GET_OPB(&op->operands_list);
+
+	dst_ops = A->oper_datatype->ops;
+	src_ops = B->oper_datatype->ops;
+
+	Aval = A->fetch(skb, A, cmd, res);
+	Bval = B->fetch(skb, B, cmd, res);
 
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(op->opA->oper_mask_shift, dst_ops, Aval,
-			  op->opB->oper_mask_shift, src_ops, Bval);
+	res_cmp = p4t_cmp(A->oper_mask_shift, dst_ops, Aval, B->oper_mask_shift,
+			  src_ops, Bval);
 	if (!res_cmp || res_cmp < 0)
 		return op->ctl1;
 
@@ -1225,17 +1286,27 @@ static int p4tc_cmd_BLE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 static int p4tc_cmd_BGT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res)
 {
-	struct p4tc_type_ops *dst_ops = op->opA->oper_datatype->ops;
-	struct p4tc_type_ops *src_ops = op->opB->oper_datatype->ops;
-	void *Bval = op->opB->fetch(skb, op->opB, cmd, res);
-	void *Aval = op->opA->fetch(skb, op->opA, cmd, res);
+	struct p4tc_cmd_operand *A, *B;
+	struct p4tc_type_ops *dst_ops;
+	struct p4tc_type_ops *src_ops;
 	int res_cmp;
+	void *Bval;
+	void *Aval;
+
+	A = GET_OPA(&op->operands_list);
+	B = GET_OPB(&op->operands_list);
+
+	dst_ops = A->oper_datatype->ops;
+	src_ops = B->oper_datatype->ops;
+
+	Aval = A->fetch(skb, A, cmd, res);
+	Bval = B->fetch(skb, B, cmd, res);
 
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(op->opA->oper_mask_shift, dst_ops, Aval,
-			  op->opB->oper_mask_shift, src_ops, Bval);
+	res_cmp = p4t_cmp(A->oper_mask_shift, dst_ops, Aval,
+			  B->oper_mask_shift, src_ops, Bval);
 	if (res_cmp > 0)
 		return op->ctl1;
 
@@ -1246,37 +1317,52 @@ static int p4tc_cmd_BGT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 static int p4tc_cmd_BGE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res)
 {
-	struct p4tc_type_ops *dst_ops = op->opA->oper_datatype->ops;
-	struct p4tc_type_ops *src_ops = op->opB->oper_datatype->ops;
-	void *Bval = op->opB->fetch(skb, op->opB, cmd, res);
-	void *Aval = op->opA->fetch(skb, op->opA, cmd, res);
+	struct p4tc_cmd_operand *A, *B;
+	struct p4tc_type_ops *dst_ops;
+	struct p4tc_type_ops *src_ops;
 	int res_cmp;
+	void *Bval;
+	void *Aval;
+
+	A = GET_OPA(&op->operands_list);
+	B = GET_OPB(&op->operands_list);
+
+	dst_ops = A->oper_datatype->ops;
+	src_ops = B->oper_datatype->ops;
+
+	Aval = A->fetch(skb, A, cmd, res);
+	Bval = B->fetch(skb, B, cmd, res);
 
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(op->opA->oper_mask_shift, dst_ops, Aval,
-			  op->opB->oper_mask_shift, src_ops, Bval);
+	res_cmp = p4t_cmp(A->oper_mask_shift, dst_ops, Aval, B->oper_mask_shift,
+			  src_ops, Bval);
 	if (!res_cmp || res_cmp > 0)
 		return op->ctl1;
 
 	return op->ctl2;
 }
 
-int validate_BRN(struct net *net, struct p4tc_cmd_operand *A,
-		 struct p4tc_cmd_operand *B, struct p4tc_cmd_operand *C,
+int validate_BRN(struct net *net, struct p4tc_cmd_operate *ope,
+		 u32 cmd_num_opnds,
 		 struct netlink_ext_ack *extack)
 {
+	struct p4tc_cmd_operand *A, *B;
 	int err = 0;
+
+	if (validate_num_opnds(ope, cmd_num_opnds) < 0) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Branch: branch must have only 2 operands");
+		return -EINVAL;
+	}
+
+	A = GET_OPA(&ope->operands_list);
+	B = GET_OPB(&ope->operands_list);
 
 	if (A->oper_type == P4TC_OPER_CONST && B &&
 	    B->oper_type == P4TC_OPER_CONST) {
 		NL_SET_ERR_MSG_MOD(extack, "Branch: A and B can't both be constant\n");
-		return -EINVAL;
-	}
-
-	if (C) {
-		NL_SET_ERR_MSG_MOD(extack, "Invalid branch operation with C\n");
 		return -EINVAL;
 	}
 
@@ -1301,72 +1387,70 @@ int validate_BRN(struct net *net, struct p4tc_cmd_operand *A,
 static void free_op_BRN(struct p4tc_cmd_operate *ope,
 			struct netlink_ext_ack *extack)
 {
-	struct p4tc_cmd_operand *A = ope->opA;
-	struct p4tc_cmd_operand *B = ope->opB;
-	struct p4tc_cmd_operand *C = ope->opC;
-
-	return _free_operation(ope, A, B, C, extack);
+	return _free_operation(ope, extack);
 }
 
 static void free_op_PRINT(struct p4tc_cmd_operate *ope,
 			  struct netlink_ext_ack *extack)
 {
-	struct p4tc_cmd_operand *A = ope->opA;
-
-	return _free_operation(ope, A, NULL, NULL, extack);
+	return _free_operation(ope, extack);
 }
 
 static void free_op_TBLAPP(struct p4tc_cmd_operate *ope,
 			   struct netlink_ext_ack *extack)
 {
 
-	struct p4tc_cmd_operand *A = ope->opA;
-
-	return _free_operation(ope, A, NULL, NULL, extack);
+	return _free_operation(ope, extack);
 }
 
 static void free_op_SNDPORTEGR(struct p4tc_cmd_operate *ope,
 			       struct netlink_ext_ack *extack)
 {
-	struct p4tc_cmd_operand *A = ope->opA;
-	struct net_device *dev = A->priv;
+	struct p4tc_cmd_operand *A;
+	struct net_device *dev;
 
+	A = GET_OPA(&ope->operands_list);
+
+	dev = A->priv;
 	netdev_put(dev, NULL);
 
-	return _free_operation(ope, A, NULL, NULL, extack);
+	return _free_operation(ope, extack);
 }
 
 static void free_op_BINARITH(struct p4tc_cmd_operate *ope,
 			     struct netlink_ext_ack *extack)
 {
-	struct p4tc_cmd_operand *A = ope->opA;
-	struct p4tc_cmd_operand *B = ope->opB;
-	struct p4tc_cmd_operand *C = ope->opC;
-
-	return _free_operation(ope, A, B, C, extack);
+	return _free_operation(ope, extack);
 }
 
 static struct p4tc_cmd_s cmds[] = {
-	{ P4TC_CMD_OP_SET, validate_SET, free_op_SET, p4tc_cmd_SET },
-	{ P4TC_CMD_OP_ACT, validate_ACT, free_op_ACT, p4tc_cmd_ACT },
-	{ P4TC_CMD_OP_BEQ, validate_BRN, free_op_BRN, p4tc_cmd_BEQ },
-	{ P4TC_CMD_OP_BNE, validate_BRN, free_op_BRN, p4tc_cmd_BNE },
-	{ P4TC_CMD_OP_BGT, validate_BRN, free_op_BRN, p4tc_cmd_BGT },
-	{ P4TC_CMD_OP_BLT, validate_BRN, free_op_BRN, p4tc_cmd_BLT },
-	{ P4TC_CMD_OP_BGE, validate_BRN, free_op_BRN, p4tc_cmd_BGE },
-	{ P4TC_CMD_OP_BLE, validate_BRN, free_op_BRN, p4tc_cmd_BLE },
-	{ P4TC_CMD_OP_PRINT, validate_PRINT, free_op_PRINT, p4tc_cmd_PRINT },
-	{ P4TC_CMD_OP_TBLAPP, validate_TBLAPP, free_op_TBLAPP, p4tc_cmd_TBLAPP },
-	{ P4TC_CMD_OP_SNDPORTEGR, validate_SNDPORTEGR, free_op_SNDPORTEGR,
+	{ P4TC_CMD_OP_SET, 2, validate_SET, free_op_SET, p4tc_cmd_SET },
+	{ P4TC_CMD_OP_ACT, 1, validate_ACT, free_op_ACT, p4tc_cmd_ACT },
+	{ P4TC_CMD_OP_BEQ, 2, validate_BRN, free_op_BRN, p4tc_cmd_BEQ },
+	{ P4TC_CMD_OP_BNE, 2, validate_BRN, free_op_BRN, p4tc_cmd_BNE },
+	{ P4TC_CMD_OP_BGT, 2, validate_BRN, free_op_BRN, p4tc_cmd_BGT },
+	{ P4TC_CMD_OP_BLT, 2, validate_BRN, free_op_BRN, p4tc_cmd_BLT },
+	{ P4TC_CMD_OP_BGE, 2, validate_BRN, free_op_BRN, p4tc_cmd_BGE },
+	{ P4TC_CMD_OP_BLE, 2, validate_BRN, free_op_BRN, p4tc_cmd_BLE },
+	{ P4TC_CMD_OP_PRINT, 1, validate_PRINT, free_op_PRINT, p4tc_cmd_PRINT },
+	{ P4TC_CMD_OP_TBLAPP, 1, validate_TBLAPP, free_op_TBLAPP,
+		p4tc_cmd_TBLAPP },
+	{ P4TC_CMD_OP_SNDPORTEGR, 1, validate_SNDPORTEGR, free_op_SNDPORTEGR,
 	  p4tc_cmd_SNDPORTEGR },
-	{ P4TC_CMD_OP_MIRPORTEGR, validate_SNDPORTEGR, free_op_SNDPORTEGR,
+	{ P4TC_CMD_OP_MIRPORTEGR, 1, validate_SNDPORTEGR, free_op_SNDPORTEGR,
 	  p4tc_cmd_MIRPORTEGR },
-	{ P4TC_CMD_OP_PLUS, validate_BINARITH, free_op_BINARITH, p4tc_cmd_PLUS },
-	{ P4TC_CMD_OP_SUB, validate_BINARITH, free_op_BINARITH, p4tc_cmd_SUB },
-	{ P4TC_CMD_OP_CONCAT, validate_CONCAT, free_op_BINARITH, p4tc_cmd_CONCAT },
-	{ P4TC_CMD_OP_BAND, validate_BINARITH, free_op_BINARITH, p4tc_cmd_BAND },
-	{ P4TC_CMD_OP_BOR, validate_BINARITH, free_op_BINARITH, p4tc_cmd_BOR },
-	{ P4TC_CMD_OP_BXOR, validate_BINARITH, free_op_BINARITH, p4tc_cmd_BXOR },
+	{ P4TC_CMD_OP_PLUS, 3, validate_BINARITH, free_op_BINARITH,
+		p4tc_cmd_PLUS },
+	{ P4TC_CMD_OP_SUB, 3, validate_BINARITH, free_op_BINARITH,
+		p4tc_cmd_SUB },
+	{ P4TC_CMD_OP_CONCAT, P4TC_CMD_OPERS_MAX, validate_CONCAT,
+		free_op_BINARITH, p4tc_cmd_CONCAT },
+	{ P4TC_CMD_OP_BAND, 3, validate_BINARITH, free_op_BINARITH,
+		p4tc_cmd_BAND },
+	{ P4TC_CMD_OP_BOR, 3, validate_BINARITH, free_op_BINARITH,
+		p4tc_cmd_BOR },
+	{ P4TC_CMD_OP_BXOR, 3, validate_BINARITH, free_op_BINARITH,
+		p4tc_cmd_BXOR },
 };
 
 static struct p4tc_cmd_s *p4tc_get_cmd_byid(u16 cmdid)
@@ -1487,9 +1571,7 @@ static const struct nla_policy cmd_ops_policy[P4TC_CMD_OPER_MAX + 1] = {
 		.type = NLA_BINARY,
 		.len = sizeof(struct p4tc_u_operate)
 	},
-	[P4TC_CMD_OPER_A] = { .type = NLA_NESTED },
-	[P4TC_CMD_OPER_B] = { .type = NLA_NESTED },
-	[P4TC_CMD_OPER_C] = { .type = NLA_NESTED },
+	[P4TC_CMD_OPER_LIST] = { .type = NLA_NESTED },
 };
 
 static struct p4tc_cmd_operate *uope_to_kope(struct p4tc_u_operate *uope)
@@ -1509,18 +1591,49 @@ static struct p4tc_cmd_operate *uope_to_kope(struct p4tc_u_operate *uope)
 
 	ope->ctl1 = uope->op_ctl1;
 	ope->ctl2 = uope->op_ctl2;
+
+	INIT_LIST_HEAD(&ope->operands_list);
+
 	return ope;
+}
+
+static int p4tc_cmd_process_operands_list(struct nlattr *nla,
+					  struct p4tc_cmd_operate *ope,
+					  struct netlink_ext_ack *extack)
+{
+	struct nlattr *tb[P4TC_CMD_OPERS_MAX + 1];
+	struct p4tc_cmd_operand *opnd;
+	int err;
+	int i;
+
+	err = nla_parse_nested(tb, P4TC_CMD_OPERS_MAX, nla, NULL, NULL);
+	if (err < 0)
+		return err;
+
+	for (i = 1; i < P4TC_CMD_OPERS_MAX + 1 && tb[i]; i++) {
+		opnd = kzalloc(sizeof(*opnd), GFP_KERNEL);
+		if (!opnd)
+			return -ENOMEM;
+		err = p4tc_cmds_process_opnd(tb[i], opnd, extack);
+		/* Will add to list because p4tc_cmd_process_opnd may have
+		 * allocated memory inside opnd even in case of failure,
+		 * and this memory must be freed
+		 */
+		list_add_tail(&opnd->oper_list_node, &ope->operands_list);
+		if (err < 0)
+			return P4TC_CMD_POLICY;
+		ope->num_opnds++;
+	}
+
+	return 0;
 }
 
 static int p4tc_cmd_process_ops(struct net *net, struct nlattr *nla,
 				struct p4tc_cmd_operate **op_entry,
 				struct netlink_ext_ack *extack)
 {
-	struct p4tc_cmd_operand *opndA = NULL;
-	struct p4tc_cmd_operand *opndB = NULL;
-	struct p4tc_cmd_operand *opndC = NULL;
 	struct p4tc_cmd_operate *ope = NULL;
-	int err = 0, tbits = 0;
+	int err = 0;
 	struct nlattr *tb[P4TC_CMD_OPER_MAX + 1];
 	struct p4tc_cmd_s *cmd_t;
 
@@ -1542,59 +1655,17 @@ static int p4tc_cmd_process_ops(struct net *net, struct nlattr *nla,
 		return -EINVAL;
 	}
 
-	if (tb[P4TC_CMD_OPER_A]) {
-		opndA = kzalloc(sizeof(*opndA), GFP_KERNEL);
-		if (!opndA)
-			return -ENOMEM;
-
-		err = p4tc_cmds_process_opnd(tb[P4TC_CMD_OPER_A], opndA,
-					     extack);
-		if (err < 0) {
-			//XXX: think about getting rid of this P4TC_CMD_POLICY
-			err =  P4TC_CMD_POLICY;
+	if (tb[P4TC_CMD_OPER_LIST]) {
+		err = p4tc_cmd_process_operands_list(tb[P4TC_CMD_OPER_LIST],
+						     ope, extack);
+		if (err) {
+			err = P4TC_CMD_POLICY;
 			goto set_results;
 		}
-
-		tbits = opndA->oper_bitsize;
 	}
 
-	if (tb[P4TC_CMD_OPER_B]) {
-		opndB = kzalloc(sizeof(*opndB), GFP_KERNEL);
-		if (!opndB) {
-			err =  -ENOMEM;
-			goto set_results;
-		}
-
-		err = p4tc_cmds_process_opnd(tb[P4TC_CMD_OPER_B], opndB,
-					     extack);
-		if (err < 0) {
-			//XXX: think about getting rid of this P4TC_CMD_POLICY
-			err =  P4TC_CMD_POLICY;
-			goto set_results;
-		}
-
-		tbits = opndB->oper_bitsize;
-	}
-
-	if (tb[P4TC_CMD_OPER_C]) {
-		opndC = kzalloc(sizeof(*opndC), GFP_KERNEL);
-		if (!opndC) {
-			err =  -ENOMEM;
-			goto set_results;
-		}
-
-		err = p4tc_cmds_process_opnd(tb[P4TC_CMD_OPER_C], opndC,
-					     extack);
-		if (err < 0) {
-			//XXX: think about getting rid of this P4TC_CMD_POLICY
-			err =  P4TC_CMD_POLICY;
-			goto set_results;
-		}
-
-		tbits = opndC->oper_bitsize;
-	}
-
-	if (cmd_t->validate_operands(net, opndA, opndB, opndC, extack)) {
+	err = cmd_t->validate_operands(net, ope, cmd_t->num_opnds, extack);
+	if (err) {
 		//XXX: think about getting rid of this P4TC_CMD_POLICY
 		err =  P4TC_CMD_POLICY;
 		goto set_results;
@@ -1603,9 +1674,6 @@ static int p4tc_cmd_process_ops(struct net *net, struct nlattr *nla,
 set_results:
 	ope->cmd = cmd_t;
 	*op_entry = ope;
-	ope->opA = opndA;
-	ope->opB = opndB;
-	ope->opC = opndC;
 
 	return err;
 }
@@ -1735,30 +1803,23 @@ static int p4tc_cmds_copy_ops(struct p4tc_cmd_operate **new_op_entry,
 			      struct p4tc_cmd_operate *op_entry,
 			      struct netlink_ext_ack *extack)
 {
-	struct p4tc_cmd_operand *opndA = NULL;
-	struct p4tc_cmd_operand *opndB = NULL;
-	struct p4tc_cmd_operand *opndC = NULL;
 	struct p4tc_cmd_operate *_new_op_entry;
+	struct p4tc_cmd_operand *cursor;
 	int err;
 
 	_new_op_entry = kzalloc(sizeof(*_new_op_entry), GFP_KERNEL);
 	if (!_new_op_entry)
 		return -ENOMEM;
 
-	if (op_entry->opA) {
-		err = p4tc_cmds_copy_opnd(&opndA, op_entry->opA, extack);
-		if (err < 0)
-			goto set_results;
-	}
+	INIT_LIST_HEAD(&_new_op_entry->operands_list);
+	list_for_each_entry(cursor, &op_entry->operands_list, oper_list_node) {
+		struct p4tc_cmd_operand *new_opnd;
 
-	if (op_entry->opB) {
-		err = p4tc_cmds_copy_opnd(&opndB, op_entry->opB, extack);
-		if (err < 0)
-			goto set_results;
-	}
-
-	if (op_entry->opC) {
-		err = p4tc_cmds_copy_opnd(&opndC, op_entry->opC, extack);
+		err = p4tc_cmds_copy_opnd(&new_opnd, cursor, extack);
+		if (new_opnd) {
+			list_add_tail(&new_opnd->oper_list_node,
+				      &_new_op_entry->operands_list);
+		}
 		if (err < 0)
 			goto set_results;
 	}
@@ -1773,9 +1834,6 @@ static int p4tc_cmds_copy_ops(struct p4tc_cmd_operate **new_op_entry,
 
 set_results:
 	*new_op_entry = _new_op_entry;
-	_new_op_entry->opA = opndA;
-	_new_op_entry->opB = opndB;
-	_new_op_entry->opC = opndC;
 
 	return err;
 }
@@ -1829,9 +1887,11 @@ int p4tc_cmds_parse(struct net *net,
 	if (err < 0)
 		return err;
 
-	for (i = 1; i < P4TC_CMDS_LIST_MAX && oplist_attr[i]; i++) {
-		struct p4tc_cmd_operate *o = oplist[i - 1];
+	for (i = 1; i < P4TC_CMDS_LIST_MAX + 1 && oplist_attr[i]; i++) {
+		struct p4tc_cmd_operate *o;
 
+		if (!oplist_attr[i])
+			break;
 		err =
 		    p4tc_cmd_process_ops(net, oplist_attr[i], &oplist[i - 1],
 					 extack);
@@ -1941,24 +2001,27 @@ static void *p4tc_fetch_metadata(struct sk_buff *skb,
 static int p4tc_cmd_SET(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res)
 {
-	void *src = op->opB->fetch(skb, op->opB, cmd, res);
-	void *dst = op->opA->fetch(skb, op->opA, cmd, res);
-	struct p4tc_type *dst_t = op->opA->oper_datatype;
-	struct p4tc_type *src_t = op->opB->oper_datatype;
-	struct p4tc_type_ops *dst_ops = dst_t->ops;
-	struct p4tc_type_ops *src_ops = src_t->ops;
+	struct p4tc_cmd_operand *A, *B;
+	struct p4tc_type_ops *dst_ops;
+	struct p4tc_type_ops *src_ops;
+	void *src;
+	void *dst;
 	int err;
 
-	//XXX: We should return SHOT for any failure...
-	//imagine running a series of commands on a packet
-	//which gets partially modified. You really dont want
-	//to proceed with other commands if one in the middle
-	//fails neither do you want that packet sent anywhere.
+	A = GET_OPA(&op->operands_list);
+	B = GET_OPB(&op->operands_list);
+
+	src = B->fetch(skb, B, cmd, res);
+	dst = A->fetch(skb, A, cmd, res);
+
 	if (!src || !dst)
 		return TC_ACT_SHOT;
 
-	err = p4t_copy(op->opA->oper_mask_shift, dst_ops, dst,
-		       op->opB->oper_mask_shift, src_ops, src);
+	dst_ops = A->oper_datatype->ops;
+	src_ops = B->oper_datatype->ops;
+
+	err = p4t_copy(A->oper_mask_shift, dst_ops, dst, B->oper_mask_shift,
+		       src_ops, src);
 	if (err)
 		return TC_ACT_SHOT;
 
@@ -1973,7 +2036,8 @@ static int p4tc_cmd_SET(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 static int p4tc_cmd_ACT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res)
 {
-	const struct tc_action *action = op->opA->action;
+	struct p4tc_cmd_operand *A = GET_OPA(&op->operands_list);
+	const struct tc_action *action = A->action;
 
 	return action->ops->act(skb, action, res);
 }
@@ -1981,11 +2045,14 @@ static int p4tc_cmd_ACT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			  struct tcf_p4act *cmd, struct tcf_result *res)
 {
-	struct p4tc_cmd_operand *A = op->opA;
-	struct p4tc_type *val_t = A->oper_datatype;
-	void *val = A->fetch(skb, A, cmd, res);
 	char name[(TEMPLATENAMSZ * 4)];
+	struct p4tc_cmd_operand *A;
+	struct p4tc_type *val_t;
+	void *val;
 
+	A = GET_OPA(&op->operands_list);
+	val = A->fetch(skb, A, cmd, res);
+	val_t = A->oper_datatype;
 	if (!val)
 		return TC_ACT_OK;
 
@@ -2052,15 +2119,18 @@ static DEFINE_PER_CPU(unsigned int, redirect_rec_level);
 static int p4tc_cmd_SNDPORTEGR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			       struct tcf_p4act *cmd, struct tcf_result *res)
 {
-	struct p4tc_cmd_operand *A = op->opA;
-	struct net_device *dev = A->fetch(skb, A, cmd, res);
 	struct sk_buff *skb2 = skb;
 	int retval = TC_ACT_STOLEN;
+	struct p4tc_cmd_operand *A;
+	struct net_device *dev;
 	unsigned int rec_level;
 	bool expects_nh;
 	int mac_len;
 	bool at_nh;
 	int err;
+
+	A = GET_OPA(&op->operands_list);
+	dev = A->fetch(skb, A, cmd, res);
 
 	rec_level = __this_cpu_inc_return(redirect_rec_level);
 	if (unlikely(rec_level > REDIRECT_RECURSION_LIMIT)) {
@@ -2115,15 +2185,18 @@ static int p4tc_cmd_SNDPORTEGR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 static int p4tc_cmd_MIRPORTEGR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			       struct tcf_p4act *cmd, struct tcf_result *res)
 {
-	struct p4tc_cmd_operand *A = op->opA;
-	struct net_device *dev = A->fetch(skb, A, cmd, res);
 	struct sk_buff *skb2 = skb;
 	int retval = TC_ACT_PIPE;
+	struct p4tc_cmd_operand *A;
+	struct net_device *dev;
 	unsigned int rec_level;
 	bool expects_nh;
 	int mac_len;
 	bool at_nh;
 	int err;
+
+	A = GET_OPA(&op->operands_list);
+	dev = A->fetch(skb, A, cmd, res);
 
 	rec_level = __this_cpu_inc_return(redirect_rec_level);
 	if (unlikely(rec_level > REDIRECT_RECURSION_LIMIT)) {
@@ -2184,13 +2257,15 @@ static int p4tc_cmd_MIRPORTEGR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 static int p4tc_cmd_TBLAPP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			   struct tcf_p4act *cmd, struct tcf_result *res)
 {
-	struct p4tc_cmd_operand *A = op->opA;
-	struct p4tc_table_class *tclass = A->fetch(skb, A, cmd, res);
 	struct p4tc_table_instance *tinst;
+	struct p4tc_table_class *tclass;
 	struct p4tc_table_entry *entry;
 	struct p4tc_table_key *key;
+	struct p4tc_cmd_operand *A;
 	int ret;
 
+	A = GET_OPA(&op->operands_list);
+	tclass = A->fetch(skb, A, cmd, res);
 	if (unlikely(!tclass))
 		return TC_ACT_SHOT;
 
@@ -2244,28 +2319,38 @@ static int p4tc_cmd_BINARITH(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			     struct tcf_p4act *cmd, struct tcf_result *res,
 			     void (*p4tc_arith_op)(u64 *res, u64 *opB, u64 *opC))
 {
-	void *srcB = op->opB->fetch(skb, op->opB, cmd, res);
-	void *srcC = op->opC->fetch(skb, op->opC, cmd, res);
-	void *dst = op->opA->fetch(skb, op->opA, cmd, res);
-	struct p4tc_type *dst_t = op->opA->oper_datatype;
-	struct p4tc_type *srcB_t = op->opB->oper_datatype;
-	struct p4tc_type *srcC_t = op->opC->oper_datatype;
-	struct p4tc_type_ops *dst_ops = dst_t->ops;
-	struct p4tc_type_ops *srcB_ops = srcB_t->ops;
-	struct p4tc_type_ops *srcC_ops = srcC_t->ops;
 	u64 result[2] = {0};
 	u64 Bval[2] = {0};
 	u64 Cval[2] = {0};
+	struct p4tc_cmd_operand *A, *B, *C;
+	struct p4tc_type_ops *srcC_ops;
+	struct p4tc_type_ops *srcB_ops;
+	struct p4tc_type_ops *dst_ops;
+	void *srcB;
+	void *srcC;
+	void *dst;
+
+	A = GET_OPA(&op->operands_list);
+	B = GET_OPB(&op->operands_list);
+	C = GET_OPC(&op->operands_list);
+
+	dst = A->fetch(skb, A, cmd, res);
+	srcB = B->fetch(skb, B, cmd, res);
+	srcC = C->fetch(skb, C, cmd, res);
 
 	if (!srcB || !srcC || !dst)
 		return TC_ACT_SHOT;
 
-	srcB_ops->host_read(op->opB->oper_mask_shift, srcB, Bval);
-	srcC_ops->host_read(op->opC->oper_mask_shift, srcC, Cval);
+	dst_ops = A->oper_datatype->ops;
+	srcB_ops = B->oper_datatype->ops;
+	srcC_ops = C->oper_datatype->ops;
+
+	srcB_ops->host_read(B->oper_mask_shift, srcB, Bval);
+	srcC_ops->host_read(C->oper_mask_shift, srcC, Cval);
 
 	p4tc_arith_op(result, Bval, Cval);
 
-	dst_ops->host_write(op->opA->oper_mask_shift, result, dst);
+	dst_ops->host_write(A->oper_mask_shift, result, dst);
 
 	return op->ctl1;
 }
@@ -2335,32 +2420,32 @@ static int p4tc_cmd_BXOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 static int p4tc_cmd_CONCAT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			   struct tcf_p4act *cmd, struct tcf_result *res)
 {
-	void *srcB = op->opB->fetch(skb, op->opB, cmd, res);
-	void *srcC = op->opC->fetch(skb, op->opC, cmd, res);
-	void *dst = op->opA->fetch(skb, op->opA, cmd, res);
-	struct p4tc_type *dst_t = op->opA->oper_datatype;
-	struct p4tc_type *srcB_t = op->opB->oper_datatype;
-	struct p4tc_type *srcC_t = op->opC->oper_datatype;
-	struct p4tc_type_ops *dst_ops = dst_t->ops;
-	struct p4tc_type_ops *srcB_ops = srcB_t->ops;
-	struct p4tc_type_ops *srcC_ops = srcC_t->ops;
-	__uint128_t Bval;
-	__uint128_t Cval;
+	size_t rvalue_tot_sz = 0;
+	u64 RvalAcc[2] = {0};
+	struct p4tc_cmd_operand *cursor;
+	struct p4tc_type_ops *dst_ops;
+	struct p4tc_cmd_operand *A;
+	void *dst;
 
-	memset(&Bval, 0, sizeof(Bval));
-	memset(&Cval, 0, sizeof(Cval));
+	A = GET_OPA(&op->operands_list);
 
-	if (!srcB || !srcC || !dst)
-		return TC_ACT_SHOT;
+	cursor = A;
+	list_for_each_entry_continue(cursor, &op->operands_list, oper_list_node) {
+		size_t cursor_bytesz = BITS_TO_BYTES(cursor->oper_bitsize);
+		struct p4tc_type *cursor_type = cursor->oper_datatype;
+		struct p4tc_type_ops *cursor_type_ops = cursor_type->ops;
+		void *srcR = cursor->fetch(skb, cursor, cmd, res);
+		u64 Rval[2] = {0};
 
-	srcB_ops->host_read(op->opB->oper_mask_shift, srcB, &Bval);
-	srcC_ops->host_read(op->opC->oper_mask_shift, srcC, &Cval);
+		cursor_type_ops->host_read(cursor->oper_mask_shift, srcR,
+					   &Rval);
+		memcpy((char *)RvalAcc + rvalue_tot_sz, &Rval, cursor_bytesz);
+		rvalue_tot_sz += cursor_bytesz;
+	}
 
-	/* operand B's bitsz must be a multiple of 8 */
-	memcpy((char *)&Bval + BITS_TO_BYTES(srcB_t->bitsz), &Cval,
-	       BITS_TO_BYTES(srcC_t->bitsz));
-
-	dst_ops->host_write(op->opA->oper_mask_shift, &Bval, dst);
+	dst = A->fetch(skb, A, cmd, res);
+	dst_ops = A->oper_datatype->ops;
+	dst_ops->host_write(A->oper_mask_shift, RvalAcc, dst);
 
 	return op->ctl1;
 }
