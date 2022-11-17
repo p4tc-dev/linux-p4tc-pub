@@ -147,10 +147,10 @@ static int _tcf_tclass_fill_nlmsg(struct sk_buff *skb,
 		goto out_nlmsg_trim;
 
 	parm.tbc_keysz = tclass->tbc_keysz;
-	parm.tbc_count = tclass->tbc_count;
 	parm.tbc_max_entries = tclass->tbc_max_entries;
 	parm.tbc_max_masks = tclass->tbc_max_masks;
 	parm.tbc_default_key = tclass->tbc_default_key;
+	parm.tbc_num_entries = refcount_read(&tclass->tbc_entries_ref) - 1;
 
 	nest_key = nla_nest_start(skb, P4TC_TCLASS_KEYS);
 	idr_for_each_entry_ul(&tclass->tbc_keys_idr, key, tmp, tbc_id) {
@@ -266,8 +266,7 @@ static inline int _tcf_tclass_put(struct net *net,
 				  struct p4tc_table_class *tclass,
 				  struct netlink_ext_ack *extack)
 {
-	struct p4tc_table_instance *tinst;
-	unsigned long tmp, tbc_id, ti_id;
+	unsigned long tmp, tbc_id;
 	struct p4tc_table_key *key;
 
 	if (!refcount_dec_if_one(&tclass->tbc_ctrl_ref))
@@ -282,9 +281,6 @@ static inline int _tcf_tclass_put(struct net *net,
 		tcf_tclass_key_put(key);
 		idr_remove(&tclass->tbc_keys_idr, tbc_id);
 	}
-
-	idr_for_each_entry_ul(&tclass->tbc_ti_idr, tinst, tmp, ti_id)
-		tinst->common.ops->put(net, &tinst->common, extack);
 
 	if (tclass->tbc_preacts) {
 		tcf_action_destroy(tclass->tbc_preacts, TCA_ACT_UNBIND);
@@ -305,8 +301,13 @@ static inline int _tcf_tclass_put(struct net *net,
 		kfree(tclass->tbc_default_missact);
 	}
 
+	rhltable_free_and_destroy(&tclass->tbc_entries,
+				  tcf_table_entry_destroy_hash,
+				  tclass);
+
 	idr_destroy(&tclass->tbc_keys_idr);
-	idr_destroy(&tclass->tbc_ti_idr);
+	idr_destroy(&tclass->tbc_masks_idr);
+	idr_destroy(&tclass->tbc_prio_idr);
 
 	idr_remove(&pipeline->p_tbc_idr, tclass->tbc_id);
 	pipeline->curr_table_classes -= 1;
@@ -698,24 +699,6 @@ tcf_tclass_create(struct net *net, struct nlmsghdr *n,
 		goto free;
 	}
 
-	if (parm->tbc_flags & P4TC_TCLASS_FLAGS_COUNT) {
-		if (!parm->tbc_count) {
-			NL_SET_ERR_MSG(extack,
-				       "Table class tbc_count cannot be zero");
-			ret = -EINVAL;
-			goto free;
-		}
-		if (parm->tbc_count > P4TC_MAX_TINSTS) {
-			NL_SET_ERR_MSG(extack,
-				       "Table class tbc_count exceeds maximum tbc_count");
-			ret = -EINVAL;
-			goto free;
-		}
-		tclass->tbc_count = parm->tbc_count;
-	} else {
-		tclass->tbc_count = P4TC_DEFAULT_TINST_COUNT;
-	}
-
 	if (parm->tbc_flags & P4TC_TCLASS_FLAGS_MAX_ENTRIES) {
 		if (!parm->tbc_max_entries) {
 			NL_SET_ERR_MSG(extack,
@@ -905,35 +888,19 @@ tcf_tclass_create(struct net *net, struct nlmsghdr *n,
 		tclass->tbc_default_missact = NULL;
 	}
 
-	idr_init(&tclass->tbc_ti_idr);
 	tclass->tbc_curr_used_entries = 0;
 	tclass->tbc_curr_count = 0;
-	/* Create table instance with name of table class */
-	if (tclass->tbc_count == 1) {
-		struct p4tc_table_instance *tinst;
 
-		tinst = kmalloc(sizeof(*tinst), GFP_KERNEL);
-		if (!tinst) {
-			NL_SET_ERR_MSG(extack, "Unable to create table instance");
-			ret = -ENOMEM;
-			goto missaction_destroy;
-		}
+	refcount_set(&tclass->tbc_entries_ref, 1);
 
-		tinst->ti_id = 1;
+	idr_init(&tclass->tbc_masks_idr);
+	idr_init(&tclass->tbc_prio_idr);
+	spin_lock_init(&tclass->tbc_masks_idr_lock);
+	spin_lock_init(&tclass->tbc_prio_idr_lock);
 
-		ret = idr_alloc_u32(&tclass->tbc_ti_idr, tinst, &tinst->ti_id,
-				    tinst->ti_id, GFP_KERNEL);
-		if (ret < 0) {
-			kfree(tinst);
-			goto missaction_destroy;
-		}
-
-		ret = p4tc_tinst_init(tinst, pipeline, tbcname,
-				      tclass, P4TC_DEFAULT_TIENTRIES);
-		if (ret < 0) {
-			tinst->common.ops->put(net, &tinst->common, extack);
-			goto missaction_destroy;
-		}
+	if (rhltable_init(&tclass->tbc_entries, &entry_hlt_params) < 0) {
+		ret = -EINVAL;
+		goto missaction_destroy;
 	}
 
 	pipeline->curr_table_classes += 1;
@@ -959,8 +926,6 @@ hitaction_destroy:
 keys_put:
 	if (num_keys)
 		tcf_tclass_key_put_many(keys, tclass, cu_res, num_keys);
-
-	idr_destroy(&tclass->tbc_ti_idr);
 
 idr_dest:
 	idr_destroy(&tclass->tbc_keys_idr);
@@ -1117,22 +1082,6 @@ tcf_tclass_update(struct net *net, struct nlmsghdr *n,
 				goto keys_destroy;
 			}
 			tclass->tbc_keysz = parm->tbc_keysz;
-		}
-
-		if (parm->tbc_flags & P4TC_TCLASS_FLAGS_COUNT) {
-			if (!parm->tbc_count) {
-				NL_SET_ERR_MSG(extack,
-					       "Table class tbc_count cannot be zero");
-				ret = -EINVAL;
-				goto keys_destroy;
-			}
-			if (parm->tbc_count > P4TC_MAX_TINSTS) {
-				NL_SET_ERR_MSG(extack,
-					       "Table class tbc_count exceeds maximum tbc_count");
-				ret = -EINVAL;
-				goto keys_destroy;
-			}
-			tclass->tbc_count = parm->tbc_count;
 		}
 
 		if (parm->tbc_flags & P4TC_TCLASS_FLAGS_MAX_ENTRIES) {

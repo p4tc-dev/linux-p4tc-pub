@@ -16,8 +16,6 @@
 #define P4TC_DEFAULT_MAX_RULES 1
 #define P4TC_MAXMETA_OFFSET 512
 #define P4TC_PATH_MAX 3
-#define P4TC_DEFAULT_TCOUNT 64
-#define P4TC_DEFAULT_TINST_COUNT 1
 #define P4TC_MAX_TINSTS 512
 #define P4TC_MAX_TENTRIES (2 << 23)
 #define P4TC_DEFAULT_TENTRIES 256
@@ -160,13 +158,17 @@ struct p4tc_table_key {
 struct p4tc_table_class {
 	struct p4tc_template_common common;
 	struct idr                  tbc_keys_idr;
-	struct idr                  tbc_ti_idr;
+	struct idr                  tbc_masks_idr;
+	struct idr                  tbc_prio_idr;
 	struct p4tc_cmd_value_ops   tbc_value_ops;
+	struct rhltable             tbc_entries;
 	struct tc_action            **tbc_preacts;
 	int                         tbc_num_preacts;
 	struct tc_action            **tbc_postacts;
 	struct tc_action            **tbc_default_hitact;
 	struct tc_action            **tbc_default_missact;
+	spinlock_t                  tbc_masks_idr_lock;
+	spinlock_t                  tbc_prio_idr_lock;
 	int                         tbc_num_postacts;
 	u32                         tbc_count;
 	u32                         tbc_curr_count;
@@ -179,6 +181,7 @@ struct p4tc_table_class {
 	u32                         tbc_default_key;
 	refcount_t                  tbc_ctrl_ref;
 	refcount_t                  tbc_ref;
+	refcount_t                  tbc_entries_ref;
 };
 
 extern const struct p4tc_template_ops p4tc_tclass_ops;

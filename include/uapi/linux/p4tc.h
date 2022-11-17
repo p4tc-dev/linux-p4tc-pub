@@ -33,18 +33,17 @@ struct p4tcmsg {
 #define ACTPARAMNAMSIZ TEMPLATENAMSZ
 
 #define P4TC_TCLASS_FLAGS_KEYSZ 0x01
-#define P4TC_TCLASS_FLAGS_COUNT 0x02
-#define P4TC_TCLASS_FLAGS_MAX_ENTRIES 0x04
-#define P4TC_TCLASS_FLAGS_MAX_MASKS 0x08
-#define P4TC_TCLASS_FLAGS_DEFAULT_KEY 0x10
+#define P4TC_TCLASS_FLAGS_MAX_ENTRIES 0x02
+#define P4TC_TCLASS_FLAGS_MAX_MASKS 0x04
+#define P4TC_TCLASS_FLAGS_DEFAULT_KEY 0x08
 
 struct p4tc_table_class_parm {
 	__u32 tbc_keysz;
-	__u32 tbc_count;
 	__u32 tbc_max_entries;
 	__u32 tbc_max_masks;
 	__u32 tbc_default_key;
 	__u32 tbc_flags;
+	__u32 tbc_num_entries;
 };
 
 /* Root attributes */
