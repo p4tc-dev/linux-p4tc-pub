@@ -10,6 +10,8 @@ and run the provided command. The original .config file is always preserved.
 If no command is provided, "$DEFAULT_CMD" is run inside the VM.
 Options:
         -h            Display this message.
+        -a            Architecture to use.
+        -r            Root filesystem to use.
         -i            Precompiled bzImage to use.
         -c            Number of vCPUs to use.
         -m            Size of vRAM to use.
@@ -23,9 +25,32 @@ Options:
 EOF
 }
 
+verify_arch() {
+   case "$1" in
+      x86)
+         ;;
+      x86_64)
+         ARCH="x86"
+         ;;
+      s390x)
+         ARCH="s390x"
+         ;;
+      *)
+         echo "archicteture $1 is not supported"
+         exit 1
+         ;;
+   esac
+}
+
 # Reconfigure and recompile the kernel under $KDIR.
 # The original configuration file is preserved.
 recrec() {
+   if [ "$CROSS" == "y" ]; then
+      echo "Refusing to cross compile the kernel"
+      echo "Provide a pre compiled bzImage"
+      exit 0
+   fi
+
    # 'make' command
    MAKE="make -C $KDIR -j $JOBS"
 
@@ -60,11 +85,15 @@ recrec() {
    fi
 }
 
+# Default architecture
+ARCH="x86"
+CROSS="n"
+
 # Known directories and files
 WD=$(dirname -- "$(realpath "$0")")
 KDIR=$(realpath "$WD/../../../../")
 KCONFIG="$KDIR/.config"
-KIMG="$KDIR"/arch/x86/boot/bzImage
+ROOTFS="/"
 
 # VM Settings
 VMCPUS=$(nproc)
@@ -83,11 +112,18 @@ if ! [ -x "$(command -v virtme-run)" ]; then
    exit 1
 fi
 
-while getopts 'hi:c:m:j:f:sgd' OPT; do
+while getopts 'ha:r:i:c:m:j:f:sgd' OPT; do
    case "$OPT" in
       h)
          help
          exit 0
+         ;;
+      a)
+         ARCH="$OPTARG"
+         verify_arch "$ARCH"
+         ;;
+      r)
+         ROOTFS=$(realpath "$OPTARG")
          ;;
       i)
          _KIMG="$OPTARG"
@@ -138,7 +174,15 @@ else
    CMD="$@"
 fi
 
+# Check if we are cross-compiling
+
+if ! "$(uname -m | grep -q "$ARCH")"; then
+   echo ">>> Cross architecture detected <<<"
+   CROSS="y"
+fi
+
 if [ -z "$_KIMG" ]; then
+   KIMG="$KDIR"/arch/"$ARCH"/boot/bzImage
    if ! [ "$DRYRUN" == "y" ]; then
       recrec
    fi
@@ -148,11 +192,12 @@ fi
 
 if [ "$DRYRUN" == "y" ]; then
    virtme-run \
+      --arch "$ARCH" \
+      --root "$ROOTFS" \
       --kimg "$KIMG" \
       --cpus "$VMCPUS" \
       --memory "$VMMEM" \
-      --rwdir="$KDIR" \
-      --cwd "$WD" \
+      --rwdir="/mnt=$KDIR" \
       --dry-run \
       --show-command
    exit 0
@@ -160,18 +205,20 @@ fi
 
 if [ "$VMSHELL" == "y" ]; then
    virtme-run \
+      --arch "$ARCH" \
+      --root "$ROOTFS" \
       --kimg "$KIMG" \
       --cpus "$VMCPUS" \
       --memory "$VMMEM" \
-      --rwdir="$KDIR" \
-      --cwd "$WD"
+      --rwdir="/mnt=$KDIR"
 else
    virtme-run \
+      --arch "$ARCH" \
+      --root "$ROOTFS" \
       --kimg "$KIMG" \
       --cpus "$VMCPUS" \
       --memory "$VMMEM" \
       --show-boot-console \
-      --rwdir="$KDIR" \
-      --cwd "$WD" \
-      --script-sh "$CMD" < /dev/zero
+      --rwdir="/mnt=$KDIR" \
+      --script-sh "cd /mnt/tools/testing/selftests/tc-testing && $CMD" < /dev/zero
 fi
