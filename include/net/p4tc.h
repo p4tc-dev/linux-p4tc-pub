@@ -16,7 +16,6 @@
 #define P4TC_DEFAULT_MAX_RULES 1
 #define P4TC_MAXMETA_OFFSET 512
 #define P4TC_PATH_MAX 3
-#define P4TC_MAX_TINSTS 512
 #define P4TC_MAX_TENTRIES (2 << 23)
 #define P4TC_DEFAULT_TENTRIES 256
 #define P4TC_MAX_TMASKS 128
@@ -186,31 +185,6 @@ struct p4tc_table_class {
 
 extern const struct p4tc_template_ops p4tc_tclass_ops;
 
-struct p4tc_table_instance {
-	struct p4tc_template_common common;
-	struct rhash_head ht_node;
-	struct rhltable   ti_entries;
-	struct idr        ti_masks_idr;
-	struct idr        ti_prio_idr;
-	spinlock_t        ti_masks_idr_lock;
-	spinlock_t        ti_prio_idr_lock;
-	u32               tbc_id;
-	u32               ti_id;
-	u32               ti_max_entries;
-	refcount_t        ti_ref;
-	refcount_t        ti_ctrl_ref;
-	refcount_t        ti_entries_ref;
-};
-
-extern struct p4tc_table_instance *
-tcf_tinst_find_byany(struct nlattr *name_attr,
-	   const u32 ti_id,
-	   struct p4tc_pipeline *pipeline,
-	   struct p4tc_table_class *tclass,
-	   struct netlink_ext_ack *extack);
-
-extern const struct p4tc_template_ops p4tc_tinst_ops;
-
 struct p4tc_ipv4_param_value {
 	u32 value;
 	u32 mask;
@@ -372,12 +346,6 @@ void *tcf_tclass_fetch(struct sk_buff *skb, void *tbc_value_ops);
 int tcf_tclass_try_set_state_ready(struct p4tc_pipeline *pipeline,
 				   struct netlink_ext_ack *extack);
 
-int p4tc_tinst_init(struct p4tc_table_instance *tinst,
-		    struct p4tc_pipeline *pipeline,
-		    const char *ti_name,
-		    struct p4tc_table_class *tclass,
-		    u32 max_entries);
-
 void tcf_table_entry_destroy_hash(void *ptr, void *arg);
 
 struct p4tc_parser *tcf_parser_create(struct p4tc_pipeline *pipeline,
@@ -427,7 +395,6 @@ int generic_dump_param_value(struct sk_buff *skb, struct p4tc_type *type,
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
 #define to_meta(t) ((struct p4tc_metadata *)t)
 #define to_tclass(t) ((struct p4tc_table_class *)t)
-#define to_tinst(t) ((struct p4tc_table_instance *)t)
 #define to_act(t) ((struct p4tc_act *)t)
 #define to_hdrfield(t) ((struct p4tc_header_field *)t)
 
