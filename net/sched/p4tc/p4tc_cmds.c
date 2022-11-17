@@ -2246,11 +2246,10 @@ static int p4tc_cmd_MIRPORTEGR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 static int p4tc_cmd_TBLAPP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			   struct tcf_p4act *cmd, struct tcf_result *res)
 {
-	struct p4tc_table_instance *tinst;
-	struct p4tc_table_class *tclass;
+	struct p4tc_cmd_operand *A = GET_OPA(&op->operands_list);
+	struct p4tc_table_class *tclass = A->fetch(skb, A, cmd, res);
 	struct p4tc_table_entry *entry;
 	struct p4tc_table_key *key;
-	struct p4tc_cmd_operand *A;
 	int ret;
 
 	A = GET_OPA(&op->operands_list);
@@ -2272,12 +2271,7 @@ static int p4tc_cmd_TBLAPP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	if (ret != TC_ACT_PIPE)
 		return ret;
 
-	/* We assume one instance per table which has id 1 */
-	tinst = tcf_tinst_find_byany(NULL, 1, NULL, tclass, NULL);
-	if (!tinst)
-		return TC_ACT_OK;
-
-	entry = p4tc_table_entry_lookup(skb, tinst, tclass->tbc_keysz);
+	entry = p4tc_table_entry_lookup(skb, tclass, tclass->tbc_keysz);
 	if (IS_ERR(entry))
 		entry = NULL;
 
