@@ -328,8 +328,6 @@ struct tc_skb_ext {
 #if IS_ENABLED(CONFIG_NET_P4_TC)
 #include <uapi/linux/p4tc.h>
 
-#define META_MAX_LEN 512
-
 struct __p4tc_skb_ext {
 	u8 key[BITS_TO_BYTES(P4TC_MAX_KEYSZ)];
 	u8 hdrs[HEADER_MAX_LEN];
