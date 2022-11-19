@@ -326,7 +326,8 @@ struct tc_skb_ext {
 #endif
 
 #if IS_ENABLED(CONFIG_NET_P4_TC)
-#define P4TC_MAX_KEYSZ 128
+#include <uapi/linux/p4tc.h>
+
 #define HEADER_MAX_LEN 512
 #define META_MAX_LEN 512
 
