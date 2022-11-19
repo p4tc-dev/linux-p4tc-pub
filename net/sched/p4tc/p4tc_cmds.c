@@ -330,11 +330,23 @@ static int validate_key_operand(struct p4tc_cmd_operand *kopnd,
 		return -EINVAL;
 	}
 
-	if (tclass->tbc_keysz != t->bitsz) {
+	if (kopnd->oper_bitstart != 0) {
+		NL_SET_ERR_MSG_MOD(extack, "Key bitstart must be zero");
+		return -EINVAL;
+	}
+
+	if (t->typeid != P4T_KEY) {
+		NL_SET_ERR_MSG_MOD(extack, "Key type must be key");
+		return -EINVAL;
+	}
+
+	if (tclass->tbc_keysz != kopnd->oper_bitsize) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "Type size doesn't match table class keysz");
 		return -EINVAL;
 	}
+
+	t->bitsz = kopnd->oper_bitsize;
 
 	return 0;
 }
@@ -1163,8 +1175,6 @@ static int p4tc_cmd_BEQ(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res)
 {
 	struct p4tc_cmd_operand *A, *B;
-	struct p4tc_type_ops *dst_ops;
-	struct p4tc_type_ops *src_ops;
 	int res_cmp;
 	void *Bval;
 	void *Aval;
@@ -1172,17 +1182,14 @@ static int p4tc_cmd_BEQ(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	A = GET_OPA(&op->operands_list);
 	B = GET_OPB(&op->operands_list);
 
-	dst_ops = A->oper_datatype->ops;
-	src_ops = B->oper_datatype->ops;
-
 	Aval = A->fetch(skb, A, cmd, res);
 	Bval = B->fetch(skb, B, cmd, res);
 
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(A->oper_mask_shift, dst_ops, Aval,
-			  B->oper_mask_shift, src_ops, Bval);
+	res_cmp = p4t_cmp(A->oper_mask_shift, A->oper_datatype, Aval,
+			  B->oper_mask_shift, B->oper_datatype, Bval);
 	if (!res_cmp)
 		return op->ctl1;
 
@@ -1194,8 +1201,6 @@ static int p4tc_cmd_BNE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res)
 {
 	struct p4tc_cmd_operand *A, *B;
-	struct p4tc_type_ops *dst_ops;
-	struct p4tc_type_ops *src_ops;
 	int res_cmp;
 	void *Bval;
 	void *Aval;
@@ -1203,17 +1208,14 @@ static int p4tc_cmd_BNE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	A = GET_OPA(&op->operands_list);
 	B = GET_OPB(&op->operands_list);
 
-	dst_ops = A->oper_datatype->ops;
-	src_ops = B->oper_datatype->ops;
-
 	Aval = A->fetch(skb, A, cmd, res);
 	Bval = B->fetch(skb, B, cmd, res);
 
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(A->oper_mask_shift, dst_ops, Aval,
-			  B->oper_mask_shift, src_ops, Bval);
+	res_cmp = p4t_cmp(A->oper_mask_shift, A->oper_datatype, Aval,
+			  B->oper_mask_shift, B->oper_datatype, Bval);
 	if (res_cmp)
 		return op->ctl1;
 
@@ -1225,8 +1227,6 @@ static int p4tc_cmd_BLT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res)
 {
 	struct p4tc_cmd_operand *A, *B;
-	struct p4tc_type_ops *dst_ops;
-	struct p4tc_type_ops *src_ops;
 	int res_cmp;
 	void *Bval;
 	void *Aval;
@@ -1234,17 +1234,14 @@ static int p4tc_cmd_BLT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	A = GET_OPA(&op->operands_list);
 	B = GET_OPB(&op->operands_list);
 
-	dst_ops = A->oper_datatype->ops;
-	src_ops = B->oper_datatype->ops;
-
 	Aval = A->fetch(skb, A, cmd, res);
 	Bval = B->fetch(skb, B, cmd, res);
 
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(A->oper_mask_shift, dst_ops, Aval,
-			  B->oper_mask_shift, src_ops, Bval);
+	res_cmp = p4t_cmp(A->oper_mask_shift, A->oper_datatype, Aval,
+			  B->oper_mask_shift, B->oper_datatype, Bval);
 	if (res_cmp < 0)
 		return op->ctl1;
 
@@ -1256,8 +1253,6 @@ static int p4tc_cmd_BLE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res)
 {
 	struct p4tc_cmd_operand *A, *B;
-	struct p4tc_type_ops *dst_ops;
-	struct p4tc_type_ops *src_ops;
 	int res_cmp;
 	void *Bval;
 	void *Aval;
@@ -1265,17 +1260,14 @@ static int p4tc_cmd_BLE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	A = GET_OPA(&op->operands_list);
 	B = GET_OPB(&op->operands_list);
 
-	dst_ops = A->oper_datatype->ops;
-	src_ops = B->oper_datatype->ops;
-
 	Aval = A->fetch(skb, A, cmd, res);
 	Bval = B->fetch(skb, B, cmd, res);
 
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(A->oper_mask_shift, dst_ops, Aval, B->oper_mask_shift,
-			  src_ops, Bval);
+	res_cmp = p4t_cmp(A->oper_mask_shift, A->oper_datatype, Aval,
+			  B->oper_mask_shift, B->oper_datatype, Bval);
 	if (!res_cmp || res_cmp < 0)
 		return op->ctl1;
 
@@ -1287,8 +1279,6 @@ static int p4tc_cmd_BGT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res)
 {
 	struct p4tc_cmd_operand *A, *B;
-	struct p4tc_type_ops *dst_ops;
-	struct p4tc_type_ops *src_ops;
 	int res_cmp;
 	void *Bval;
 	void *Aval;
@@ -1296,17 +1286,14 @@ static int p4tc_cmd_BGT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	A = GET_OPA(&op->operands_list);
 	B = GET_OPB(&op->operands_list);
 
-	dst_ops = A->oper_datatype->ops;
-	src_ops = B->oper_datatype->ops;
-
 	Aval = A->fetch(skb, A, cmd, res);
 	Bval = B->fetch(skb, B, cmd, res);
 
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(A->oper_mask_shift, dst_ops, Aval,
-			  B->oper_mask_shift, src_ops, Bval);
+	res_cmp = p4t_cmp(A->oper_mask_shift, A->oper_datatype, Aval,
+			  B->oper_mask_shift, B->oper_datatype, Bval);
 	if (res_cmp > 0)
 		return op->ctl1;
 
@@ -1318,8 +1305,6 @@ static int p4tc_cmd_BGE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res)
 {
 	struct p4tc_cmd_operand *A, *B;
-	struct p4tc_type_ops *dst_ops;
-	struct p4tc_type_ops *src_ops;
 	int res_cmp;
 	void *Bval;
 	void *Aval;
@@ -1327,17 +1312,14 @@ static int p4tc_cmd_BGE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	A = GET_OPA(&op->operands_list);
 	B = GET_OPB(&op->operands_list);
 
-	dst_ops = A->oper_datatype->ops;
-	src_ops = B->oper_datatype->ops;
-
 	Aval = A->fetch(skb, A, cmd, res);
 	Bval = B->fetch(skb, B, cmd, res);
 
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(A->oper_mask_shift, dst_ops, Aval, B->oper_mask_shift,
-			  src_ops, Bval);
+	res_cmp = p4t_cmp(A->oper_mask_shift, A->oper_datatype, Aval,
+			  B->oper_mask_shift, B->oper_datatype, Bval);
 	if (!res_cmp || res_cmp > 0)
 		return op->ctl1;
 
@@ -2020,8 +2002,8 @@ static int p4tc_cmd_SET(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	dst_ops = A->oper_datatype->ops;
 	src_ops = B->oper_datatype->ops;
 
-	err = p4t_copy(A->oper_mask_shift, dst_ops, dst, B->oper_mask_shift,
-		       src_ops, src);
+	err = p4t_copy(A->oper_mask_shift, A->oper_datatype, dst,
+		       B->oper_mask_shift, B->oper_datatype, src);
 	if (err)
 		return TC_ACT_SHOT;
 
@@ -2045,17 +2027,24 @@ static int p4tc_cmd_ACT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			  struct tcf_p4act *cmd, struct tcf_result *res)
 {
+	struct p4tc_cmd_operand *A = GET_OPA(&op->operands_list);
+	u64 readval[BITS_TO_U64(P4T_MAX_BITSZ)] = {0};
 	char name[(TEMPLATENAMSZ * 4)];
-	struct p4tc_cmd_operand *A;
 	struct p4tc_type *val_t;
 	void *val;
 
 	A = GET_OPA(&op->operands_list);
 	val = A->fetch(skb, A, cmd, res);
 	val_t = A->oper_datatype;
+
 	if (!val)
 		return TC_ACT_OK;
 
+	if (val_t->ops->host_read)
+		val_t->ops->host_read(val_t, A->oper_mask_shift, val,
+				      &readval);
+	else
+		memcpy(&readval, val, BITS_TO_BYTES(A->oper_bitsize));
 	/* This is a debug function, so performance is not a priority */
 	if (A->oper_type == P4TC_OPER_META) {
 		struct p4tc_pipeline *pipeline = NULL;
@@ -2074,7 +2063,7 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			snprintf(name, TEMPLATENAMSZ << 1, "%s.%s",
 				 pipeline->common.name, meta->common.name);
 
-		val_t->ops->print(name, val);
+		val_t->ops->print(val_t, name, &readval);
 	} else if (A->oper_type == P4TC_OPER_HDRFIELD) {
 		struct p4tc_header_field *hdrfield;
 		struct p4tc_pipeline *pipeline;
@@ -2088,7 +2077,7 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			 pipeline->common.name, parser->parser_name,
 			 hdrfield->common.name);
 
-		val_t->ops->print(name, val);
+		val_t->ops->print(val_t, name, &readval);
 	} else if (A->oper_type == P4TC_OPER_KEY) {
 		struct p4tc_table_class *tclass;
 		struct p4tc_pipeline *pipeline;
@@ -2098,14 +2087,14 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		snprintf(name, TEMPLATENAMSZ * 3, "key.%s.%s.%u",
 			 pipeline->common.name, tclass->common.name,
 			 A->immedv2);
-		val_t->ops->print(name, val);
+		val_t->ops->print(val_t, name, &readval);
 	} else if (A->oper_type == P4TC_OPER_PARAM) {
-		val_t->ops->print("param", val);
+		val_t->ops->print(val_t, "param", &readval);
 	} else if (A->oper_type == P4TC_OPER_RES) {
 		if (A->immedv == P4TC_CMDS_RESULTS_HIT)
-			val_t->ops->print("res.hit", val);
+			val_t->ops->print(val_t, "res.hit", &readval);
 		else if (A->immedv == P4TC_CMDS_RESULTS_MISS)
-			val_t->ops->print("res.miss", val);
+			val_t->ops->print(val_t, "res.miss", &readval);
 	} else {
 		pr_info("Unsupported operand for print\n");
 	}
@@ -2319,9 +2308,9 @@ static int p4tc_cmd_BINARITH(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			     struct tcf_p4act *cmd, struct tcf_result *res,
 			     void (*p4tc_arith_op)(u64 *res, u64 *opB, u64 *opC))
 {
-	u64 result[2] = {0};
-	u64 Bval[2] = {0};
-	u64 Cval[2] = {0};
+	u64 result[BITS_TO_U64(P4T_MAX_BITSZ)] = {0};
+	u64 Bval[BITS_TO_U64(P4T_MAX_BITSZ)] = {0};
+	u64 Cval[BITS_TO_U64(P4T_MAX_BITSZ)] = {0};
 	struct p4tc_cmd_operand *A, *B, *C;
 	struct p4tc_type_ops *srcC_ops;
 	struct p4tc_type_ops *srcB_ops;
@@ -2345,12 +2334,12 @@ static int p4tc_cmd_BINARITH(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	srcB_ops = B->oper_datatype->ops;
 	srcC_ops = C->oper_datatype->ops;
 
-	srcB_ops->host_read(B->oper_mask_shift, srcB, Bval);
-	srcC_ops->host_read(C->oper_mask_shift, srcC, Cval);
+	srcB_ops->host_read(B->oper_datatype, B->oper_mask_shift, srcB, Bval);
+	srcC_ops->host_read(C->oper_datatype, C->oper_mask_shift, srcC, Cval);
 
 	p4tc_arith_op(result, Bval, Cval);
 
-	dst_ops->host_write(A->oper_mask_shift, result, dst);
+	dst_ops->host_write(A->oper_datatype, A->oper_mask_shift, result, dst);
 
 	return op->ctl1;
 }
@@ -2358,8 +2347,10 @@ static int p4tc_cmd_BINARITH(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 /* For this first implementation we are not handling overflows yet */
 static void plus_op(u64 *res, u64 *opB, u64 *opC)
 {
-	res[0] = opB[0] + opC[0];
-	res[1] = opB[1] + opC[1];
+	int i;
+
+	for (i = 0; i < BITS_TO_U64(P4T_MAX_BITSZ); i++)
+		res[i] = opB[i] + opC[i];
 }
 
 static int p4tc_cmd_PLUS(struct sk_buff *skb, struct p4tc_cmd_operate *op,
@@ -2371,8 +2362,10 @@ static int p4tc_cmd_PLUS(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 /* For this first implementation we are not handling overflows yet */
 static void sub_op(u64 *res, u64 *opB, u64 *opC)
 {
-	res[0] = opB[0] - opC[0];
-	res[1] = opB[1] - opC[1];
+	int i;
+
+	for (i = 0; i < BITS_TO_U64(P4T_MAX_BITSZ); i++)
+		res[i] = opB[i] - opC[i];
 }
 
 static int p4tc_cmd_SUB(struct sk_buff *skb, struct p4tc_cmd_operate *op,
@@ -2383,8 +2376,10 @@ static int p4tc_cmd_SUB(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 
 static void band_op(u64 *res, u64 *opB, u64 *opC)
 {
-	res[0] = opB[0] & opC[0];
-	res[1] = opB[1] & opC[1];
+	int i;
+
+	for (i = 0; i < BITS_TO_U64(P4T_MAX_BITSZ); i++)
+		res[i] = opB[i] & opC[i];
 }
 
 static int p4tc_cmd_BAND(struct sk_buff *skb, struct p4tc_cmd_operate *op,
@@ -2395,8 +2390,10 @@ static int p4tc_cmd_BAND(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 
 static void bor_op(u64 *res, u64 *opB, u64 *opC)
 {
-	res[0] = opB[0] | opC[0];
-	res[1] = opB[1] | opC[1];
+	int i;
+
+	for (i = 0; i < BITS_TO_U64(P4T_MAX_BITSZ); i++)
+		res[i] = opB[i] | opC[i];
 }
 
 static int p4tc_cmd_BOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
@@ -2407,8 +2404,10 @@ static int p4tc_cmd_BOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 
 static void bxor_op(u64 *res, u64 *opB, u64 *opC)
 {
-	res[0] = opB[0] ^ opC[0];
-	res[1] = opB[1] ^ opC[1];
+	int i;
+
+	for (i = 0; i < BITS_TO_U64(P4T_MAX_BITSZ); i++)
+		res[i] = opB[i] ^ opC[i];
 }
 
 static int p4tc_cmd_BXOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
@@ -2420,8 +2419,8 @@ static int p4tc_cmd_BXOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 static int p4tc_cmd_CONCAT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			   struct tcf_p4act *cmd, struct tcf_result *res)
 {
+	u64 RvalAcc[BITS_TO_U64(P4T_MAX_BITSZ)] = {0};
 	size_t rvalue_tot_sz = 0;
-	u64 RvalAcc[2] = {0};
 	struct p4tc_cmd_operand *cursor;
 	struct p4tc_type_ops *dst_ops;
 	struct p4tc_cmd_operand *A;
@@ -2435,9 +2434,11 @@ static int p4tc_cmd_CONCAT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		struct p4tc_type *cursor_type = cursor->oper_datatype;
 		struct p4tc_type_ops *cursor_type_ops = cursor_type->ops;
 		void *srcR = cursor->fetch(skb, cursor, cmd, res);
-		u64 Rval[2] = {0};
+		u64 Rval[BITS_TO_U64(P4T_MAX_BITSZ)] = {0};
 
-		cursor_type_ops->host_read(cursor->oper_mask_shift, srcR,
+		cursor_type_ops->host_read(cursor->oper_datatype,
+					   cursor->oper_mask_shift,
+					   srcR,
 					   &Rval);
 		memcpy((char *)RvalAcc + rvalue_tot_sz, &Rval, cursor_bytesz);
 		rvalue_tot_sz += cursor_bytesz;
@@ -2445,7 +2446,7 @@ static int p4tc_cmd_CONCAT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 
 	dst = A->fetch(skb, A, cmd, res);
 	dst_ops = A->oper_datatype->ops;
-	dst_ops->host_write(A->oper_mask_shift, RvalAcc, dst);
+	dst_ops->host_write(A->oper_datatype, A->oper_mask_shift, RvalAcc, dst);
 
 	return op->ctl1;
 }
