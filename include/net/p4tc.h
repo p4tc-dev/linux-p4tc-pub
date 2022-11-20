@@ -27,7 +27,7 @@
 
 #define P4TC_PID_IDX 0
 #define P4TC_MID_IDX 1
-#define P4TC_TBCID_IDX 1
+#define P4TC_TBLID_IDX 1
 #define P4TC_TIID_IDX 2
 #define P4TC_AID_IDX 1
 #define P4TC_PARSEID_IDX 1
@@ -89,7 +89,7 @@ extern const struct p4tc_template_ops p4tc_pipeline_ops;
 struct p4tc_pipeline {
 	struct p4tc_template_common common;
 	struct idr                  p_meta_idr;
-	struct idr                  p_tbc_idr;
+	struct idr                  p_tbl_idr;
 	struct idr                  p_act_idr;
 	struct rcu_head             rcu;
 	struct p4tc_parser          *parser;
@@ -154,36 +154,36 @@ struct p4tc_table_key {
 	u32              key_id;
 };
 
-struct p4tc_table_class {
+struct p4tc_table {
 	struct p4tc_template_common common;
-	struct idr                  tbc_keys_idr;
-	struct idr                  tbc_masks_idr;
-	struct idr                  tbc_prio_idr;
-	struct p4tc_cmd_value_ops   tbc_value_ops;
-	struct rhltable             tbc_entries;
-	struct tc_action            **tbc_preacts;
-	int                         tbc_num_preacts;
-	struct tc_action            **tbc_postacts;
-	struct tc_action            **tbc_default_hitact;
-	struct tc_action            **tbc_default_missact;
-	spinlock_t                  tbc_masks_idr_lock;
-	spinlock_t                  tbc_prio_idr_lock;
-	int                         tbc_num_postacts;
-	u32                         tbc_count;
-	u32                         tbc_curr_count;
-	u32                         tbc_keysz;
-	u32                         tbc_id;
-	u32                         tbc_keys_count;
-	u32                         tbc_max_entries;
-	u32                         tbc_max_masks;
-	u32                         tbc_curr_used_entries;
-	u32                         tbc_default_key;
-	refcount_t                  tbc_ctrl_ref;
-	refcount_t                  tbc_ref;
-	refcount_t                  tbc_entries_ref;
+	struct idr                  tbl_keys_idr;
+	struct idr                  tbl_masks_idr;
+	struct idr                  tbl_prio_idr;
+	struct p4tc_cmd_value_ops   tbl_value_ops;
+	struct rhltable             tbl_entries;
+	struct tc_action            **tbl_preacts;
+	int                         tbl_num_preacts;
+	struct tc_action            **tbl_postacts;
+	struct tc_action            **tbl_default_hitact;
+	struct tc_action            **tbl_default_missact;
+	spinlock_t                  tbl_masks_idr_lock;
+	spinlock_t                  tbl_prio_idr_lock;
+	int                         tbl_num_postacts;
+	u32                         tbl_count;
+	u32                         tbl_curr_count;
+	u32                         tbl_keysz;
+	u32                         tbl_id;
+	u32                         tbl_keys_count;
+	u32                         tbl_max_entries;
+	u32                         tbl_max_masks;
+	u32                         tbl_curr_used_entries;
+	u32                         tbl_default_key;
+	refcount_t                  tbl_ctrl_ref;
+	refcount_t                  tbl_ref;
+	refcount_t                  tbl_entries_ref;
 };
 
-extern const struct p4tc_template_ops p4tc_tclass_ops;
+extern const struct p4tc_template_ops p4tc_table_ops;
 
 struct p4tc_ipv4_param_value {
 	u32 value;
@@ -335,15 +335,15 @@ struct p4tc_act *tcf_action_find_byany(struct nlattr *act_name_attr,
 struct p4tc_act_param *tcf_param_find_byid(struct idr *params_idr,
 					   const u32 param_id);
 
-struct p4tc_table_class *
-tcf_tclass_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
-		      const u32 tbc_id, struct netlink_ext_ack *extack);
-struct p4tc_table_class *tcf_tclass_find_byid(struct p4tc_pipeline *pipeline,
-					      const u32 tbc_id);
-struct p4tc_table_key *tcf_table_key_find(struct p4tc_table_class *tclass,
+struct p4tc_table *
+tcf_table_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
+		      const u32 tbl_id, struct netlink_ext_ack *extack);
+struct p4tc_table *tcf_table_find_byid(struct p4tc_pipeline *pipeline,
+					      const u32 tbl_id);
+struct p4tc_table_key *tcf_table_key_find(struct p4tc_table *table,
 					  const u32 key_id);
-void *tcf_tclass_fetch(struct sk_buff *skb, void *tbc_value_ops);
-int tcf_tclass_try_set_state_ready(struct p4tc_pipeline *pipeline,
+void *tcf_table_fetch(struct sk_buff *skb, void *tbl_value_ops);
+int tcf_table_try_set_state_ready(struct p4tc_pipeline *pipeline,
 				   struct netlink_ext_ack *extack);
 
 void tcf_table_entry_destroy_hash(void *ptr, void *arg);
@@ -394,7 +394,7 @@ int generic_dump_param_value(struct sk_buff *skb, struct p4tc_type *type,
 
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
 #define to_meta(t) ((struct p4tc_metadata *)t)
-#define to_tclass(t) ((struct p4tc_table_class *)t)
+#define to_table(t) ((struct p4tc_table *)t)
 #define to_act(t) ((struct p4tc_act *)t)
 #define to_hdrfield(t) ((struct p4tc_header_field *)t)
 

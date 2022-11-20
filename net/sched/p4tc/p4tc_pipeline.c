@@ -46,7 +46,7 @@ static void tcf_pipeline_destroy(struct rcu_head *head)
 
 	pipeline = container_of(head, struct p4tc_pipeline, rcu);
 
-	idr_destroy(&pipeline->p_tbc_idr);
+	idr_destroy(&pipeline->p_tbl_idr);
 	idr_destroy(&pipeline->p_meta_idr);
 	idr_destroy(&pipeline->p_act_idr);
 
@@ -58,8 +58,8 @@ static int tcf_pipeline_put(struct net *net,
 			    struct netlink_ext_ack *extack)
 {
 	struct p4tc_pipeline *pipeline = to_pipeline(template);
-	unsigned long tbc_id, m_id, act_id, tmp;
-	struct p4tc_table_class *tclass;
+	unsigned long tbl_id, m_id, act_id, tmp;
+	struct p4tc_table *table;
 	struct p4tc_metadata *meta;
 	struct p4tc_act *act;
 
@@ -82,8 +82,8 @@ static int tcf_pipeline_put(struct net *net,
 	idr_for_each_entry_ul(&pipeline->p_meta_idr, meta, tmp, m_id)
 		meta->common.ops->put(net, &meta->common, extack);
 
-	idr_for_each_entry_ul(&pipeline->p_tbc_idr, tclass, tmp, tbc_id)
-		tclass->common.ops->put(net, &tclass->common, extack);
+	idr_for_each_entry_ul(&pipeline->p_tbl_idr, table, tmp, tbl_id)
+		table->common.ops->put(net, &table->common, extack);
 
 	idr_for_each_entry_ul(&pipeline->p_act_idr, act, tmp, act_id)
 		act->common.ops->put(net, &act->common, extack);
@@ -132,7 +132,7 @@ static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 			       "Must specify pipeline postactions before sealing");
 		return -EINVAL;
 	}
-	ret = tcf_tclass_try_set_state_ready(pipeline, extack);
+	ret = tcf_table_try_set_state_ready(pipeline, extack);
 	if (ret < 0)
 		return ret;
 
@@ -274,7 +274,7 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 	idr_init(&pipeline->p_act_idr);
 	pipeline->parser = NULL;
 
-	idr_init(&pipeline->p_tbc_idr);
+	idr_init(&pipeline->p_tbl_idr);
 	pipeline->curr_table_classes = 0;
 
 	idr_init(&pipeline->p_meta_idr);
