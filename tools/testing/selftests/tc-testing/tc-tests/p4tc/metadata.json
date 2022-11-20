@@ -33,7 +33,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
@@ -103,7 +103,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
@@ -157,7 +157,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
@@ -207,7 +207,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
@@ -257,7 +257,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
@@ -307,7 +307,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
@@ -357,7 +357,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
@@ -423,7 +423,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
@@ -489,7 +489,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
@@ -555,7 +555,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
@@ -605,7 +605,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -675,7 +675,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -745,7 +745,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
@@ -811,7 +811,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -881,7 +881,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -955,7 +955,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -1029,7 +1029,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -1099,7 +1099,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -1169,7 +1169,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -1239,7 +1239,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -1309,7 +1309,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -1379,7 +1379,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -1449,7 +1449,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -1507,7 +1507,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -1565,7 +1565,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -1623,7 +1623,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
@@ -1677,7 +1677,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
@@ -1731,7 +1731,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -1805,7 +1805,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -1863,7 +1863,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -1937,7 +1937,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -2011,7 +2011,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -2105,7 +2105,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
@@ -2175,7 +2175,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -2347,7 +2347,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -2409,7 +2409,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
@@ -2463,7 +2463,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -2521,7 +2521,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
@@ -2571,7 +2571,7 @@
                 0
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -2629,7 +2629,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
