@@ -32,15 +32,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname2 keysz 32 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname2/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname2 keysz 32 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -48,9 +44,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2/tinst1 srcPort  80 dstPort  443 prio 16",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2/tinst1 srcPort  80 dstPort  443 prio 16",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -60,8 +56,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 16,
                         "key": "0x1bb0050",
                         "mask": "0xffffffff",
@@ -72,7 +67,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname2/tinst1 srcPort  80 dstPort  443 prio 16",
+                "$TC p4 del ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16",
                 0
             ],
             [
@@ -118,15 +113,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname2 keysz 32 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname2/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname2 keysz 32 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -134,32 +125,32 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2/tinst1 srcPort  80 dstPort  443 prio 16",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tinst/ptables/cb/tname2/tinst1",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname2",
         "matchCount": "1",
         "matchJSON": [
             {
                 "pname": "ptables",
                 "pipeid": 22,
-                "obj": "table instance"
+                "obj": "table"
             },
             {
                 "templates": [
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
-                        "tbcname": "cb/tname2",
-                        "tiname": "tinst1",
-                        "maxentries": 32,
-                        "entries": 1
+                        "tname": "cb/tname2",
+                        "keysz": 32,
+                        "max_entries": 256,
+                        "masks": 8,
+                        "default_key": 1,
+                        "entries": 1 
                     }
                 ]
             }
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname2/tinst1 srcPort  80 dstPort  443 prio 16",
+                "$TC p4 del ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16",
                 0
             ],
             [
@@ -205,15 +196,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname keysz 64 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -221,9 +208,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname/tinst1 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 17",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 17",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname/tinst1 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 17",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 17",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -233,8 +220,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 17,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
@@ -245,7 +231,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname/tinst1 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 17",
+                "$TC p4 del ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 17",
                 0
             ],
             [
@@ -291,15 +277,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -307,9 +289,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -319,8 +301,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 1,
                         "key1": "0x7f0000005cff",
                         "key2": "0",
@@ -332,7 +313,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ],
             [
@@ -347,7 +328,7 @@
     },
     {
         "id": "13d9",
-        "name": "Try to create table entry without table class name or id",
+        "name": "Try to create table entry without table name or id",
         "category": [
             "p4tc",
             "entries"
@@ -378,15 +359,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -396,250 +373,10 @@
         ],
         "cmdUnderTest": "$TC p4 create ptables/table/ randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "a3bd",
-        "name": "Try to create table entry without table instance name or id",
-        "category": [
-            "p4tc",
-            "entries"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create tclass/ptables/cb/tname3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
-                0
-            ],
-            [
-                "$TC p4template update pipeline/ptables state ready",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-        "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-        "matchCount": "1",
-        "matchPattern": "Error: .*",
-        "teardown": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "6484",
-        "name": "Create table entry specifying tinstid",
-        "category": [
-            "p4tc",
-            "entries"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create tclass/ptables/cb/tname3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
-                0
-            ],
-            [
-                "$TC p4template update pipeline/ptables state ready",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1; echo $?",
-        "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3/ tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-        "matchCount": "1",
-        "matchJSON": [
-            {
-                "pname": "ptables",
-                "pipeid": 22
-            },
-            {
-                "entries": [
-                    {
-                        "tbcid": 1,
-                        "tiid": 27,
-                        "prio": 1,
-                        "key1": "0x7f0000005cff",
-                        "key2": "0",
-                        "mask1": "0xffffffffffffffff",
-                        "mask2": "0xffffffffff"
-                    }
-                ]
-            }
-        ],
-        "teardown": [
-	    [
-		"$TC p4 del ptables/table/cb/tname3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-		0
-            ],
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "e64d",
-        "name": "Create table entry specifying tbcid and tinstid",
-        "category": [
-            "p4tc",
-            "entries"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
-                0
-            ],
-            [
-                "$TC p4template update pipeline/ptables state ready",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-        "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-        "matchCount": "1",
-        "matchJSON": [
-            {
-                "pname": "ptables",
-                "pipeid": 22
-            },
-            {
-                "entries": [
-                    {
-                        "tbcid": 3,
-                        "tiid": 27,
-                        "prio": 1,
-                        "key1": "0x7f0000005cff",
-                        "key2": "0",
-                        "mask1": "0xffffffffffffffff",
-                        "mask2": "0xffffffffff"
-                    }
-                ]
-            }
-        ],
-        "teardown": [
-            [
-                "$TC p4 del ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-                0
-            ],
             [
                 "$TC p4template del pipeline/ptables",
                 0
@@ -683,15 +420,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -699,9 +432,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3/tinst1 prio 1",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3 prio 1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -748,15 +481,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -764,9 +493,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -776,8 +505,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 3,
-                        "tiid": 27,
+                        "tblid": 3,
                         "prio": 1,
                         "key1": "0x7f0000005cff",
                         "key2": "0",
@@ -790,7 +518,7 @@
         ],
         "teardown": [
             [
-                "$TC -j p4 del ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC -j p4 del ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ],
             [
@@ -836,15 +564,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -852,22 +576,22 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
+                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 2 action gact index 1",
+        "cmdUnderTest": "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 2 action gact index 1",
         "expExitCode": "0",
-        "verifyCmd": "$TC p4 get ptables/table/cb/tname3/ tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127",
+        "verifyCmd": "$TC p4 get ptables/table/cb/tname3/ randomKey1  255 randomKey2  92 randomKey3  127",
         "matchCount": "1",
         "matchPattern": "Error: Must specify table entry priority.*",
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 2",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 2",
                 0
             ],
             [
-                "$TC p4 del ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ],
             [
@@ -913,15 +637,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 1",
+                "$TC p4template create table/ptables/cb/tname keysz 64 tentries 1 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -929,18 +649,18 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 del ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
                 0
             ],
             [
@@ -986,15 +706,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 1",
+                "$TC p4template create table/ptables/cb/tname keysz 64 tentries 3 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -1002,26 +718,26 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
                 0
             ],
             [
-                "$TC p4 del ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 17",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 18",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 del ptables/table/cb/tname",
                 0
             ],
             [
@@ -1067,15 +783,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 1",
+                "$TC p4template create table/ptables/cb/tname keysz 64 tentries 1 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -1083,26 +795,26 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
                 0
             ],
             [
-                "$TC p4 del ptables/table/cb/tname tinstid 27",
+                "$TC p4 del ptables/table/cb/tname",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 del ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
                 0
             ],
             [
@@ -1148,15 +860,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 2",
+                "$TC p4template create table/ptables/cb/tname keysz 64 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -1164,13 +872,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.1.0/16 prio 15",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.1.0/16 prio 15",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -1180,8 +888,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 16,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
@@ -1192,7 +899,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname tinstid 27",
+                "$TC p4 del ptables/table/cb/tname",
                 0
             ],
             [
@@ -1238,15 +945,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 2",
+                "$TC p4template create table/ptables/cb/tname keysz 64 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -1254,13 +957,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.1.0/16 prio 15",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.1.0/16 prio 15",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.1.0/16 prio 15",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.1.0/16 prio 15",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -1270,8 +973,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 15,
                         "key": "0x1a8c0000a0a0a",
                         "mask": "0xffff00ffffff",
@@ -1282,7 +984,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname tinstid 27",
+                "$TC p4 del ptables/table/cb/tname",
                 0
             ],
             [
@@ -1328,15 +1030,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 2",
+                "$TC p4template create table/ptables/cb/tname keysz 64 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -1344,13 +1042,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.1.0/16 prio 16",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.1.0/16 prio 16",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -1360,8 +1058,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 16,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
@@ -1372,7 +1069,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname tinstid 27",
+                "$TC p4 del ptables/table/cb/tname",
                 0
             ],
             [
@@ -1418,21 +1115,17 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 1",
+                "$TC p4template create table/ptables/cb/tname keysz 64 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
         "matchCount": "1",
         "matchPattern": "Error: Unsealed pipelines can't have table entries.*",
         "teardown": [
@@ -1479,15 +1172,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname2 keysz 32 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname2/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname2 keysz 32 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -1495,9 +1184,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2/tinst1 srcPort  80 dstPort  443 prio 16 action noexist index 1",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16 action noexist index 1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2/tinst1 srcPort  80 dstPort  443 prio 16",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -1544,15 +1233,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname2 keysz 32 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname2/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname2 keysz 32 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -1560,13 +1245,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname2/tinst1 srcPort  80 dstPort  443 prio 16 action gact index 1",
+                "$TC p4 create ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16 action gact index 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname2/tinst1 srcPort  80 dstPort  443 prio 16 action noexist index 1",
+        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16 action noexist index 1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2/tinst1 srcPort  80 dstPort  443 prio 16",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -1576,8 +1261,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 16,
                         "key": "0x1bb0050",
                         "mask": "0xffffffff",
@@ -1588,7 +1272,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname2/tinst1",
+                "$TC p4 del ptables/table/cb/tname2",
                 0
             ],
             [
@@ -1634,15 +1318,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -1650,13 +1330,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
+        "cmdUnderTest": "$TC p4 update ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -1666,8 +1346,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 3,
-                        "tiid": 27,
+                        "tblid": 3,
                         "prio": 1,
                         "key1": "0x7f0000005cff",
                         "key2": "0",
@@ -1702,7 +1381,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ],
             [
@@ -1748,15 +1427,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -1764,13 +1439,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
+                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 2",
+        "cmdUnderTest": "$TC p4 update ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 2",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -1780,8 +1455,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 3,
-                        "tiid": 27,
+                        "tblid": 3,
                         "prio": 1,
                         "key1": "0x7f0000005cff",
                         "key2": "0",
@@ -1816,7 +1490,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ],
             [
@@ -1862,15 +1536,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -1878,11 +1548,11 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
+                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 2; sleep 1;",
+        "cmdUnderTest": "$TC p4 update ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 2; sleep 1;",
         "expExitCode": "0",
         "verifyCmd": "$TC -j actions get action gact index 1",
         "matchCount": "1",
@@ -1903,7 +1573,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ],
             [
@@ -1949,15 +1619,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -1965,13 +1631,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
+                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  1 randomKey3  127 prio 1 action gact index 2",
+        "cmdUnderTest": "$TC p4 update ptables/table/ tblid 3 randomKey1  255 randomKey2  1 randomKey3  127 prio 1 action gact index 2",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -1981,8 +1647,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 3,
-                        "tiid": 27,
+                        "tblid": 3,
                         "prio": 1,
                         "key1": "0x7f0000005cff",
                         "key2": "0",
@@ -2016,7 +1681,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ],
             [
@@ -2062,15 +1727,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -2078,13 +1739,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
+                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 action gact index 2",
+        "cmdUnderTest": "$TC p4 update ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 action gact index 2",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -2094,8 +1755,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 3,
-                        "tiid": 27,
+                        "tblid": 3,
                         "prio": 1,
                         "key1": "0x7f0000005cff",
                         "key2": "0",
@@ -2129,7 +1789,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ],
             [
@@ -2144,7 +1804,7 @@
     },
     {
         "id": "339a",
-        "name": "Try update table entry without specifying table class name or id",
+        "name": "Try update table entry without specifying table name or id",
         "category": [
             "p4tc",
             "entries"
@@ -2175,15 +1835,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -2191,13 +1847,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
+                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/ tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 2",
+        "cmdUnderTest": "$TC p4 update ptables/table/ randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 2",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -2207,8 +1863,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 3,
-                        "tiid": 27,
+                        "tblid": 3,
                         "prio": 1,
                         "key1": "0x7f0000005cff",
                         "key2": "0",
@@ -2242,120 +1897,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-                0
-            ],
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "90f4",
-        "name": "Try update table entry without specifying table instance name or id",
-        "category": [
-            "p4tc",
-            "entries"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
-                0
-            ],
-            [
-                "$TC p4template update pipeline/ptables state ready",
-                0
-            ],
-            [
-                "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 2",
-        "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-        "matchCount": "1",
-        "matchJSON": [
-            {
-                "pname": "ptables",
-                "pipeid": 22
-            },
-            {
-                "entries": [
-                    {
-                        "tbcid": 3,
-                        "tiid": 27,
-                        "prio": 1,
-                        "key1": "0x7f0000005cff",
-                        "key2": "0",
-                        "mask1": "0xffffffffffffffff",
-                        "mask2": "0xffffffffff",
-                        "create_whodunnit": "tc",
-                        "actions": {
-                            "actions": [
-                                {
-                                    "order": 1,
-                                    "kind": "gact",
-                                    "control_action": {
-                                        "type": "pass"
-                                    },
-                                    "prob": {
-                                        "random_type": "none",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "val": 0
-                                    },
-                                    "index": 1,
-                                    "ref": 3,
-                                    "bind": 2
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
-        ],
-        "teardown": [
-            [
-                "$TC p4 del ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ],
             [
@@ -2401,15 +1943,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -2417,82 +1955,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
+                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-        "matchCount": "1",
-        "matchPattern": "Error: Unable to find entry.*",
-        "teardown": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "e910",
-        "name": "Delete table entry specyfing tinstid",
-        "category": [
-            "p4tc",
-            "entries"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
-                0
-            ],
-            [
-                "$TC p4template update pipeline/ptables state ready",
-                0
-            ],
-            [
-                "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname3/ tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-        "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3/ tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -2508,7 +1977,7 @@
     },
     {
         "id": "9bb5",
-        "name": "Delete table entry specifying tbcid",
+        "name": "Delete table entry specifying tblid",
         "category": [
             "p4tc",
             "entries"
@@ -2539,15 +2008,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -2555,13 +2020,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
+                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 del ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "cmdUnderTest": "$TC p4 del ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -2576,120 +2041,8 @@
         ]
     },
     {
-        "id": "f62f",
-        "name": "Try to delete table entry without specyfing tinstid or table instance name",
-        "category": [
-            "p4tc",
-            "entries"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
-                0
-            ],
-            [
-                "$TC p4template update pipeline/ptables state ready",
-                0
-            ],
-            [
-                "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname3/ randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-        "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3/ tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-        "matchCount": "1",
-        "matchJSON": [
-            {
-                "pname": "ptables",
-                "pipeid": 22
-            },
-            {
-                "entries": [
-                    {
-                        "tbcid": 3,
-                        "tiid": 27,
-                        "prio": 1,
-                        "key1": "0x7f0000005cff",
-                        "key2": "0",
-                        "mask1": "0xffffffffffffffff",
-                        "mask2": "0xffffffffff",
-                        "actions": {
-                            "actions": [
-                                {
-                                    "order": 1,
-                                    "kind": "gact",
-                                    "control_action": {
-                                        "type": "pass"
-                                    },
-                                    "prob": {
-                                        "random_type": "none",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "val": 0
-                                    },
-                                    "index": 1,
-                                    "ref": 3,
-                                    "bind": 2
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
-        ],
-        "teardown": [
-            [
-                "$TC p4 del ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-                0
-            ],
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
         "id": "fcc7",
-        "name": "Try to delete table entry without specyfing tbcid or table class name",
+        "name": "Try to delete table entry without specyfing tblid or table name",
         "category": [
             "p4tc",
             "entries"
@@ -2720,15 +2073,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -2736,13 +2085,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
+                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 del ptables/table/ tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "cmdUnderTest": "$TC p4 del ptables/table/ randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3/ tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3/ randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -2752,8 +2101,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 3,
-                        "tiid": 27,
+                        "tblid": 3,
                         "prio": 1,
                         "key1": "0x7f0000005cff",
                         "key2": "0",
@@ -2786,7 +2134,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ],
             [
@@ -2832,15 +2180,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -2848,22 +2192,22 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
+                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 2 action gact index 1",
+        "cmdUnderTest": "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 2 action gact index 1",
         "expExitCode": "0",
-        "verifyCmd": "$TC p4 del ptables/table/cb/tname3/ tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127",
+        "verifyCmd": "$TC p4 del ptables/table/cb/tname3/ randomKey1  255 randomKey2  92 randomKey3  127",
         "matchCount": "1",
         "matchPattern": "Error: Must specify table entry priority.*",
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 2",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 2",
                 0
             ],
             [
-                "$TC p4 del ptables/table/cb/tname3/tinst1 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ],
             [
@@ -2909,15 +2253,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -2925,11 +2265,11 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
+                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 del ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1; sleep 1",
+        "cmdUnderTest": "$TC p4 del ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1; sleep 1",
         "expExitCode": "0",
         "verifyCmd": "$TC -j actions get action gact index 1",
         "matchCount": "1",
@@ -2992,15 +2332,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 tbcid 3 keysz 104 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname3/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -3008,9 +2344,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 del ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "cmdUnderTest": "$TC p4 del ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tbcid 3 tinstid 27 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -3057,15 +2393,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 3 keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 32",
+                "$TC p4template create table/ptables/cb/tname tblid 3 keysz 64 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -3073,11 +2405,11 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
                 0
             ]
         ],
@@ -3095,7 +2427,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 1,
+                        "pnumtables": 1,
                         "pstate": "ready",
                         "preactions": {
                             "actions": [
@@ -3145,7 +2477,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname tinstid 27",
+                "$TC p4 del ptables/table/cb/tname",
                 0
             ],
             [
@@ -3191,15 +2523,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 2",
+                "$TC p4template create table/ptables/cb/tname keysz 64 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -3207,17 +2535,17 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname tinstid 27",
+        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -3233,7 +2561,7 @@
     },
     {
         "id": "9770",
-        "name": "Flush table entries using table instance name",
+        "name": "Flush table entries using table name",
         "category": [
             "p4tc",
             "entries"
@@ -3264,15 +2592,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 2",
+                "$TC p4template create table/ptables/cb/tname keysz 64 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -3280,17 +2604,17 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname/tinst1",
+        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname/tinst1 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -3306,7 +2630,7 @@
     },
     {
         "id": "5618",
-        "name": "Flush table entries using tbcid",
+        "name": "Flush table entries using tblid",
         "category": [
             "p4tc",
             "entries"
@@ -3337,15 +2661,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 2",
+                "$TC p4template create table/ptables/cb/tname keysz 64 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -3353,17 +2673,17 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname/tinst1",
+        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname/tinst1 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -3378,102 +2698,8 @@
         ]
     },
     {
-        "id": "194a",
-        "name": "Flush table entries without specifying table instance name or id",
-        "category": [
-            "p4tc",
-            "entries"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 2",
-                0
-            ],
-            [
-                "$TC p4template update pipeline/ptables state ready",
-                0
-            ],
-            [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
-                0
-            ],
-            [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname/",
-        "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname/tinst1 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
-        "matchCount": "1",
-        "matchJSON": [
-            {
-                "pname": "ptables",
-                "pipeid": 22
-            },
-            {
-                "entries": [
-                    {
-                        "tbcid": 1,
-                        "tiid": 27,
-                        "prio": 1,
-                        "key": "0x38a8c0000a0a0a",
-                        "mask": "0xffffff00ffffff",
-                        "create_whodunnit": "tc"
-                    }
-                ]
-            }
-        ],
-        "teardown": [
-            [
-                "$TC p4 del ptables/table/cb/tname/tinst1",
-                0
-            ],
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
         "id": "c5b9",
-        "name": "Flush table entries without specifying table class name or id",
+        "name": "Flush table entries without specifying table name or id",
         "category": [
             "p4tc",
             "entries"
@@ -3504,15 +2730,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 2",
+                "$TC p4template create table/ptables/cb/tname keysz 64 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -3520,17 +2742,17 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 del ptables/table/ tinstid 27",
+        "cmdUnderTest": "$TC p4 del ptables/table/",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname/tinst1 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -3540,8 +2762,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 1,
                         "key": "0x38a8c0000a0a0a",
                         "mask": "0xffffff00ffffff",
@@ -3552,7 +2773,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname/tinst1",
+                "$TC p4 del ptables/table/cb/tname",
                 0
             ],
             [
@@ -3598,15 +2819,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 2",
+                "$TC p4template create table/ptables/cb/tname keysz 64 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -3614,9 +2831,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname/tinst1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -3626,8 +2843,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 1,
                         "key": "0x38a8c0000a0a0a",
                         "mask": "0xffffff00ffffff",
@@ -3638,97 +2854,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname/tinst1",
-                0
-            ],
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "e9e3",
-        "name": "Dump table entries specifying tinstid",
-        "category": [
-            "p4tc",
-            "entries"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 2",
-                0
-            ],
-            [
-                "$TC p4template update pipeline/ptables state ready",
-                0
-            ],
-            [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
-        "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname/ tinstid 27",
-        "matchCount": "1",
-        "matchJSON": [
-            {
-                "pname": "ptables",
-                "pipeid": 22
-            },
-            {
-                "entries": [
-                    {
-                        "tbcid": 1,
-                        "tiid": 27
-                    },
-                    {
-                        "tbcid": 1,
-                        "tiid": 27
-                    }
-                ]
-            }
-        ],
-        "teardown": [
-            [
-                "$TC p4 del ptables/table/cb/tname/tinst1",
+                "$TC p4 del ptables/table/cb/tname",
                 0
             ],
             [
@@ -3743,7 +2869,7 @@
     },
     {
         "id": "044c",
-        "name": "Dump table entries specifying tbcid",
+        "name": "Dump table entries specifying tblid",
         "category": [
             "p4tc",
             "entries"
@@ -3774,15 +2900,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 2",
+                "$TC p4template create table/ptables/cb/tname keysz 64 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -3790,9 +2912,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tbcid 1 tinstid 27",
+        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 1",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -3802,8 +2924,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 1,
                         "key": "0x38a8c0000a0a0a",
                         "mask": "0xffffff00ffffff",
@@ -3814,80 +2935,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname/tinst1",
-                0
-            ],
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "c94b",
-        "name": "Try to dump table entries without specifying table instance or id",
-        "category": [
-            "p4tc",
-            "entries"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 2",
-                0
-            ],
-            [
-                "$TC p4template update pipeline/ptables state ready",
-                0
-            ],
-            [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
-        "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname/",
-        "matchCount": "1",
-        "matchPattern": "Error: Must specify table instance name or id.*",
-        "teardown": [
-            [
-                "$TC p4 del ptables/table/cb/tname/tinst1",
+                "$TC p4 del ptables/table/cb/tname",
                 0
             ],
             [
@@ -3902,7 +2950,7 @@
     },
     {
         "id": "0caa",
-        "name": "Try to dump table entries without specifying table class name or id",
+        "name": "Try to dump table entries without specifying table name or id",
         "category": [
             "p4tc",
             "entries"
@@ -3933,15 +2981,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 2",
+                "$TC p4template create table/ptables/cb/tname keysz 64 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -3949,18 +2993,18 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
         "expExitCode": "0",
         "verifyCmd": "$TC -j p4 get ptables/table/",
         "matchCount": "1",
-        "matchPattern": "Error: Must specify table class name or id.*",
+        "matchPattern": "Error: Must specify table name or id.*",
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname/tinst1",
+                "$TC p4 del ptables/table/cb/tname",
                 0
             ],
             [
@@ -4006,21 +3050,17 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 2",
+                "$TC p4template create table/ptables/cb/tname keysz 64 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ]
         ],
         "cmdUnderTest": "$TC p4template update pipeline/ptables state ready",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname/tinst1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname",
         "matchCount": "1",
         "matchJSON": [],
         "teardown": [
@@ -4036,7 +3076,7 @@
     },
     {
         "id": "1406",
-        "name": "Dump table instance with more than P4TC_MAXMSG_COUNT entries",
+        "name": "Dump table with more than P4TC_MAXMSG_COUNT entries",
         "category": [
             "p4tc",
             "entries"
@@ -4067,15 +3107,11 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 1 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 64 tcount 2 keys id 1 action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template create tinst/ptables/cb/tname/tinst1 tinstid 27 maxentries 17",
+                "$TC p4template create table/ptables/cb/tname keysz 64 keys id 1 action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -4083,73 +3119,73 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 1",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 1",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 2",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 2",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 3",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 3",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 4",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 4",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 5",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 5",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 6",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 6",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 7",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 7",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 8",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 8",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 9",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 9",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 10",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 10",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 11",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 11",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 12",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 12",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 13",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 13",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 14",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 14",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 15",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 15",
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
+                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname tinstid 27 srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 17",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 17",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname/ tinstid 27",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname/",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -4159,127 +3195,111 @@
             {
                 "entries": [
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
                         "create_whodunnit": "tc"
                     },
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 16,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
                         "create_whodunnit": "tc"
                     },
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 15,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
                         "create_whodunnit": "tc"
                     },
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 14,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
                         "create_whodunnit": "tc"
                     },
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 13,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
                         "create_whodunnit": "tc"
                     },
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 12,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
                         "create_whodunnit": "tc"
                     },
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 11,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
                         "create_whodunnit": "tc"
                     },
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 10,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
                         "create_whodunnit": "tc"
                     },
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 9,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
                         "create_whodunnit": "tc"
                     },
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 8,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
                         "create_whodunnit": "tc"
                     },
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 7,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
                         "create_whodunnit": "tc"
                     },
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 6,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
                         "create_whodunnit": "tc"
                     },
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 5,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
                         "create_whodunnit": "tc"
                     },
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 4,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
                         "create_whodunnit": "tc"
                     },
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 3,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
                         "create_whodunnit": "tc"
                     },
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "prio": 2,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
@@ -4294,8 +3314,7 @@
             {
                 "entries": [
                     {
-                        "tbcid": 1,
-                        "tiid": 27,
+                        "tblid": 1,
                         "key": "0xa8c0000a0a0a",
                         "mask": "0xffff00ffffff",
                         "create_whodunnit": "tc"
@@ -4305,7 +3324,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname/tinst1",
+                "$TC p4 del ptables/table/cb/tname",
                 0
             ],
             [
