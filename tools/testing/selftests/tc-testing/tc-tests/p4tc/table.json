@@ -1,11 +1,11 @@
 [
     {
         "id": "60b7",
-        "name": "Create valid table class",
+        "name": "Create valid table",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -45,30 +45,29 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 1,
+                        "tblid": 1,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -152,11 +151,11 @@
     },
     {
         "id": "a540",
-        "name": "Create valid table class without preactions",
+        "name": "Create valid table without preactions",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -196,30 +195,29 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 16 tcount 1 keys id 1 action gact index 3 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname keysz 16 keys id 1 action gact index 3 postactions gact index 4",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 1,
+                        "tblid": 1,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -282,11 +280,11 @@
     },
     {
         "id": "4765",
-        "name": "Try to create table class without name",
+        "name": "Try to create table without name",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -326,15 +324,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/ keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/ keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Error: Table class name not found.*",
+        "matchPattern": "Error: Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -348,11 +346,11 @@
     },
     {
         "id": "3d3c",
-        "name": "Try to create table class without keysz",
+        "name": "Try to create table without keysz",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -392,165 +390,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Error: Table class name not found.*",
-        "teardown": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "8b54",
-        "name": "Try to create table class without tcount",
-        "category": [
-            "p4tc",
-            "template",
-            "tclass"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action drop index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action ok index 3",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action reclassify index 4",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
-        "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
-        "matchCount": "1",
-        "matchJSON": [
-            {
-                "obj": "table class",
-                "pname": "ptables",
-                "pipeid": 22
-            },
-            {
-                "templates": [
-                    {
-                        "tbcid": 1,
-                        "tname": "cb/tname",
-                        "keysz": 16,
-                        "entries": 256,
-                        "masks": 8,
-                        "count": 1,
-                        "keys": [
-                            {
-                                "id": 1,
-                                "actions": [
-                                    {
-                                        "order": 1,
-                                        "kind": "gact",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "prob": {
-                                            "random_type": "none",
-                                            "control_action": {
-                                                "type": "pass"
-                                            },
-                                            "val": 0
-                                        },
-                                        "index": 3,
-                                        "ref": 2,
-                                        "bind": 1
-                                    }
-                                ]
-                            }
-                        ],
-                        "preactions": {
-                            "actions": [
-                                {
-                                    "order": 1,
-                                    "kind": "gact",
-                                    "control_action": {
-                                        "type": "reclassify"
-                                    },
-                                    "prob": {
-                                        "random_type": "none",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "val": 0
-                                    },
-                                    "index": 4,
-                                    "ref": 3,
-                                    "bind": 2
-                                }
-                            ]
-                        },
-                        "postactions": {
-                            "actions": [
-                                {
-                                    "order": 1,
-                                    "kind": "gact",
-                                    "control_action": {
-                                        "type": "reclassify"
-                                    },
-                                    "prob": {
-                                        "random_type": "none",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "val": 0
-                                    },
-                                    "index": 4,
-                                    "ref": 3,
-                                    "bind": 2
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
-        ],
+        "matchPattern": "Error: Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -564,11 +412,11 @@
     },
     {
         "id": "b48a",
-        "name": "Try to create table class with keysz zero",
+        "name": "Try to create table with keysz zero",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -608,15 +456,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 0 tcount 0 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname keysz 0 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Table class name not found.*",
+        "matchPattern": "Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -630,11 +478,11 @@
     },
     {
         "id": "cc89",
-        "name": "Try to create table class with keysz > P4TC_MAX_KEYSZ",
+        "name": "Try to create table with keysz > P4TC_MAX_KEYSZ",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -674,297 +522,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 513 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname keysz 513 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Table class name not found.*",
-        "teardown": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "c3d4",
-        "name": "Try to create table class with tcount zero",
-        "category": [
-            "p4tc",
-            "template",
-            "tclass"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action drop index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action ok index 3",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action reclassify index 4",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 16 tcount 0 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
-        "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
-        "matchCount": "1",
-        "matchPattern": "Table class name not found.*",
-        "teardown": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "05fc",
-        "name": "Try to create table class with tcount > P4TC_MAX_TINSTS",
-        "category": [
-            "p4tc",
-            "template",
-            "tclass"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action drop index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action ok index 3",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action reclassify index 4",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 16 tcount 513 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
-        "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
-        "matchCount": "1",
-        "matchPattern": "Table class name not found.*",
-        "teardown": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "9678",
-        "name": "Create table class with tcount = P4TC_MAX_TINSTS",
-        "category": [
-            "p4tc",
-            "template",
-            "tclass"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action drop index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action ok index 3",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action reclassify index 4",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 512 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
-        "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
-        "matchCount": "1",
-        "matchJSON": [
-            {
-                "obj": "table class",
-                "pname": "ptables",
-                "pipeid": 22
-            },
-            {
-                "templates": [
-                    {
-                        "tbcid": 22,
-                        "tname": "cb/tname",
-                        "keysz": 16,
-                        "entries": 256,
-                        "masks": 8,
-                        "count": 512,
-                        "keys": [
-                            {
-                                "id": 1,
-                                "actions": [
-                                    {
-                                        "order": 1,
-                                        "kind": "gact",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "prob": {
-                                            "random_type": "none",
-                                            "control_action": {
-                                                "type": "pass"
-                                            },
-                                            "val": 0
-                                        },
-                                        "index": 3,
-                                        "ref": 2,
-                                        "bind": 1
-                                    }
-                                ]
-                            }
-                        ],
-                        "preactions": {
-                            "actions": [
-                                {
-                                    "order": 1,
-                                    "kind": "gact",
-                                    "control_action": {
-                                        "type": "reclassify"
-                                    },
-                                    "prob": {
-                                        "random_type": "none",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "val": 0
-                                    },
-                                    "index": 4,
-                                    "ref": 3,
-                                    "bind": 2
-                                }
-                            ]
-                        },
-                        "postactions": {
-                            "actions": [
-                                {
-                                    "order": 1,
-                                    "kind": "gact",
-                                    "control_action": {
-                                        "type": "reclassify"
-                                    },
-                                    "prob": {
-                                        "random_type": "none",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "val": 0
-                                    },
-                                    "index": 4,
-                                    "ref": 3,
-                                    "bind": 2
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
-        ],
+        "matchPattern": "Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -978,11 +544,11 @@
     },
     {
         "id": "efba",
-        "name": "Try to create table class with tentries > P4TC_MAX_TENTRIES",
+        "name": "Try to create table with tentries > P4TC_MAX_TENTRIES",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -1022,15 +588,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 16 tcount 256 tentries 16777217 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname keysz 16 tentries 16777217 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Table class name not found.*",
+        "matchPattern": "Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -1044,11 +610,11 @@
     },
     {
         "id": "a24a",
-        "name": "Create table class with tentries = P4TC_MAX_TENTRIES",
+        "name": "Create table with tentries = P4TC_MAX_TENTRIES",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -1088,29 +654,28 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 tentries 16777216 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 tentries 16777216 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 16777216,
+                        "max_entries": 16777216,
                         "masks": 8,
-                        "count": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -1194,11 +759,11 @@
     },
     {
         "id": "67b7",
-        "name": "Try to create table class with tentries zero",
+        "name": "Try to create table with tentries zero",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -1238,15 +803,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 16 tcount 256 tentries 0 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname keysz 16 tentries 0 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Table class name not found.*",
+        "matchPattern": "Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -1260,11 +825,11 @@
     },
     {
         "id": "e8e8",
-        "name": "Try to create table class with nummasks > P4TC_MAX_TMASKS",
+        "name": "Try to create table with nummasks > P4TC_MAX_TMASKS",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -1304,15 +869,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 16 tcount 256 tmasks 129 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname keysz 16 tmasks 129 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Table class name not found.*",
+        "matchPattern": "Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -1326,11 +891,11 @@
     },
     {
         "id": "6b5b",
-        "name": "Create table class wth nummasks = P4TC_MAX_TMASKS",
+        "name": "Create table wth nummasks = P4TC_MAX_TMASKS",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -1370,7 +935,7 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
@@ -1378,25 +943,24 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 nummasks 128 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 nummasks 128 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 128,
-                        "count": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -1480,11 +1044,11 @@
     },
     {
         "id": "615c",
-        "name": "Try to create table class with nummasks zero",
+        "name": "Try to create table with nummasks zero",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -1524,15 +1088,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 16 tcount 256 nummasks 0 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname keysz 16 nummasks 0 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Table class name not found.*",
+        "matchPattern": "Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -1546,11 +1110,11 @@
     },
     {
         "id": "ef97",
-        "name": "Create table class with specific tt_id",
+        "name": "Create table with specific tt_id",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -1590,29 +1154,28 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname tbcid 42 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname tblid 42 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 42,
+                        "tblid": 42,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -1696,11 +1259,11 @@
     },
     {
         "id": "7a0f",
-        "name": "Try to create table class same name twice",
+        "name": "Try to create table same name twice",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -1740,33 +1303,32 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 16 tcount 1 keys id 1 action gact index 1 preactions gact index 4 postactions gact index 2",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname keysz 16 keys id 1 action gact index 1 preactions gact index 4 postactions gact index 2",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 1,
+                        "tblid": 1,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -1850,11 +1412,11 @@
     },
     {
         "id": "bd8d",
-        "name": "Try to create table class same id twice",
+        "name": "Try to create table same id twice",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -1894,33 +1456,32 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname2 tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 1 preactions gact index 4 postactions gact index 2",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname2 tblid 22 keysz 16 keys id 1 action gact index 1 preactions gact index 4 postactions gact index 2",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/ tbcid 22",
+        "verifyCmd": "$TC -j p4template get table/ptables/ tblid 22",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -2004,11 +1565,11 @@
     },
     {
         "id": "eeaf",
-        "name": "Try to create table class without supplying pipeline name or id",
+        "name": "Try to create table without supplying pipeline name or id",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -2048,15 +1609,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ tbcid 1 keysz 16 tcount 513 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ tblid 1 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Table class name not found.*",
+        "matchPattern": "Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -2070,11 +1631,11 @@
     },
     {
         "id": "f35d",
-        "name": "Try to create table class without supplying keys",
+        "name": "Try to create table without supplying keys",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -2114,15 +1675,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 16 tcount 256 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname keysz 16 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Table class name not found.*",
+        "matchPattern": "Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -2136,11 +1697,11 @@
     },
     {
         "id": "b3c9",
-        "name": "Try to create table class with name size > TCLASSNAMSIZ",
+        "name": "Try to create table with name size > TCLASSNAMSIZ",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -2180,15 +1741,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/7eozFYyaqVCD7H0xS3M5sMnluUqPgZewfSLnYPf4s3k0lbx8lKoR32zSqiGsh84qJ32vnLPdl7f2XcUh5yIdEP7uJy2C3iPtyU7159s9CMB0EtTAlWTVz4U1jkQ5h2advwp3KCVsZ1jlGgStoJL2op5ZxoThTSUQLR61a5RNDovoSFcq86Brh6oW9DSmTbN6SYygbG3JLnEHzRC5hh0jGmJKHq5ivBK9Y9FlNZQXC9wVwX4qTFAd8ITUTj2Au2Jg1 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/7eozFYyaqVCD7H0xS3M5sMnluUqPgZewfSLnYPf4s3k0lbx8lKoR32zSqiGsh84qJ32vnLPdl7f2XcUh5yIdEP7uJy2C3iPtyU7159s9CMB0EtTAlWTVz4U1jkQ5h2advwp3KCVsZ1jlGgStoJL2op5ZxoThTSUQLR61a5RNDovoSFcq86Brh6oW9DSmTbN6SYygbG3JLnEHzRC5hh0jGmJKHq5ivBK9Y9FlNZQXC9wVwX4qTFAd8ITUTj2Au2Jg1 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Table class name not found.*",
+        "matchPattern": "Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -2202,11 +1763,11 @@
     },
     {
         "id": "f3a5",
-        "name": "Try to create table class with invalid action",
+        "name": "Try to create table with invalid action",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -2240,15 +1801,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname2 keysz 16 tcount 1 keys id 1 action connmark zone 103 reclassify index 1 action connmark goto chain 42 index 90 cookie c1a0c1a0 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname2 keysz 16 keys id 1 action connmark zone 103 reclassify index 1 action connmark goto chain 42 index 90 cookie c1a0c1a0 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Table class name not found.*",
+        "matchPattern": "Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -2262,11 +1823,11 @@
     },
     {
         "id": "b3ec",
-        "name": "Try to create table class with invalid action index",
+        "name": "Try to create table with invalid action index",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -2300,15 +1861,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname2 keysz 16 tcount 1 keys id 1 action connmark zone 103 reclassify index 1 action connmark goto chain 42 index 90 cookie c1a0c1a0 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname2 keysz 16 keys id 1 action connmark zone 103 reclassify index 1 action connmark goto chain 42 index 90 cookie c1a0c1a0 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Table class name not found.*",
+        "matchPattern": "Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -2322,11 +1883,11 @@
     },
     {
         "id": "40b0",
-        "name": "Create table class with tbcid of 4 bytes",
+        "name": "Create table with tblid of 4 bytes",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -2354,24 +1915,24 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname tbcid 2147483647 keysz 16 tcount 1 keys id 1 action gact index 1 preactions gact index 4 postactions gact index 2",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname tblid 2147483647 keysz 16 keys id 1 action gact index 1 preactions gact index 4 postactions gact index 2",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/ tbcid 2147483647",
+        "verifyCmd": "$TC -j p4template get table/ptables/ tblid 2147483647",
         "matchCount": "1",
         "matchJSON": [
             {
                 "pname": "ptables",
                 "pipeid": 22,
-                "obj": "table class"
+                "obj": "table"
             },
             {
                 "templates": [
                     {
-                        "tbcid": 2147483647,
+                        "tblid": 2147483647,
                         "tname": "cb/tname"
                     }
                 ]
@@ -2390,11 +1951,11 @@
     },
     {
         "id": "af62",
-        "name": "Create valid table class with more than one key",
+        "name": "Create valid table with more than one key",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -2446,30 +2007,29 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 16 tcount 1 keys id 1 action gact index 3 keys id 2 default action gact index 5 keys action gact index 6 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname keysz 16 keys id 1 action gact index 3 keys id 2 default action gact index 5 keys action gact index 6 preactions gact index 4 postactions gact index 4",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 1,
+                        "tblid": 1,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 2,
+                        "default_key": 2,
                         "keys": [
                             {
                                 "id": 1,
@@ -2597,11 +2157,11 @@
     },
     {
         "id": "0d47",
-        "name": "Try to create table class with more than one default key",
+        "name": "Try to create table with more than one default key",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -2653,15 +2213,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 16 tcount 1 keys default id 1 action gact index 3 keys id 2 default action gact index 5 keys action gact index 6 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname keysz 16 keys default id 1 action gact index 3 keys id 2 default action gact index 5 keys action gact index 6 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Error: Table class name not found.*",
+        "matchPattern": "Error: Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -2675,11 +2235,11 @@
     },
     {
         "id": "4cb8",
-        "name": "Create valid table class with P4TC_MAXPARSE_KEYS keys",
+        "name": "Create valid table with P4TC_MAXPARSE_KEYS keys",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -2719,30 +2279,29 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 16 tcount 1 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname keysz 16 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 1,
+                        "tblid": 1,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -3156,11 +2715,11 @@
     },
     {
         "id": "6fc2",
-        "name": "Create valid table class with P4TC_MAXPARSE_KEYS + 1 keys",
+        "name": "Create valid table with P4TC_MAXPARSE_KEYS + 1 keys",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -3200,15 +2759,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 16 tcount 1 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname keysz 16 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Error: Table class name not found.*",
+        "matchPattern": "Error: Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -3222,11 +2781,11 @@
     },
     {
         "id": "eea7",
-        "name": "Update table class's key size specifying table class name",
+        "name": "Update table's key size specifying table name",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -3266,34 +2825,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/cb/tname keysz 32",
+        "cmdUnderTest": "$TC p4template update table/ptables/cb/tname keysz 32",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 32,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -3377,11 +2935,11 @@
     },
     {
         "id": "5d07",
-        "name": "Update table class's key size specifying table class id",
+        "name": "Update table's key size specifying table id",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -3421,34 +2979,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ pipeid 22 tbcid 22 keysz 32",
+        "cmdUnderTest": "$TC p4template update table/ pipeid 22 tblid 22 keysz 32",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 32,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -3532,11 +3089,11 @@
     },
     {
         "id": "46f5",
-        "name": "Try to update table class's key size with zero",
+        "name": "Try to update table's key size with zero",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -3576,34 +3133,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 keysz 0",
+        "cmdUnderTest": "$TC p4template update table/ptables/ tblid 22 keysz 0",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -3687,11 +3243,11 @@
     },
     {
         "id": "8306",
-        "name": "Try to update table class's key size with > P4TC_MAX_KEYSZ",
+        "name": "Try to update table's key size with > P4TC_MAX_KEYSZ",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -3731,34 +3287,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 keysz 513",
+        "cmdUnderTest": "$TC p4template update table/ptables/ tblid 22 keysz 513",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -3842,11 +3397,11 @@
     },
     {
         "id": "0d12",
-        "name": "Update table class's with key size = P4TC_MAX_KEYSZ",
+        "name": "Update table's with key size = P4TC_MAX_KEYSZ",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -3886,809 +3441,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 keysz 512",
+        "cmdUnderTest": "$TC p4template update table/ptables/ tblid 22 keysz 512",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 512,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
-                        "keys": [
-                            {
-                                "id": 1,
-                                "actions": [
-                                    {
-                                        "order": 1,
-                                        "kind": "gact",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "prob": {
-                                            "random_type": "none",
-                                            "control_action": {
-                                                "type": "pass"
-                                            },
-                                            "val": 0
-                                        },
-                                        "index": 3,
-                                        "ref": 2,
-                                        "bind": 1
-                                    }
-                                ]
-                            }
-                        ],
-                        "preactions": {
-                            "actions": [
-                                {
-                                    "order": 1,
-                                    "kind": "gact",
-                                    "control_action": {
-                                        "type": "reclassify"
-                                    },
-                                    "prob": {
-                                        "random_type": "none",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "val": 0
-                                    },
-                                    "index": 4,
-                                    "ref": 3,
-                                    "bind": 2
-                                }
-                            ]
-                        },
-                        "postactions": {
-                            "actions": [
-                                {
-                                    "order": 1,
-                                    "kind": "gact",
-                                    "control_action": {
-                                        "type": "reclassify"
-                                    },
-                                    "prob": {
-                                        "random_type": "none",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "val": 0
-                                    },
-                                    "index": 4,
-                                    "ref": 3,
-                                    "bind": 2
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
-        ],
-        "teardown": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "b2ce",
-        "name": "Update table class tcount by name",
-        "category": [
-            "p4tc",
-            "template",
-            "tclass"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action drop index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action ok index 3",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action reclassify index 4",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/cb/tname tcount 32",
-        "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
-        "matchCount": "1",
-        "matchJSON": [
-            {
-                "obj": "table class",
-                "pname": "ptables",
-                "pipeid": 22
-            },
-            {
-                "templates": [
-                    {
-                        "tbcid": 22,
-                        "tname": "cb/tname",
-                        "keysz": 16,
-                        "entries": 256,
-                        "masks": 8,
-                        "count": 32,
-			"default_key": 1,
-                        "keys": [
-                            {
-                                "id": 1,
-                                "actions": [
-                                    {
-                                        "order": 1,
-                                        "kind": "gact",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "prob": {
-                                            "random_type": "none",
-                                            "control_action": {
-                                                "type": "pass"
-                                            },
-                                            "val": 0
-                                        },
-                                        "index": 3,
-                                        "ref": 2,
-                                        "bind": 1
-                                    }
-                                ]
-                            }
-                        ],
-                        "preactions": {
-                            "actions": [
-                                {
-                                    "order": 1,
-                                    "kind": "gact",
-                                    "control_action": {
-                                        "type": "reclassify"
-                                    },
-                                    "prob": {
-                                        "random_type": "none",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "val": 0
-                                    },
-                                    "index": 4,
-                                    "ref": 3,
-                                    "bind": 2
-                                }
-                            ]
-                        },
-                        "postactions": {
-                            "actions": [
-                                {
-                                    "order": 1,
-                                    "kind": "gact",
-                                    "control_action": {
-                                        "type": "reclassify"
-                                    },
-                                    "prob": {
-                                        "random_type": "none",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "val": 0
-                                    },
-                                    "index": 4,
-                                    "ref": 3,
-                                    "bind": 2
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
-        ],
-        "teardown": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "22c5",
-        "name": "Update table class tcount by id",
-        "category": [
-            "p4tc",
-            "template",
-            "tclass"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action drop index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action ok index 3",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action reclassify index 4",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 tcount 32",
-        "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
-        "matchCount": "1",
-        "matchJSON": [
-            {
-                "obj": "table class",
-                "pname": "ptables",
-                "pipeid": 22
-            },
-            {
-                "templates": [
-                    {
-                        "tbcid": 22,
-                        "tname": "cb/tname",
-                        "keysz": 16,
-                        "entries": 256,
-                        "masks": 8,
-                        "count": 32,
-			"default_key": 1,
-                        "keys": [
-                            {
-                                "id": 1,
-                                "actions": [
-                                    {
-                                        "order": 1,
-                                        "kind": "gact",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "prob": {
-                                            "random_type": "none",
-                                            "control_action": {
-                                                "type": "pass"
-                                            },
-                                            "val": 0
-                                        },
-                                        "index": 3,
-                                        "ref": 2,
-                                        "bind": 1
-                                    }
-                                ]
-                            }
-                        ],
-                        "preactions": {
-                            "actions": [
-                                {
-                                    "order": 1,
-                                    "kind": "gact",
-                                    "control_action": {
-                                        "type": "reclassify"
-                                    },
-                                    "prob": {
-                                        "random_type": "none",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "val": 0
-                                    },
-                                    "index": 4,
-                                    "ref": 3,
-                                    "bind": 2
-                                }
-                            ]
-                        },
-                        "postactions": {
-                            "actions": [
-                                {
-                                    "order": 1,
-                                    "kind": "gact",
-                                    "control_action": {
-                                        "type": "reclassify"
-                                    },
-                                    "prob": {
-                                        "random_type": "none",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "val": 0
-                                    },
-                                    "index": 4,
-                                    "ref": 3,
-                                    "bind": 2
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
-        ],
-        "teardown": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "fd12",
-        "name": "Try to update table class tcount with zero",
-        "category": [
-            "p4tc",
-            "template",
-            "tclass"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action drop index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action ok index 3",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action reclassify index 4",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 tcount 0",
-        "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
-        "matchCount": "1",
-        "matchJSON": [
-            {
-                "obj": "table class",
-                "pname": "ptables",
-                "pipeid": 22
-            },
-            {
-                "templates": [
-                    {
-                        "tbcid": 22,
-                        "tname": "cb/tname",
-                        "keysz": 16,
-                        "entries": 256,
-                        "masks": 8,
-                        "count": 1,
-			"default_key": 1,
-                        "keys": [
-                            {
-                                "id": 1,
-                                "actions": [
-                                    {
-                                        "order": 1,
-                                        "kind": "gact",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "prob": {
-                                            "random_type": "none",
-                                            "control_action": {
-                                                "type": "pass"
-                                            },
-                                            "val": 0
-                                        },
-                                        "index": 3,
-                                        "ref": 2,
-                                        "bind": 1
-                                    }
-                                ]
-                            }
-                        ],
-                        "preactions": {
-                            "actions": [
-                                {
-                                    "order": 1,
-                                    "kind": "gact",
-                                    "control_action": {
-                                        "type": "reclassify"
-                                    },
-                                    "prob": {
-                                        "random_type": "none",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "val": 0
-                                    },
-                                    "index": 4,
-                                    "ref": 3,
-                                    "bind": 2
-                                }
-                            ]
-                        },
-                        "postactions": {
-                            "actions": [
-                                {
-                                    "order": 1,
-                                    "kind": "gact",
-                                    "control_action": {
-                                        "type": "reclassify"
-                                    },
-                                    "prob": {
-                                        "random_type": "none",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "val": 0
-                                    },
-                                    "index": 4,
-                                    "ref": 3,
-                                    "bind": 2
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
-        ],
-        "teardown": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "b7c6",
-        "name": "Try to update table class wth tcount > P4TC_MAX_TINSTS",
-        "category": [
-            "p4tc",
-            "template",
-            "tclass"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action drop index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action ok index 3",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action reclassify index 4",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 tcount 513",
-        "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
-        "matchCount": "1",
-        "matchJSON": [
-            {
-                "obj": "table class",
-                "pname": "ptables",
-                "pipeid": 22
-            },
-            {
-                "templates": [
-                    {
-                        "tbcid": 22,
-                        "tname": "cb/tname",
-                        "keysz": 16,
-                        "entries": 256,
-                        "masks": 8,
-                        "count": 1,
-			"default_key": 1,
-                        "keys": [
-                            {
-                                "id": 1,
-                                "actions": [
-                                    {
-                                        "order": 1,
-                                        "kind": "gact",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "prob": {
-                                            "random_type": "none",
-                                            "control_action": {
-                                                "type": "pass"
-                                            },
-                                            "val": 0
-                                        },
-                                        "index": 3,
-                                        "ref": 2,
-                                        "bind": 1
-                                    }
-                                ]
-                            }
-                        ],
-                        "preactions": {
-                            "actions": [
-                                {
-                                    "order": 1,
-                                    "kind": "gact",
-                                    "control_action": {
-                                        "type": "reclassify"
-                                    },
-                                    "prob": {
-                                        "random_type": "none",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "val": 0
-                                    },
-                                    "index": 4,
-                                    "ref": 3,
-                                    "bind": 2
-                                }
-                            ]
-                        },
-                        "postactions": {
-                            "actions": [
-                                {
-                                    "order": 1,
-                                    "kind": "gact",
-                                    "control_action": {
-                                        "type": "reclassify"
-                                    },
-                                    "prob": {
-                                        "random_type": "none",
-                                        "control_action": {
-                                            "type": "pass"
-                                        },
-                                        "val": 0
-                                    },
-                                    "index": 4,
-                                    "ref": 3,
-                                    "bind": 2
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
-        ],
-        "teardown": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "cadf",
-        "name": "Update table class wth tcount = P4TC_MAX_TINSTS",
-        "category": [
-            "p4tc",
-            "template",
-            "tclass"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action drop index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action ok index 3",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action reclassify index 4",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 tcount 512",
-        "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
-        "matchCount": "1",
-        "matchJSON": [
-            {
-                "obj": "table class",
-                "pname": "ptables",
-                "pipeid": 22
-            },
-            {
-                "templates": [
-                    {
-                        "tbcid": 22,
-                        "tname": "cb/tname",
-                        "keysz": 16,
-                        "entries": 256,
-                        "masks": 8,
-                        "count": 512,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -4772,11 +3551,11 @@
     },
     {
         "id": "67c0",
-        "name": "Try to update table class tentries with zero",
+        "name": "Try to update table tentries with zero",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -4816,34 +3595,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 tentries 0",
+        "cmdUnderTest": "$TC p4template update table/ptables/ tblid 22 tentries 0",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -4927,11 +3705,11 @@
     },
     {
         "id": "dfd1",
-        "name": "Try to update table class wth tentries > P4TC_MAX_TENTRIES",
+        "name": "Try to update table wth tentries > P4TC_MAX_TENTRIES",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -4971,34 +3749,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 tentries 16777217",
+        "cmdUnderTest": "$TC p4template update table/ptables/ tblid 22 tentries 16777217",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -5082,11 +3859,11 @@
     },
     {
         "id": "36e3",
-        "name": "Update table class with tentries = P4TC_MAX_TENTRIES",
+        "name": "Update table with tentries = P4TC_MAX_TENTRIES",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -5126,34 +3903,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 tentries 16777216",
+        "cmdUnderTest": "$TC p4template update table/ptables/ tblid 22 tentries 16777216",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 16777216,
+                        "max_entries": 16777216,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -5237,11 +4013,11 @@
     },
     {
         "id": "5c80",
-        "name": "Try to update table class masks with zero",
+        "name": "Try to update table masks with zero",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -5281,34 +4057,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 nummasks 0",
+        "cmdUnderTest": "$TC p4template update table/ptables/ tblid 22 nummasks 0",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -5392,11 +4167,11 @@
     },
     {
         "id": "011b",
-        "name": "Try to update table class with nummasks > P4TC_MAX_TMASKS",
+        "name": "Try to update table with nummasks > P4TC_MAX_TMASKS",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -5436,34 +4211,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 nummasks 129",
+        "cmdUnderTest": "$TC p4template update table/ptables/ tblid 22 nummasks 129",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -5547,11 +4321,11 @@
     },
     {
         "id": "102b",
-        "name": "Update table class with nummasks = P4TC_MAX_TMASKS",
+        "name": "Update table with nummasks = P4TC_MAX_TMASKS",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -5591,34 +4365,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 nummasks 128",
+        "cmdUnderTest": "$TC p4template update table/ptables/ tblid 22 nummasks 128",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 128,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -5702,11 +4475,11 @@
     },
     {
         "id": "ac3d",
-        "name": "Update table class's postaction",
+        "name": "Update table's postaction",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -5752,34 +4525,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 postactions gact index 5",
+        "cmdUnderTest": "$TC p4template update table/ptables/ tblid 22 postactions gact index 5",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/ tbcid 22",
+        "verifyCmd": "$TC -j p4template get table/ptables/ tblid 22",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -5863,11 +4635,11 @@
     },
     {
         "id": "64e5",
-        "name": "Update table class's postaction and check old actions ref count and bind",
+        "name": "Update table's postaction and check old actions ref count and bind",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -5913,15 +4685,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 postactions gact index 5",
+        "cmdUnderTest": "$TC p4template update table/ptables/ tblid 22 postactions gact index 5",
         "expExitCode": "0",
         "verifyCmd": "$TC -j actions get action gact index 4",
         "matchCount": "1",
@@ -5953,11 +4725,11 @@
     },
     {
         "id": "b886",
-        "name": "Update table class and add new key",
+        "name": "Update table and add new key",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -6009,34 +4781,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 keys id 1 action gact index 5 keys id 2 action gact index 6",
+        "cmdUnderTest": "$TC p4template update table/ptables/ tblid 22 keys id 1 action gact index 5 keys id 2 action gact index 6",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/ tbcid 22",
+        "verifyCmd": "$TC -j p4template get table/ptables/ tblid 22",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -6142,11 +4913,11 @@
     },
     {
         "id": "4df0",
-        "name": "Update table class and add new key without specifying id",
+        "name": "Update table and add new key without specifying id",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -6198,34 +4969,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 keys action gact index 6",
+        "cmdUnderTest": "$TC p4template update table/ptables/ tblid 22 keys action gact index 6",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/ tbcid 22",
+        "verifyCmd": "$TC -j p4template get table/ptables/ tblid 22",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -6331,11 +5101,11 @@
     },
     {
         "id": "80c9",
-        "name": "Update table class's keys and check old keys's action reference",
+        "name": "Update table's keys and check old keys's action reference",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -6387,15 +5157,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 keys id 1 action gact index 5 keys id 2 action gact index 6",
+        "cmdUnderTest": "$TC p4template update table/ptables/ tblid 22 keys id 1 action gact index 5 keys id 2 action gact index 6",
         "expExitCode": "0",
         "verifyCmd": "$TC -j actions get action gact index 3",
         "matchCount": "1",
@@ -6427,11 +5197,11 @@
     },
     {
         "id": "ef19",
-        "name": "Update table class's postactions and keysz with invalid value",
+        "name": "Update table's postactions and keysz with invalid value",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -6483,34 +5253,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 keysz 0 keys id 1 action gact index 5 keys id 2 action gact index 6",
+        "cmdUnderTest": "$TC p4template update table/ptables/ tblid 22 keysz 0 keys id 1 action gact index 5 keys id 2 action gact index 6",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/ tbcid 22",
+        "verifyCmd": "$TC -j p4template get table/ptables/ tblid 22",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -6594,11 +5363,11 @@
     },
     {
         "id": "8921",
-        "name": "Update table class's keys and keysz with invalid value and check actions after",
+        "name": "Update table's keys and keysz with invalid value and check actions after",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -6650,15 +5419,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 keysz 0 keys id 1 action gact index 5 keys id 2 action gact index 6",
+        "cmdUnderTest": "$TC p4template update table/ptables/ tblid 22 keysz 0 keys id 1 action gact index 5 keys id 2 action gact index 6",
         "expExitCode": "255",
         "verifyCmd": "$TC -j actions ls action gact",
         "matchCount": "1",
@@ -6720,11 +5489,11 @@
     },
     {
         "id": "1fdd",
-        "name": "Update table class with P4TC_MAXPARSE_KEYS keys",
+        "name": "Update table with P4TC_MAXPARSE_KEYS keys",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -6764,34 +5533,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/cb/tname keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3",
+        "cmdUnderTest": "$TC p4template update table/ptables/cb/tname keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -7205,11 +5973,11 @@
     },
     {
         "id": "a44e",
-        "name": "Try to update table class adding more P4TC_MAXPARSE_KEYS keys",
+        "name": "Try to update table adding more P4TC_MAXPARSE_KEYS keys",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -7249,34 +6017,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/cb/tname keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3",
+        "cmdUnderTest": "$TC p4template update table/ptables/cb/tname keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3 keys action gact index 3",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -7360,11 +6127,11 @@
     },
     {
         "id": "74ec",
-        "name": "Try to update table class without supplying pipeline name or id",
+        "name": "Try to update table without supplying pipeline name or id",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -7416,34 +6183,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ tbcid 22 keys id 1 action gact index 5 keys id 2 action gact index 6",
+        "cmdUnderTest": "$TC p4template update table/ tblid 22 keys id 1 action gact index 5 keys id 2 action gact index 6",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/ tbcid 22",
+        "verifyCmd": "$TC -j p4template get table/ptables/ tblid 22",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -7527,11 +6293,11 @@
     },
     {
         "id": "a7f3",
-        "name": "Delete table class by name",
+        "name": "Delete table by name",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -7571,19 +6337,19 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template del tclass/ptables/cb/tname",
+        "cmdUnderTest": "$TC p4template del table/ptables/cb/tname",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Error: Table class name not found.*",
+        "matchPattern": "Error: Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -7597,11 +6363,11 @@
     },
     {
         "id": "9524",
-        "name": "Delete table class by id",
+        "name": "Delete table by id",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -7641,19 +6407,19 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template del tclass/ptables/ tbcid 22",
+        "cmdUnderTest": "$TC p4template del table/ptables/ tblid 22",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/ tbcid 22",
+        "verifyCmd": "$TC -j p4template get table/ptables/ tblid 22",
         "matchCount": "1",
-        "matchPattern": "Error: Unable to find table class by id.*",
+        "matchPattern": "Error: Unable to find table by id.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -7667,11 +6433,11 @@
     },
     {
         "id": "c41b",
-        "name": "Try to delete inexistent table class by name",
+        "name": "Try to delete inexistent table by name",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -7711,34 +6477,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template del tclass/ptables/cb/tname2",
+        "cmdUnderTest": "$TC p4template del table/ptables/cb/tname2",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -7822,11 +6587,11 @@
     },
     {
         "id": "faca",
-        "name": "Try to delete inexistent table class by id",
+        "name": "Try to delete inexistent table by id",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -7866,34 +6631,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template del tclass/ptables/ tbcid 44",
+        "cmdUnderTest": "$TC p4template del table/ptables/ tblid 44",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/ tbcid 22",
+        "verifyCmd": "$TC -j p4template get table/ptables/ tblid 22",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -7977,11 +6741,11 @@
     },
     {
         "id": "6da7",
-        "name": "Try to delete table class without supplying pipeline name or id",
+        "name": "Try to delete table without supplying pipeline name or id",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -8021,34 +6785,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template del tclass/ tbcid 22",
+        "cmdUnderTest": "$TC p4template del table/ tblid 22",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/ tbcid 22",
+        "verifyCmd": "$TC -j p4template get table/ptables/ tblid 22",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -8132,11 +6895,11 @@
     },
     {
         "id": "a844",
-        "name": "Flush table class",
+        "name": "Flush table",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -8176,23 +6939,23 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname2 tbcid 42 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 42 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template del tclass/ptables/",
+        "cmdUnderTest": "$TC p4template del table/ptables/",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Error: Table class name not found.*",
+        "matchPattern": "Error: Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -8206,11 +6969,11 @@
     },
     {
         "id": "7f88",
-        "name": "Try to flush table class without supplying pipeline name or id",
+        "name": "Try to flush table without supplying pipeline name or id",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -8250,38 +7013,37 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname2 tbcid 42 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 42 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template del tclass/",
+        "cmdUnderTest": "$TC p4template del table/",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -8365,11 +7127,11 @@
     },
     {
         "id": "778c",
-        "name": "Create table class with key size > P4TC_MAX_KEYSZ",
+        "name": "Create table with key size > P4TC_MAX_KEYSZ",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -8409,15 +7171,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 513 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname tblid 22 keysz 513 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Error: Table class name not found.*",
+        "matchPattern": "Error: Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
@@ -8431,11 +7193,11 @@
     },
     {
         "id": "64ed",
-        "name": "Create table class with key size = P4TC_MAX_KEYSZ",
+        "name": "Create table with key size = P4TC_MAX_KEYSZ",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -8475,30 +7237,29 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 512 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname tblid 22 keysz 512 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 22,
+                        "tblid": 22,
                         "tname": "cb/tname",
                         "keysz": 512,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -8582,11 +7343,11 @@
     },
     {
         "id": "508b",
-        "name": "Create table class and update pipeline state",
+        "name": "Create table and update pipeline state",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -8626,15 +7387,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname2 tbcid 42 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 42 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
@@ -8652,7 +7413,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 2,
+                        "pnumtables": 2,
                         "pstate": "ready",
                         "preactions": {
                             "actions": [
@@ -8713,11 +7474,11 @@
     },
     {
         "id": "ac1a",
-        "name": "Create table class, update pipeline state and try to update pipeline after pipeline is sealed",
+        "name": "Create table, update pipeline state and try to update pipeline after pipeline is sealed",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -8757,15 +7518,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname2 tbcid 42 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 42 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
@@ -8787,7 +7548,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 2,
+                        "pnumtables": 2,
                         "pstate": "ready",
                         "preactions": {
                             "actions": [
@@ -8848,11 +7609,11 @@
     },
     {
         "id": "0fb8",
-        "name": "Create table class, update pipeline state and try to update table class after pipelien is sealed",
+        "name": "Create table, update pipeline state and try to update table after pipelien is sealed",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -8892,15 +7653,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname2 tbcid 42 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 42 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
@@ -8908,26 +7669,25 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/cb/tname2 keysz 32",
+        "cmdUnderTest": "$TC p4template update table/ptables/cb/tname2 keysz 32",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname2",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname2",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 42,
+                        "tblid": 42,
                         "tname": "cb/tname2",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -9011,11 +7771,11 @@
     },
     {
         "id": "32a6",
-        "name": "Create table class with keys with more than one action",
+        "name": "Create table with keys with more than one action",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -9055,30 +7815,29 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname tbcid 42 keysz 16 tcount 1 keys id 1 action gact index 3 action gact index 4 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname tblid 42 keysz 16 keys id 1 action gact index 3 action gact index 4 preactions gact index 4 postactions gact index 4",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 42,
+                        "tblid": 42,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -9158,11 +7917,11 @@
     },
     {
         "id": "ade0",
-        "name": "Update table class key with more than one action",
+        "name": "Update table key with more than one action",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -9208,34 +7967,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 42 keysz 16 tcount 1 keys id 1 action gact index 3 action gact index 4 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 42 keysz 16 keys id 1 action gact index 3 action gact index 4 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/cb/tname keys id 1 action gact index 4 action gact index 5",
+        "cmdUnderTest": "$TC p4template update table/ptables/cb/tname keys id 1 action gact index 4 action gact index 5",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 42,
+                        "tblid": 42,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 1,
+                        "default_key": 1,
                         "keys": [
                             {
                                 "id": 1,
@@ -9336,11 +8094,11 @@
     },
     {
         "id": "95f5",
-        "name": "Update table class's keys",
+        "name": "Update table's keys",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -9386,34 +8144,33 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 42 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 42 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/cb/tname keys id 1 action gact index 4 keys id 2 default action gact index 5",
+        "cmdUnderTest": "$TC p4template update table/ptables/cb/tname keys id 1 action gact index 4 keys id 2 default action gact index 5",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
         "matchJSON": [
             {
-                "obj": "table class",
+                "obj": "table",
                 "pname": "ptables",
                 "pipeid": 22
             },
             {
                 "templates": [
                     {
-                        "tbcid": 42,
+                        "tblid": 42,
                         "tname": "cb/tname",
                         "keysz": 16,
-                        "entries": 256,
+                        "max_entries": 256,
                         "masks": 8,
-                        "count": 1,
-			"default_key": 2,
+                        "default_key": 2,
                         "keys": [
                             {
                                 "id": 1,
@@ -9519,11 +8276,11 @@
     },
     {
         "id": "aa0d",
-        "name": "Update table class key with more than one action and check actions after",
+        "name": "Update table key with more than one action and check actions after",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -9569,15 +8326,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 42 keysz 16 tcount 1 keys id 1 action gact index 3 action gact index 4 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 42 keysz 16 keys id 1 action gact index 3 action gact index 4 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/cb/tname keys id 1 action gact index 4 action gact index 5",
+        "cmdUnderTest": "$TC p4template update table/ptables/cb/tname keys id 1 action gact index 4 action gact index 5",
         "expExitCode": "0",
         "verifyCmd": "$TC -j actions ls action gact",
         "matchCount": "1",
@@ -9633,11 +8390,11 @@
     },
     {
         "id": "e5e1",
-        "name": "Dump table class using pipeline name to find pipeline",
+        "name": "Dump table using pipeline name to find pipeline",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -9677,27 +8434,27 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 3 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 3 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname2 tbcid 42 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 42 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname3 tbcid 50 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname3 tblid 50 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/",
+        "verifyCmd": "$TC -j p4template get table/ptables/",
         "matchCount": "1",
         "matchJSON": [
             {
                 "pname": "ptables",
                 "pipeid": 22,
-                "obj": "table class"
+                "obj": "table"
             },
             {
                 "templates": [
@@ -9726,11 +8483,11 @@
     },
     {
         "id": "7f04",
-        "name": "Dump table class using pipeline id to find pipeline",
+        "name": "Dump table using pipeline id to find pipeline",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -9770,27 +8527,27 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 3 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 3 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname2 tbcid 42 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 42 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname3 tbcid 50 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname3 tblid 50 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ pipeid 22",
+        "verifyCmd": "$TC -j p4template get table/ pipeid 22",
         "matchCount": "1",
         "matchJSON": [
             {
                 "pname": "ptables",
                 "pipeid": 22,
-                "obj": "table class"
+                "obj": "table"
             },
             {
                 "templates": [
@@ -9819,11 +8576,11 @@
     },
     {
         "id": "96c5",
-        "name": "Try to create more table class then numtclasses",
+        "name": "Try to create more table then numtables",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -9863,27 +8620,27 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname2 tbcid 42 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 42 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname3 tbcid 50 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname3 tblid 50 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/",
+        "verifyCmd": "$TC -j p4template get table/ptables/",
         "matchCount": "1",
         "matchJSON": [
             {
                 "pname": "ptables",
                 "pipeid": 22,
-                "obj": "table class"
+                "obj": "table"
             },
             {
                 "templates": [
@@ -9909,11 +8666,11 @@
     },
     {
         "id": "e3fa",
-        "name": "Try to dump table class without specifying pipeline name or id",
+        "name": "Try to dump table without specifying pipeline name or id",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -9953,21 +8710,21 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 22 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname2 tbcid 42 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 42 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname3 tbcid 50 keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname3 tblid 50 keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/",
+        "verifyCmd": "$TC -j p4template get table/",
         "matchCount": "1",
         "matchPattern": "Error: Must specify pipeline name or id.*",
         "teardown": [
@@ -9983,11 +8740,11 @@
     },
     {
         "id": "6bcf",
-        "name": "Dump pipeline with amount of table class > P4TC_MSGBATCH_SIZE",
+        "name": "Dump pipeline with amount of table > P4TC_MSGBATCH_SIZE",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -10027,83 +8784,83 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 17 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 17 preactions action gact index 1 postactions action gact index 2",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname2 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname3 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname3 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname4 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname4 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname5 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname5 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname6 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname6 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname7 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname7 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname8 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname8 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname9 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname9 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname10 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname10 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname11 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname11 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname12 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname12 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname13 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname13 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname14 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname14 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname15 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname15 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
-                "$TC p4template create tclass/ptables/cb/tname16 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname16 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname17 tbcid 2147483647 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/cb/tname17 tblid 2147483647 keysz 16 keys action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/",
+        "verifyCmd": "$TC -j p4template get table/ptables/",
         "matchCount": "1",
         "matchJSON": [
             {
                 "pname": "ptables",
                 "pipeid": 22,
-                "obj": "table class"
+                "obj": "table"
             },
             {
                 "templates": [
@@ -10160,7 +8917,7 @@
             {
                 "pname": "ptables",
                 "pipeid": 22,
-                "obj": "table class"
+                "obj": "table"
             },
             {
                 "templates": [
@@ -10183,11 +8940,11 @@
     },
     {
         "id": "2eb0",
-        "name": "Try to create valid table class without control block name",
+        "name": "Try to create valid table without control block name",
         "category": [
             "p4tc",
             "template",
-            "tclass"
+            "table"
         ],
         "setup": [
             [
@@ -10227,15 +8984,15 @@
                 255
             ],
             [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/tname keysz 16 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create table/ptables/tname keysz 16 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
+        "verifyCmd": "$TC -j p4template get table/ptables/cb/tname",
         "matchCount": "1",
-        "matchPattern": "Error: Table class name not found.*",
+        "matchPattern": "Error: Table name not found.*",
         "teardown": [
             [
                 "$TC p4template del pipeline/ptables",
