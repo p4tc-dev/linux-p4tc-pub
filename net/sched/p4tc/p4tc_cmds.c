@@ -277,7 +277,7 @@ static int validate_metadata_operand(struct p4tc_cmd_operand *kopnd,
 static int validate_table_operand(struct p4tc_cmd_operand *kopnd,
 				  struct netlink_ext_ack *extack)
 {
-	struct p4tc_table_class *tclass;
+	struct p4tc_table *table;
 	struct p4tc_pipeline *pipeline;
 
 	pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
@@ -286,22 +286,22 @@ static int validate_table_operand(struct p4tc_cmd_operand *kopnd,
 		return -EINVAL;
 	}
 
-	tclass = tcf_tclass_find_byid(pipeline, kopnd->immedv);
-	if (!tclass) {
-		NL_SET_ERR_MSG_MOD(extack, "Unknown table class");
+	table = tcf_table_find_byid(pipeline, kopnd->immedv);
+	if (!table) {
+		NL_SET_ERR_MSG_MOD(extack, "Unknown table");
 		return -EINVAL;
 	}
 
 	if (kopnd->immedv2) {
-		if (!tcf_table_key_find(tclass, kopnd->immedv2)) {
+		if (!tcf_table_key_find(table, kopnd->immedv2)) {
 			NL_SET_ERR_MSG_MOD(extack, "Unknown key id");
 			return -EINVAL;
 		}
 	} else {
-		kopnd->immedv2 = tclass->tbc_default_key;
+		kopnd->immedv2 = table->tbl_default_key;
 	}
 
-	kopnd->oper_value_ops = &tclass->tbc_value_ops;
+	kopnd->oper_value_ops = &table->tbl_value_ops;
 
 	return 0;
 }
@@ -310,7 +310,7 @@ static int validate_key_operand(struct p4tc_cmd_operand *kopnd,
 				struct netlink_ext_ack *extack)
 {
 	struct p4tc_type *t = kopnd->oper_datatype;
-	struct p4tc_table_class *tclass;
+	struct p4tc_table *table;
 	struct p4tc_pipeline *pipeline;
 
 	pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
@@ -319,13 +319,13 @@ static int validate_key_operand(struct p4tc_cmd_operand *kopnd,
 		return -EINVAL;
 	}
 
-	tclass = tcf_tclass_find_byid(pipeline, kopnd->immedv);
-	if (!tclass) {
-		NL_SET_ERR_MSG_MOD(extack, "Unknown table class");
+	table = tcf_table_find_byid(pipeline, kopnd->immedv);
+	if (!table) {
+		NL_SET_ERR_MSG_MOD(extack, "Unknown table");
 		return -EINVAL;
 	}
 
-	if (!tcf_table_key_find(tclass, kopnd->immedv2)) {
+	if (!tcf_table_key_find(table, kopnd->immedv2)) {
 		NL_SET_ERR_MSG_MOD(extack, "Unknown key id");
 		return -EINVAL;
 	}
@@ -340,9 +340,9 @@ static int validate_key_operand(struct p4tc_cmd_operand *kopnd,
 		return -EINVAL;
 	}
 
-	if (tclass->tbc_keysz != kopnd->oper_bitsize) {
+	if (table->tbl_keysz != kopnd->oper_bitsize) {
 		NL_SET_ERR_MSG_MOD(extack,
-				   "Type size doesn't match table class keysz");
+				   "Type size doesn't match table keysz");
 		return -EINVAL;
 	}
 
@@ -2079,13 +2079,13 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 
 		val_t->ops->print(val_t, name, &readval);
 	} else if (A->oper_type == P4TC_OPER_KEY) {
-		struct p4tc_table_class *tclass;
+		struct p4tc_table *table;
 		struct p4tc_pipeline *pipeline;
 
 		pipeline = tcf_pipeline_find_byid(A->pipeid);
-		tclass = tcf_tclass_find_byid(pipeline, A->immedv);
+		table = tcf_table_find_byid(pipeline, A->immedv);
 		snprintf(name, TEMPLATENAMSZ * 3, "key.%s.%s.%u",
-			 pipeline->common.name, tclass->common.name,
+			 pipeline->common.name, table->common.name,
 			 A->immedv2);
 		val_t->ops->print(val_t, name, &readval);
 	} else if (A->oper_type == P4TC_OPER_PARAM) {
@@ -2247,31 +2247,31 @@ static int p4tc_cmd_TBLAPP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			   struct tcf_p4act *cmd, struct tcf_result *res)
 {
 	struct p4tc_cmd_operand *A = GET_OPA(&op->operands_list);
-	struct p4tc_table_class *tclass = A->fetch(skb, A, cmd, res);
+	struct p4tc_table *table = A->fetch(skb, A, cmd, res);
 	struct p4tc_table_entry *entry;
 	struct p4tc_table_key *key;
 	int ret;
 
 	A = GET_OPA(&op->operands_list);
-	tclass = A->fetch(skb, A, cmd, res);
-	if (unlikely(!tclass))
+	table = A->fetch(skb, A, cmd, res);
+	if (unlikely(!table))
 		return TC_ACT_SHOT;
 
-	if (tclass->tbc_preacts) {
-		ret = tcf_action_exec(skb, tclass->tbc_preacts,
-				      tclass->tbc_num_preacts, res);
+	if (table->tbl_preacts) {
+		ret = tcf_action_exec(skb, table->tbl_preacts,
+				      table->tbl_num_preacts, res);
 		/* Should check what return code should cause return */
 		if (ret == TC_ACT_SHOT)
 			return ret;
 	}
 
 	/* Sets key */
-	key = tcf_table_key_find(tclass, A->immedv2);
+	key = tcf_table_key_find(table, A->immedv2);
 	ret = tcf_action_exec(skb, key->key_acts, key->key_num_acts, res);
 	if (ret != TC_ACT_PIPE)
 		return ret;
 
-	entry = p4tc_table_entry_lookup(skb, tclass, tclass->tbc_keysz);
+	entry = p4tc_table_entry_lookup(skb, table, table->tbl_keysz);
 	if (IS_ERR(entry))
 		entry = NULL;
 
@@ -2283,19 +2283,19 @@ static int p4tc_cmd_TBLAPP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		if (entry->acts)
 			ret = tcf_action_exec(skb, entry->acts, entry->num_acts,
 					      res);
-		else if (tclass->tbc_default_hitact)
-			ret = tcf_action_exec(skb, tclass->tbc_default_hitact,
+		else if (table->tbl_default_hitact)
+			ret = tcf_action_exec(skb, table->tbl_default_hitact,
 					      1, res);
 	} else {
-		if (tclass->tbc_default_missact)
-			ret = tcf_action_exec(skb, tclass->tbc_default_missact,
+		if (table->tbl_default_missact)
+			ret = tcf_action_exec(skb, table->tbl_default_missact,
 					      1, res);
 	}
 	if (ret != TC_ACT_PIPE)
 		return ret;
 
-	return tcf_action_exec(skb, tclass->tbc_postacts,
-			       tclass->tbc_num_postacts, res);
+	return tcf_action_exec(skb, table->tbl_postacts,
+			       table->tbl_num_postacts, res);
 }
 
 static int p4tc_cmd_BINARITH(struct sk_buff *skb, struct p4tc_cmd_operate *op,
