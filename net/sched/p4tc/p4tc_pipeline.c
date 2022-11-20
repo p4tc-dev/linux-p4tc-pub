@@ -33,8 +33,8 @@ static DEFINE_IDR(pipeline_idr);
 static const struct nla_policy tc_pipeline_policy[P4TC_PIPELINE_MAX + 1] = {
 	[P4TC_PIPELINE_MAXRULES] =
 		NLA_POLICY_RANGE(NLA_U32, 1, P4TC_MAXRULES_LIMIT),
-	[P4TC_PIPELINE_NUMTCLASSES] =
-		NLA_POLICY_RANGE(NLA_U16, 1, P4TC_MAXTCLASSES_COUNT),
+	[P4TC_PIPELINE_NUMTABLES] =
+		NLA_POLICY_RANGE(NLA_U16, 1, P4TC_MAXTABLES_COUNT),
 	[P4TC_PIPELINE_STATE] = { .type = NLA_U8 },
 	[P4TC_PIPELINE_PREACTIONS] = { .type = NLA_NESTED },
 	[P4TC_PIPELINE_POSTACTIONS] = { .type = NLA_NESTED },
@@ -115,9 +115,9 @@ static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 {
 	int ret;
 
-	if (pipeline->curr_table_classes != pipeline->num_table_classes) {
+	if (pipeline->curr_tables != pipeline->num_tables) {
 		NL_SET_ERR_MSG(extack,
-			       "Must have all table classes defined to update state to ready");
+			       "Must have all table defined to update state to ready");
 		return -EINVAL;
 	}
 
@@ -223,11 +223,11 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 	else
 		pipeline->max_rules = P4TC_DEFAULT_MAX_RULES;
 
-	if (tb[P4TC_PIPELINE_NUMTCLASSES])
-		pipeline->num_table_classes =
-			*((u16 *)nla_data(tb[P4TC_PIPELINE_NUMTCLASSES]));
+	if (tb[P4TC_PIPELINE_NUMTABLES])
+		pipeline->num_tables =
+			*((u16 *)nla_data(tb[P4TC_PIPELINE_NUMTABLES]));
 	else
-		pipeline->num_table_classes = P4TC_DEFAULT_NUM_TCLASSES;
+		pipeline->num_tables = P4TC_DEFAULT_NUM_TABLES;
 
 	if (tb[P4TC_PIPELINE_PREACTIONS]) {
 		pipeline->preacts = kcalloc(TCA_ACT_MAX_PRIO,
@@ -275,7 +275,7 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 	pipeline->parser = NULL;
 
 	idr_init(&pipeline->p_tbl_idr);
-	pipeline->curr_table_classes = 0;
+	pipeline->curr_tables = 0;
 
 	idr_init(&pipeline->p_meta_idr);
 	pipeline->p_meta_offset = 0;
@@ -396,7 +396,7 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 {
 	struct tc_action **preacts = NULL;
 	struct tc_action **postacts = NULL;
-	u16 num_table_classes = 0;
+	u16 num_tables = 0;
 	u16 max_rules = 0;
 	int ret = 0;
 	struct nlattr *tb[P4TC_PIPELINE_MAX + 1];
@@ -413,9 +413,9 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 	if (IS_ERR(pipeline))
 		return pipeline;
 
-	if (tb[P4TC_PIPELINE_NUMTCLASSES])
-		num_table_classes =
-			*((u16 *)nla_data(tb[P4TC_PIPELINE_NUMTCLASSES]));
+	if (tb[P4TC_PIPELINE_NUMTABLES])
+		num_tables =
+			*((u16 *)nla_data(tb[P4TC_PIPELINE_NUMTABLES]));
 
 	if (tb[P4TC_PIPELINE_MAXRULES])
 		max_rules = *((u32 *)nla_data(tb[P4TC_PIPELINE_MAXRULES]));
@@ -463,8 +463,8 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 
 	if (max_rules)
 		pipeline->max_rules = max_rules;
-	if (num_table_classes)
-		pipeline->num_table_classes = num_table_classes;
+	if (num_tables)
+		pipeline->num_tables = num_tables;
 	if (preacts) {
 		if (pipeline->preacts) {
 			tcf_action_destroy(pipeline->preacts, TCA_ACT_UNBIND);
@@ -539,7 +539,8 @@ static int _tcf_pipeline_fill_nlmsg(struct sk_buff *skb,
 	if (nla_put_u32(skb, P4TC_PIPELINE_MAXRULES, pipeline->max_rules))
 		goto out_nlmsg_trim;
 
-	if (nla_put_u16(skb, P4TC_PIPELINE_NUMTCLASSES, pipeline->num_table_classes))
+	if (nla_put_u16(skb, P4TC_PIPELINE_NUMTABLES,
+			pipeline->num_tables))
 		goto out_nlmsg_trim;
 	if (nla_put_u8(skb, P4TC_PIPELINE_STATE, pipeline->p_state))
 		goto out_nlmsg_trim;

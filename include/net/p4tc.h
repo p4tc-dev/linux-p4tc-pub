@@ -12,7 +12,7 @@
 #include <net/tc_act/p4tc.h>
 #include <net/p4tc_types.h>
 
-#define P4TC_DEFAULT_NUM_TCLASSES 1
+#define P4TC_DEFAULT_NUM_TABLES 1
 #define P4TC_DEFAULT_MAX_RULES 1
 #define P4TC_MAXMETA_OFFSET 512
 #define P4TC_PATH_MAX 3
@@ -101,8 +101,8 @@ struct p4tc_pipeline {
 	u32                         p_meta_offset;
 	refcount_t                  p_ref;
 	refcount_t                  p_ctrl_ref;
-	u16                         num_table_classes;
-	u16                         curr_table_classes;
+	u16                         num_tables;
+	u16                         curr_tables;
 	u8                          p_state;
 	refcount_t                  p_hdrs_used;
 };
