@@ -260,7 +260,7 @@ struct p4tc_table_entry {
 extern const struct nla_policy p4tc_root_policy[P4TC_ROOT_MAX + 1];
 extern const struct nla_policy p4tc_policy[P4TC_MAX + 1];
 struct p4tc_table_entry *
-p4tc_table_entry_lookup(struct sk_buff *skb, struct p4tc_table_class *tclass,
+p4tc_table_entry_lookup(struct sk_buff *skb, struct p4tc_table *table,
 			u32 keysz);
 
 struct p4tc_parser {

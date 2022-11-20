@@ -254,7 +254,7 @@ struct p4tc_table_entry_tm {
 /* Table entry attributes */
 enum {
 	P4TC_ENTRY_UNSPEC,
-	P4TC_ENTRY_TBCNAME, /* string */
+	P4TC_ENTRY_TBLNAME, /* string */
 	P4TC_ENTRY_KEY_BLOB, /* Key blob */
 	P4TC_ENTRY_MASK_BLOB, /* Mask blob */
 	P4TC_ENTRY_PRIO, /* u32 */
