@@ -678,7 +678,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 129 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname keysz 513 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
         "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
         "matchCount": "1",
@@ -3739,7 +3739,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 keysz 129",
+        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 keysz 513",
         "expExitCode": "255",
         "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
         "matchCount": "1",
@@ -3894,7 +3894,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 keysz 128",
+        "cmdUnderTest": "$TC p4template update tclass/ptables/ tbcid 22 keysz 512",
         "expExitCode": "0",
         "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
         "matchCount": "1",
@@ -3909,7 +3909,7 @@
                     {
                         "tbcid": 22,
                         "tname": "cb/tname",
-                        "keysz": 128,
+                        "keysz": 512,
                         "entries": 256,
                         "masks": 8,
                         "count": 1,
@@ -8413,7 +8413,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 129 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 513 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "255",
         "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
         "matchCount": "1",
@@ -8479,7 +8479,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 128 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
+        "cmdUnderTest": "$TC p4template create tclass/ptables/cb/tname tbcid 22 keysz 512 tcount 1 keys id 1 action gact index 3 preactions gact index 4 postactions gact index 4",
         "expExitCode": "0",
         "verifyCmd": "$TC -j p4template get tclass/ptables/cb/tname",
         "matchCount": "1",
@@ -8494,7 +8494,7 @@
                     {
                         "tbcid": 22,
                         "tname": "cb/tname",
-                        "keysz": 128,
+                        "keysz": 512,
                         "entries": 256,
                         "masks": 8,
                         "count": 1,

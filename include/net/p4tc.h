@@ -441,10 +441,9 @@ void p4tc_cmds_release_ope_list(struct list_head *entries);
 
 struct p4tc_cmd_operate {
 	struct list_head cmd_operations;
-	struct p4tc_cmd_operand *opA;
-	struct p4tc_cmd_operand *opB;
-	struct p4tc_cmd_operand *opC;
+	struct list_head operands_list;
 	struct p4tc_cmd_s *cmd;
+	u32 num_opnds;
 	u32 ctl1;
 	u32 ctl2;
 	u16 op_id;		/* P4TC_CMD_OP_XXX */
@@ -455,6 +454,7 @@ struct p4tc_cmd_operate {
 struct tcf_p4act;
 struct p4tc_cmd_operand {
 	struct p4tc_cmd_value_ops *oper_value_ops;
+	struct list_head oper_list_node;
 	void *(*fetch)(struct sk_buff *skb, struct p4tc_cmd_operand *op,
 		       struct tcf_p4act *cmd, struct tcf_result *res);
 	struct p4tc_type *oper_datatype; /* what is stored in path_or_value - P4T_XXX */
@@ -476,10 +476,10 @@ struct p4tc_cmd_operand {
 
 struct p4tc_cmd_s {
 	int cmdid;
+	u32 num_opnds;
 	int (*validate_operands)(struct net *net,
-				 struct p4tc_cmd_operand *A,
-				 struct p4tc_cmd_operand *B,
-				 struct p4tc_cmd_operand *C,
+				 struct p4tc_cmd_operate *ope,
+				 u32 cmd_num_opns,
 				 struct netlink_ext_ack *extack);
 	void (*free_operation)(struct p4tc_cmd_operate *op,
 			       struct netlink_ext_ack *extack);

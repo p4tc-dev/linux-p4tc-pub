@@ -71,34 +71,40 @@ bool p4tc_type_unsigned(int typeid)
 }
 
 int p4t_copy(struct p4tc_type_mask_shift *dst_mask_shift,
-	     struct p4tc_type_ops *dsto, void *dstv,
+	     struct p4tc_type *dst_t, void *dstv,
 	     struct p4tc_type_mask_shift *src_mask_shift,
-	     struct p4tc_type_ops *srco, void *srcv)
+	     struct p4tc_type *src_t, void *srcv)
 {
-	__uint128_t readval;
+	u64 readval[BITS_TO_U64(P4TC_MAX_KEYSZ)] = {0};
+	struct p4tc_type_ops *srco, *dsto;
 
-	memset(&readval, 0, sizeof(__uint128_t));
+	dsto = dst_t->ops;
+	srco = src_t->ops;
 
 	if (src_mask_shift) {
-		srco->host_read(src_mask_shift, srcv, &readval);
-		dsto->host_write(dst_mask_shift, &readval, dstv);
+		srco->host_read(src_t, src_mask_shift, srcv, &readval);
+		dsto->host_write(dst_t, dst_mask_shift, &readval, dstv);
 	} else {
-		dsto->host_write(dst_mask_shift, srcv, dstv);
+		dsto->host_write(dst_t, dst_mask_shift, srcv, dstv);
 	}
 
 	return 0;
 }
 
 int p4t_cmp(struct p4tc_type_mask_shift *dst_mask_shift,
-	    struct p4tc_type_ops *dsto, void *dstv,
+	    struct p4tc_type *dst_t, void *dstv,
 	    struct p4tc_type_mask_shift *src_mask_shift,
-	    struct p4tc_type_ops *srco, void *srcv)
+	    struct p4tc_type *src_t, void *srcv)
 {
-	u64 a[2] = {0};
-        u64 b[2] = {0};
+	u64 a[BITS_TO_U64(P4TC_MAX_KEYSZ)] = {0};
+        u64 b[BITS_TO_U64(P4TC_MAX_KEYSZ)] = {0};
+	struct p4tc_type_ops *srco, *dsto;
 
-	dsto->host_read(dst_mask_shift, dstv, a);
-	srco->host_read(src_mask_shift, srcv, b);
+	dsto = dst_t->ops;
+	srco = src_t->ops;
+
+	dsto->host_read(dst_t, dst_mask_shift, dstv, a);
+	srco->host_read(src_t, src_mask_shift, srcv, b);
 
 	return memcmp(a, b, sizeof(a));
 }
@@ -109,8 +115,8 @@ void p4t_release(struct p4tc_type_mask_shift *mask_shift)
 	kfree(mask_shift);
 }
 
-static int p4t_validate_bitpos(u8 bitstart, u8 bitend, u8 maxbitstart,
-			       u8 maxbitend, struct netlink_ext_ack *extack)
+static int p4t_validate_bitpos(u16 bitstart, u16 bitend, u16 maxbitstart,
+			       u16 maxbitend, struct netlink_ext_ack *extack)
 {
 	if (bitstart > maxbitstart) {
 		NL_SET_ERR_MSG_MOD(extack, "bitstart too high");
@@ -125,8 +131,8 @@ static int p4t_validate_bitpos(u8 bitstart, u8 bitend, u8 maxbitstart,
 }
 
 //XXX: Latter immedv will be 64 bits
-static int p4t_u32_validate(struct p4tc_type *container, void *value, u8 bitstart,
-			    u8 bitend, struct netlink_ext_ack *extack)
+static int p4t_u32_validate(struct p4tc_type *container, void *value, u16 bitstart,
+			    u16 bitend, struct netlink_ext_ack *extack)
 {
 	u32 container_maxsz = U32_MAX;
 	u32 *val = value;
@@ -147,7 +153,7 @@ static int p4t_u32_validate(struct p4tc_type *container, void *value, u8 bitstar
 }
 
 static struct p4tc_type_mask_shift *
-p4t_u32_bitops(u8 bitsiz, u8 bitstart, u8 bitend,
+p4t_u32_bitops(u16 bitsiz, u16 bitstart, u16 bitend,
 	       struct netlink_ext_ack *extack)
 {
 	u32 mask = GENMASK(bitend, bitstart);
@@ -172,7 +178,9 @@ p4t_u32_bitops(u8 bitsiz, u8 bitstart, u8 bitend,
 	return mask_shift;
 }
 
-static int p4t_u32_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_u32_write(struct p4tc_type *container,
+			 struct p4tc_type_mask_shift *mask_shift,
+			 void *sval,
 			 void *dval)
 {
 	u32 *dst = dval;
@@ -192,15 +200,17 @@ static int p4t_u32_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static void p4t_u32_print(const char *prefix, void *val)
+static void p4t_u32_print(struct p4tc_type *container, const char *prefix,
+			  void *val)
 {
 	u32 *v = val;
 
 	pr_info("%s 0x%x\n", prefix, *v);
 }
 
-static int p4t_u32_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
-			 void *dval)
+static int p4t_u32_hread(struct p4tc_type *container,
+			 struct p4tc_type_mask_shift *mask_shift,
+			 void *sval, void *dval)
 {
 	u32 *dst = dval;
 	u32 *src = sval;
@@ -218,8 +228,8 @@ static int p4t_u32_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
 }
 
 /*XXX: future converting immedv to 64 bits */
-static int p4t_s32_validate(struct p4tc_type *container, void *value, u8 bitstart,
-			    u8 bitend, struct netlink_ext_ack *extack)
+static int p4t_s32_validate(struct p4tc_type *container, void *value, u16 bitstart,
+			    u16 bitend, struct netlink_ext_ack *extack)
 {
 	s32 minsz = S32_MIN, maxsz = S32_MAX;
 	s32 *val = value;
@@ -232,7 +242,9 @@ static int p4t_s32_validate(struct p4tc_type *container, void *value, u8 bitstar
 	return 0;
 }
 
-static int p4t_s32_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_s32_hread(struct p4tc_type *container,
+			 struct p4tc_type_mask_shift *mask_shift,
+			 void *sval,
 			 void *dval)
 {
 	s32 *dst = dval;
@@ -243,7 +255,9 @@ static int p4t_s32_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static int p4t_s32_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_s32_write(struct p4tc_type *container,
+			 struct p4tc_type_mask_shift *mask_shift,
+			 void *sval,
 			 void *dval)
 {
 	s32 *dst = dval;
@@ -254,22 +268,24 @@ static int p4t_s32_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static void p4t_s32_print(const char *prefix, void *val)
+static void p4t_s32_print(struct p4tc_type *container, const char *prefix,
+			  void *val)
 {
 	s32 *v = val;
 
 	pr_info("%s %x\n", prefix, *v);
 }
 
-static void p4t_s64_print(const char *prefix, void *val)
+static void p4t_s64_print(struct p4tc_type *container, const char *prefix,
+			  void *val)
 {
 	s64 *v = val;
 
 	pr_info("%s 0x%llx\n", prefix, *v);
 }
 
-static int p4t_be32_validate(struct p4tc_type *container, void *value, u8 bitstart,
-			     u8 bitend, struct netlink_ext_ack *extack)
+static int p4t_be32_validate(struct p4tc_type *container, void *value, u16 bitstart,
+			     u16 bitend, struct netlink_ext_ack *extack)
 {
 	size_t container_maxsz = U32_MAX;
 	__u32 *val_u32 = value;
@@ -293,7 +309,9 @@ static int p4t_be32_validate(struct p4tc_type *container, void *value, u8 bitsta
 	return 0;
 }
 
-static int p4t_be32_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_be32_hread(struct p4tc_type *container,
+			  struct p4tc_type_mask_shift *mask_shift,
+			  void *sval,
 			  void *dval)
 {
 	u32 *dst = dval;
@@ -312,7 +330,9 @@ static int p4t_be32_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static int p4t_be32_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_be32_write(struct p4tc_type *container,
+			  struct p4tc_type_mask_shift *mask_shift,
+			  void *sval,
 			  void *dval)
 {
 	__be32 *dst = dval;
@@ -332,15 +352,17 @@ static int p4t_be32_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static void p4t_be32_print(const char *prefix, void *val)
+static void p4t_be32_print(struct p4tc_type *container, const char *prefix,
+			   void *val)
 {
 	__be32 *v = val;
 
 	pr_info("%s 0x%x\n", prefix, *v);
 }
 
-static int p4t_u16_validate(struct p4tc_type *container, void *value, u8 bitstart,
-			    u8 bitend, struct netlink_ext_ack *extack)
+static int p4t_u16_validate(struct p4tc_type *container, void *value,
+			    u16 bitstart, u16 bitend,
+			    struct netlink_ext_ack *extack)
 {
 	u16 container_maxsz = U16_MAX;
 	u16 *val = value;
@@ -361,7 +383,7 @@ static int p4t_u16_validate(struct p4tc_type *container, void *value, u8 bitstar
 }
 
 static struct p4tc_type_mask_shift *
-p4t_u16_bitops(u8 bitsiz, u8 bitstart, u8 bitend,
+p4t_u16_bitops(u16 bitsiz, u16 bitstart, u16 bitend,
 	       struct netlink_ext_ack *extack)
 {
 	u16 mask = GENMASK(bitend, bitstart);
@@ -386,7 +408,9 @@ p4t_u16_bitops(u8 bitsiz, u8 bitstart, u8 bitend,
 	return mask_shift;
 }
 
-static int p4t_u16_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_u16_write(struct p4tc_type *container,
+			 struct p4tc_type_mask_shift *mask_shift,
+			 void *sval,
 			 void *dval)
 {
 	u16 *dst = dval;
@@ -406,14 +430,17 @@ static int p4t_u16_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static void p4t_u16_print(const char *prefix, void *val)
+static void p4t_u16_print(struct p4tc_type *container, const char *prefix,
+			  void *val)
 {
 	u16 *v = val;
 
 	pr_info("%s 0x%x\n", prefix, *v);
 }
 
-static int p4t_u16_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_u16_hread(struct p4tc_type *container,
+			 struct p4tc_type_mask_shift *mask_shift,
+			 void *sval,
 			 void *dval)
 {
 	u16 *dst = dval;
@@ -431,8 +458,8 @@ static int p4t_u16_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static int p4t_s16_validate(struct p4tc_type *container, void *value, u8 bitstart,
-			    u8 bitend, struct netlink_ext_ack *extack)
+static int p4t_s16_validate(struct p4tc_type *container, void *value, u16 bitstart,
+			    u16 bitend, struct netlink_ext_ack *extack)
 {
 	s16 minsz = S16_MIN, maxsz = S16_MAX;
 	s16 *val = value;
@@ -445,7 +472,9 @@ static int p4t_s16_validate(struct p4tc_type *container, void *value, u8 bitstar
 	return 0;
 }
 
-static int p4t_s16_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_s16_hread(struct p4tc_type *container,
+			 struct p4tc_type_mask_shift *mask_shift,
+			 void *sval,
 			 void *dval)
 {
 	s16 *dst = dval;
@@ -456,7 +485,9 @@ static int p4t_s16_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static int p4t_s16_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_s16_write(struct p4tc_type *container,
+			 struct p4tc_type_mask_shift *mask_shift,
+			 void *sval,
 			 void *dval)
 {
 	s16 *dst = dval;
@@ -467,15 +498,16 @@ static int p4t_s16_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static void p4t_s16_print(const char *prefix, void *val)
+static void p4t_s16_print(struct p4tc_type *container, const char *prefix,
+			  void *val)
 {
 	s16 *v = val;
 
 	pr_info("%s %d\n", prefix, *v);
 }
 
-static int p4t_be16_validate(struct p4tc_type *container, void *value, u8 bitstart,
-			     u8 bitend, struct netlink_ext_ack *extack)
+static int p4t_be16_validate(struct p4tc_type *container, void *value, u16 bitstart,
+			     u16 bitend, struct netlink_ext_ack *extack)
 {
 	__be16 container_maxsz = U16_MAX;
 	__u16 *val_u16 = value;
@@ -499,7 +531,9 @@ static int p4t_be16_validate(struct p4tc_type *container, void *value, u8 bitsta
 	return 0;
 }
 
-static int p4t_be16_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_be16_hread(struct p4tc_type *container,
+			  struct p4tc_type_mask_shift *mask_shift,
+			  void *sval,
 			  void *dval)
 {
 	u16 *dst = dval;
@@ -518,7 +552,8 @@ static int p4t_be16_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static int p4t_be16_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_be16_write(struct p4tc_type *container,
+			  struct p4tc_type_mask_shift *mask_shift, void *sval,
 			  void *dval)
 {
 	__be16 *dst = dval;
@@ -538,15 +573,16 @@ static int p4t_be16_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static void p4t_be16_print(const char *prefix, void *val)
+static void p4t_be16_print(struct p4tc_type *container, const char *prefix,
+			   void *val)
 {
 	__be16 *v = val;
 
 	pr_info("%s 0x%x\n", prefix, *v);
 }
 
-static int p4t_u8_validate(struct p4tc_type *container, void *value, u8 bitstart,
-			   u8 bitend, struct netlink_ext_ack *extack)
+static int p4t_u8_validate(struct p4tc_type *container, void *value, u16 bitstart,
+			   u16 bitend, struct netlink_ext_ack *extack)
 {
 	u8 *val = value;
 	size_t container_maxsz = U8_MAX;
@@ -567,7 +603,7 @@ static int p4t_u8_validate(struct p4tc_type *container, void *value, u8 bitstart
 }
 
 static struct p4tc_type_mask_shift *
-p4t_u8_bitops(u8 bitsiz, u8 bitstart, u8 bitend,
+p4t_u8_bitops(u16 bitsiz, u16 bitstart, u16 bitend,
 	      struct netlink_ext_ack *extack)
 {
 	u8 mask = GENMASK(bitend, bitstart);
@@ -592,7 +628,8 @@ p4t_u8_bitops(u8 bitsiz, u8 bitstart, u8 bitend,
 	return mask_shift;
 }
 
-static int p4t_u8_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_u8_write(struct p4tc_type *container,
+			struct p4tc_type_mask_shift *mask_shift, void *sval,
 			void *dval)
 {
 	u8 *dst = dval;
@@ -612,14 +649,17 @@ static int p4t_u8_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static void p4t_u8_print(const char *prefix, void *val)
+static void p4t_u8_print(struct p4tc_type *container, const char *prefix,
+			 void *val)
 {
 	u8 *v = val;
 
 	pr_info("%s 0x%x\n", prefix, *v);
 }
 
-static int p4t_u8_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_u8_hread(struct p4tc_type *container,
+			struct p4tc_type_mask_shift *mask_shift,
+			void *sval,
 			void *dval)
 {
 	u8 *dst = dval;
@@ -637,8 +677,8 @@ static int p4t_u8_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static int p4t_s8_validate(struct p4tc_type *container, void *value, u8 bitstart,
-			   u8 bitend, struct netlink_ext_ack *extack)
+static int p4t_s8_validate(struct p4tc_type *container, void *value, u16 bitstart,
+			   u16 bitend, struct netlink_ext_ack *extack)
 {
 	s8 minsz = S8_MIN, maxsz = S8_MAX;
 	s8 *val = value;
@@ -651,7 +691,9 @@ static int p4t_s8_validate(struct p4tc_type *container, void *value, u8 bitstart
 	return 0;
 }
 
-static int p4t_s8_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_s8_hread(struct p4tc_type *container,
+			struct p4tc_type_mask_shift *mask_shift,
+			void *sval,
 			void *dval)
 {
 	s8 *dst = dval;
@@ -662,15 +704,16 @@ static int p4t_s8_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static void p4t_s8_print(const char *prefix, void *val)
+static void p4t_s8_print(struct p4tc_type *container, const char *prefix,
+			 void *val)
 {
 	s8 *v = val;
 
 	pr_info("%s %d\n", prefix, *v);
 }
 
-static int p4t_u64_validate(struct p4tc_type *container, void *value, u8 bitstart,
-			    u8 bitend, struct netlink_ext_ack *extack)
+static int p4t_u64_validate(struct p4tc_type *container, void *value, u16 bitstart,
+			    u16 bitend, struct netlink_ext_ack *extack)
 {
 	u64 container_maxsz = U64_MAX;
 	u8 *val = value;
@@ -691,7 +734,7 @@ static int p4t_u64_validate(struct p4tc_type *container, void *value, u8 bitstar
 }
 
 static struct p4tc_type_mask_shift *
-p4t_u64_bitops(u8 bitsiz, u8 bitstart, u8 bitend,
+p4t_u64_bitops(u16 bitsiz, u16 bitstart, u16 bitend,
 	       struct netlink_ext_ack *extack)
 {
 	u64 mask = GENMASK(bitend, bitstart);
@@ -716,7 +759,8 @@ p4t_u64_bitops(u8 bitsiz, u8 bitstart, u8 bitend,
 	return mask_shift;
 }
 
-static int p4t_u64_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_u64_write(struct p4tc_type *container,
+			 struct p4tc_type_mask_shift *mask_shift, void *sval,
 			 void *dval)
 {
 	u64 *dst = dval;
@@ -736,14 +780,17 @@ static int p4t_u64_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static void p4t_u64_print(const char *prefix, void *val)
+static void p4t_u64_print(struct p4tc_type *container, const char *prefix,
+			  void *val)
 {
 	u64 *v = val;
 
 	pr_info("%s 0x%llx\n", prefix, *v);
 }
 
-static int p4t_u64_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_u64_hread(struct p4tc_type *container,
+			 struct p4tc_type_mask_shift *mask_shift,
+			 void *sval,
 			 void *dval)
 {
 	u64 *dst = dval;
@@ -762,8 +809,8 @@ static int p4t_u64_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
 }
 
 /* As of now, we are not allowing bitops for u128 */
-static int p4t_u128_validate(struct p4tc_type *container, void *value, u8 bitstart,
-			     u8 bitend, struct netlink_ext_ack *extack)
+static int p4t_u128_validate(struct p4tc_type *container, void *value, u16 bitstart,
+			     u16 bitend, struct netlink_ext_ack *extack)
 {
 	if (bitstart != 0 || bitend != 127)
 		return -EINVAL;
@@ -771,7 +818,9 @@ static int p4t_u128_validate(struct p4tc_type *container, void *value, u8 bitsta
 	return 0;
 }
 
-static int p4t_u128_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_u128_hread(struct p4tc_type *container,
+			  struct p4tc_type_mask_shift *mask_shift,
+			  void *sval,
 			  void *dval)
 {
 	__uint128_t *dst = dval;
@@ -782,7 +831,9 @@ static int p4t_u128_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static int p4t_u128_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_u128_write(struct p4tc_type *container,
+			  struct p4tc_type_mask_shift *mask_shift,
+			  void *sval,
 			  void *dval)
 {
 	__uint128_t *dst = dval;
@@ -793,7 +844,8 @@ static int p4t_u128_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static void p4t_u128_print(const char *prefix, void *val)
+static void p4t_u128_print(struct p4tc_type *container, const char *prefix,
+			   void *val)
 {
 	u64 *v = val;
 
@@ -801,8 +853,8 @@ static void p4t_u128_print(const char *prefix, void *val)
 	pr_info("%s[64-127] %16llx", prefix, v[1]);
 }
 
-static int p4t_ipv4_validate(struct p4tc_type *container, void *value, u8 bitstart,
-			     u8 bitend, struct netlink_ext_ack *extack)
+static int p4t_ipv4_validate(struct p4tc_type *container, void *value, u16 bitstart,
+			     u16 bitend, struct netlink_ext_ack *extack)
 {
 	/* Not allowing bit-slices for now */
 	if (bitstart != 0 || bitend != 31) {
@@ -813,15 +865,16 @@ static int p4t_ipv4_validate(struct p4tc_type *container, void *value, u8 bitsta
 	return 0;
 }
 
-static void p4t_ipv4_print(const char *prefix, void *val)
+static void p4t_ipv4_print(struct p4tc_type *container, const char *prefix,
+			   void *val)
 {
 	u8 *v = val;
 
 	pr_info("%s %u.%u.%u.%u\n", prefix, v[0], v[1], v[2], v[3]);
 }
 
-static int p4t_mac_validate(struct p4tc_type *container, void *value, u8 bitstart,
-			    u8 bitend, struct netlink_ext_ack *extack)
+static int p4t_mac_validate(struct p4tc_type *container, void *value, u16 bitstart,
+			    u16 bitend, struct netlink_ext_ack *extack)
 {
 	if (bitstart != 0 || bitend != 47) {
 		NL_SET_ERR_MSG_MOD(extack, "Invalid bitstart or bitend");
@@ -831,7 +884,8 @@ static int p4t_mac_validate(struct p4tc_type *container, void *value, u8 bitstar
 	return 0;
 }
 
-static void p4t_mac_print(const char *prefix, void *val)
+static void p4t_mac_print(struct p4tc_type *container, const char *prefix,
+			  void *val)
 {
 	u8 *v = val;
 
@@ -839,8 +893,8 @@ static void p4t_mac_print(const char *prefix, void *val)
 		v[3], v[4], v[5]);
 }
 
-static int p4t_dev_validate(struct p4tc_type *container, void *value, u8 bitstart,
-			    u8 bitend, struct netlink_ext_ack *extack)
+static int p4t_dev_validate(struct p4tc_type *container, void *value, u16 bitstart,
+			    u16 bitend, struct netlink_ext_ack *extack)
 {
 	if (bitstart != 0 || bitend != 31) {
 		NL_SET_ERR_MSG_MOD(extack, "Invalid start or endbit values");
@@ -850,15 +904,57 @@ static int p4t_dev_validate(struct p4tc_type *container, void *value, u8 bitstar
 	return 0;
 }
 
-static void p4t_dev_print(const char *prefix, void *val)
+static void p4t_dev_print(struct p4tc_type *container, const char *prefix,
+			  void *val)
 {
 	const struct net_device *dev = val;
 
 	pr_info("%s %s\n", prefix, dev->name);
 }
 
-static int p4t_bool_validate(struct p4tc_type *container, void *value, u8 bitstart,
-			     u8 bitend, struct netlink_ext_ack *extack)
+static int p4t_key_hread(struct p4tc_type *container,
+			 struct p4tc_type_mask_shift *mask_shift,
+			 void *sval, void *dval)
+{
+	memcpy(dval, sval, BITS_TO_BYTES(container->bitsz));
+
+	return 0;
+}
+
+static int p4t_key_write(struct p4tc_type *container,
+			 struct p4tc_type_mask_shift *mask_shift,
+			 void *sval, void *dval)
+{
+	memcpy(dval, sval, BITS_TO_BYTES(container->bitsz));
+
+	return 0;
+}
+
+static void p4t_key_print(struct p4tc_type *container,
+			  const char *prefix, void *val)
+{
+	u64 *v = val;
+	u16 bitstart = 0, bitend = 63;
+	int i;
+
+	for (i = 0; i < BITS_TO_U64(container->bitsz); i++) {
+		pr_info("%s[%u-%u] %16llx\n", prefix, bitstart, bitend, v[i]);
+		bitstart += 64;
+		bitend += 64;
+	}
+}
+
+static int p4t_key_validate(struct p4tc_type *container, void *value, u16 bitstart,
+			    u16 bitend, struct netlink_ext_ack *extack)
+{
+	if (p4t_validate_bitpos(bitstart, bitend, 0, P4TC_MAX_KEYSZ, extack))
+		return -EINVAL;
+
+	return 0;
+}
+
+static int p4t_bool_validate(struct p4tc_type *container, void *value, u16 bitstart,
+			     u16 bitend, struct netlink_ext_ack *extack)
 {
 	bool *val = value;
 	int ret;
@@ -873,7 +969,9 @@ static int p4t_bool_validate(struct p4tc_type *container, void *value, u8 bitsta
 	return -EINVAL;
 }
 
-static int p4t_bool_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_bool_hread(struct p4tc_type *container,
+			  struct p4tc_type_mask_shift *mask_shift,
+			  void *sval,
 			  void *dval)
 {
 	bool *dst = dval;
@@ -884,7 +982,9 @@ static int p4t_bool_hread(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static int p4t_bool_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
+static int p4t_bool_write(struct p4tc_type *container,
+			  struct p4tc_type_mask_shift *mask_shift,
+			  void *sval,
 			  void *dval)
 {
 	bool *dst = dval;
@@ -895,7 +995,8 @@ static int p4t_bool_write(struct p4tc_type_mask_shift *mask_shift, void *sval,
 	return 0;
 }
 
-static void p4t_bool_print(const char *prefix, void *val)
+static void p4t_bool_print(struct p4tc_type *container, const char *prefix,
+			   void *val)
 {
 	bool *v = val;
 
@@ -1016,6 +1117,13 @@ static struct p4tc_type_ops dev_ops = {
 	.print = p4t_dev_print,
 };
 
+static struct p4tc_type_ops key_ops = {
+	.validate_p4t = p4t_key_validate,
+	.host_read = p4t_key_hread,
+	.host_write = p4t_key_write,
+	.print = p4t_key_print,
+};
+
 static int __p4tc_register_type(int typeid, size_t bitsz, size_t container_bitsz,
 			    const char *t_name, struct p4tc_type_ops *ops)
 {
@@ -1115,6 +1223,9 @@ int p4tc_register_types(void)
 	if (p4tc_register_type(P4T_BOOL, 32, 32, "bool", &bool_ops) < 0)
 		return -1;
 	if (p4tc_register_type(P4T_DEV, 32, 32, "dev", &dev_ops) < 0)
+		return -1;
+	if (p4tc_register_type(P4T_KEY, P4TC_MAX_KEYSZ , P4TC_MAX_KEYSZ , "key",
+			       &key_ops) < 0)
 		return -1;
 
 	return 0;
