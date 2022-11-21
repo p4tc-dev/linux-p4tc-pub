@@ -33,7 +33,7 @@
                 255
             ]
         ],
-        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
         "expExitCode": "0",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
@@ -47,7 +47,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 2,
+                        "pnumtables": 2,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -140,7 +140,7 @@
                 255
             ]
         ],
-        "cmdUnderTest": "$TC p4template create pipeline/ pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+        "cmdUnderTest": "$TC p4template create pipeline/ pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
         "expExitCode": "255",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
@@ -180,7 +180,7 @@
                 255
             ]
         ],
-        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 postactions action gact index 1",
+        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 postactions action gact index 1",
         "expExitCode": "0",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
@@ -194,7 +194,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 2,
+                        "pnumtables": 2,
                         "pstate": "not ready",
                         "postactions": {
                             "actions": [
@@ -260,7 +260,7 @@
                 255
             ]
         ],
-        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtclasses 2 preactions action gact index 1",
+        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1",
         "expExitCode": "0",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
@@ -274,7 +274,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 2,
+                        "pnumtables": 2,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -346,7 +346,7 @@
                 255
             ]
         ],
-        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 1 numtclasses 2 preactions action gact index 1 postactions action gact index 2",
+        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
         "expExitCode": "0",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
@@ -360,7 +360,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 2,
+                        "pnumtables": 2,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -421,7 +421,7 @@
     },
     {
         "id": "b103",
-        "name": "Create pipeline without numtclasses",
+        "name": "Create pipeline without numtables",
         "category": [
             "p4tc",
             "template",
@@ -463,7 +463,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 1,
+                        "pnumtables": 1,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -524,7 +524,7 @@
     },
     {
         "id": "ceff",
-        "name": "Try to create pipeline with numtclasses = 0",
+        "name": "Try to create pipeline with numtables = 0",
         "category": [
             "p4tc",
             "template",
@@ -552,7 +552,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 22 numtclasses 0 maxrules 1 preactions action gact index 1 postactions action gact index 2",
+        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 22 numtables 0 maxrules 1 preactions action gact index 1 postactions action gact index 2",
         "expExitCode": "255",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
@@ -566,7 +566,7 @@
     },
     {
         "id": "7a5a",
-        "name": "Try to create pipeline with numtclasses > 32",
+        "name": "Try to create pipeline with numtables > 32",
         "category": [
             "p4tc",
             "template",
@@ -594,7 +594,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 22 numtclasses 33 maxrules 1 preactions action gact index 1 postactions action gact index 2",
+        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 22 numtables 33 maxrules 1 preactions action gact index 1 postactions action gact index 2",
         "expExitCode": "255",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
@@ -608,7 +608,7 @@
     },
     {
         "id": "5dd2",
-        "name": "Create pipeline with numtclasses = 32",
+        "name": "Create pipeline with numtables = 32",
         "category": [
             "p4tc",
             "template",
@@ -636,7 +636,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 1 numtclasses 32 maxrules 1 preactions action gact index 1 postactions action gact index 2",
+        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 1 numtables 32 maxrules 1 preactions action gact index 1 postactions action gact index 2",
         "expExitCode": "0",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
@@ -650,7 +650,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 32,
+                        "pnumtables": 32,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -795,7 +795,7 @@
     },
     {
         "id": "571e",
-        "name": "Create pipeline with numtclasses = 256",
+        "name": "Create pipeline with numtables = 256",
         "category": [
             "p4tc",
             "template",
@@ -823,7 +823,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 1 numtclasses 2 maxrules 256 preactions action gact index 1 postactions action gact index 2",
+        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 1 numtables 2 maxrules 256 preactions action gact index 1 postactions action gact index 2",
         "expExitCode": "0",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
@@ -837,7 +837,7 @@
                 "templates": [
                     {
                         "pmaxrules": 256,
-                        "pnumtclasses": 2,
+                        "pnumtables": 2,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -930,7 +930,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 22 numtclasses 4 maxrules 2 preactions action gact index 1 postactions action gact index 2",
+        "cmdUnderTest": "$TC p4template create pipeline/ptables pipeid 22 numtables 4 maxrules 2 preactions action gact index 1 postactions action gact index 2",
         "expExitCode": "255",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
@@ -944,7 +944,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 1,
+                        "pnumtables": 1,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -1005,7 +1005,7 @@
     },
     {
         "id": "8e88",
-        "name": "Update numtclasses in existing pipeline",
+        "name": "Update numtables in existing pipeline",
         "category": [
             "p4tc",
             "template",
@@ -1037,7 +1037,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update pipeline/ptables numtclasses 4",
+        "cmdUnderTest": "$TC p4template update pipeline/ptables numtables 4",
         "expExitCode": "0",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
@@ -1051,7 +1051,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 4,
+                        "pnumtables": 4,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -1158,7 +1158,7 @@
                 "templates": [
                     {
                         "pmaxrules": 2,
-                        "pnumtclasses": 1,
+                        "pnumtables": 1,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -1269,7 +1269,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 1,
+                        "pnumtables": 1,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -1380,7 +1380,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 1,
+                        "pnumtables": 1,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -1441,7 +1441,7 @@
     },
     {
         "id": "e08b",
-        "name": "Update maxrules and numtclasses in existing pipeline",
+        "name": "Update maxrules and numtables in existing pipeline",
         "category": [
             "p4tc",
             "template",
@@ -1473,7 +1473,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update pipeline/ptables maxrules 2 numtclasses 4",
+        "cmdUnderTest": "$TC p4template update pipeline/ptables maxrules 2 numtables 4",
         "expExitCode": "0",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
@@ -1487,7 +1487,7 @@
                 "templates": [
                     {
                         "pmaxrules": 2,
-                        "pnumtclasses": 4,
+                        "pnumtables": 4,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -1598,7 +1598,7 @@
                 "templates": [
                     {
                         "pmaxrules": 2,
-                        "pnumtclasses": 1,
+                        "pnumtables": 1,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -1705,7 +1705,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 1,
+                        "pnumtables": 1,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -1812,7 +1812,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 1,
+                        "pnumtables": 1,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -1873,7 +1873,7 @@
     },
     {
         "id": "9e27",
-        "name": "Try to update numtclasses with 0",
+        "name": "Try to update numtables with 0",
         "category": [
             "p4tc",
             "template",
@@ -1905,7 +1905,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update pipeline/ pipeid 1 numtclasses 0",
+        "cmdUnderTest": "$TC p4template update pipeline/ pipeid 1 numtables 0",
         "expExitCode": "255",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
@@ -1919,7 +1919,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 1,
+                        "pnumtables": 1,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -1980,7 +1980,7 @@
     },
     {
         "id": "01a3",
-        "name": "Try to update numtclasses with 33",
+        "name": "Try to update numtables with 33",
         "category": [
             "p4tc",
             "template",
@@ -2012,7 +2012,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template update pipeline/ pipeid 1 numtclasses 33",
+        "cmdUnderTest": "$TC p4template update pipeline/ pipeid 1 numtables 33",
         "expExitCode": "255",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
@@ -2026,7 +2026,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 1,
+                        "pnumtables": 1,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -2133,7 +2133,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 1,
+                        "pnumtables": 1,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -2346,7 +2346,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 1,
+                        "pnumtables": 1,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [
@@ -2705,7 +2705,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4template create pipeline/ptables2 pipeid 22 numtclasses 4 maxrules 2 preactions action gact index 1 postactions action gact index 2",
+        "cmdUnderTest": "$TC p4template create pipeline/ptables2 pipeid 22 numtables 4 maxrules 2 preactions action gact index 1 postactions action gact index 2",
         "expExitCode": "255",
         "verifyCmd": "$TC -j p4template get pipeline/ptables",
         "matchCount": "1",
@@ -2719,7 +2719,7 @@
                 "templates": [
                     {
                         "pmaxrules": 1,
-                        "pnumtclasses": 1,
+                        "pnumtables": 1,
                         "pstate": "not ready",
                         "preactions": {
                             "actions": [

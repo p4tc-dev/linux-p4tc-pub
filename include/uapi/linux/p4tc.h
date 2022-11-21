@@ -15,7 +15,7 @@ struct p4tcmsg {
 
 #define P4TC_MAXPIPELINE_COUNT 32
 #define P4TC_MAXRULES_LIMIT 512
-#define P4TC_MAXTCLASSES_COUNT 32
+#define P4TC_MAXTABLES_COUNT 32
 #define P4TC_MAXPARSE_KEYS 16
 #define P4TC_MAXMETA_SZ 128
 #define P4TC_MSGBATCH_SIZE 16
@@ -26,25 +26,23 @@ struct p4tcmsg {
 #define TEMPLATENAMSZ 256
 #define PIPELINENAMSIZ TEMPLATENAMSZ
 #define METANAMSIZ TEMPLATENAMSZ
-#define TCLASSNAMSIZ TEMPLATENAMSZ
-#define TINSTNAMSIZ TEMPLATENAMSZ
+#define TABLENAMSIZ TEMPLATENAMSZ
 #define PARSERNAMSIZ TEMPLATENAMSZ
 #define HDRFIELDNAMSIZ TEMPLATENAMSZ
 #define ACTPARAMNAMSIZ TEMPLATENAMSZ
 
-#define P4TC_TCLASS_FLAGS_KEYSZ 0x01
-#define P4TC_TCLASS_FLAGS_COUNT 0x02
-#define P4TC_TCLASS_FLAGS_MAX_ENTRIES 0x04
-#define P4TC_TCLASS_FLAGS_MAX_MASKS 0x08
-#define P4TC_TCLASS_FLAGS_DEFAULT_KEY 0x10
+#define P4TC_TABLE_FLAGS_KEYSZ 0x01
+#define P4TC_TABLE_FLAGS_MAX_ENTRIES 0x02
+#define P4TC_TABLE_FLAGS_MAX_MASKS 0x04
+#define P4TC_TABLE_FLAGS_DEFAULT_KEY 0x08
 
-struct p4tc_table_class_parm {
-	__u32 tbc_keysz;
-	__u32 tbc_count;
-	__u32 tbc_max_entries;
-	__u32 tbc_max_masks;
-	__u32 tbc_default_key;
-	__u32 tbc_flags;
+struct p4tc_table_parm {
+	__u32 tbl_keysz;
+	__u32 tbl_max_entries;
+	__u32 tbl_max_masks;
+	__u32 tbl_default_key;
+	__u32 tbl_flags;
+	__u32 tbl_num_entries;
 };
 
 /* Root attributes */
@@ -60,7 +58,7 @@ enum {
 enum {
 	P4TC_PIPELINE_UNSPEC,
 	P4TC_PIPELINE_MAXRULES, /* u32 */
-	P4TC_PIPELINE_NUMTCLASSES, /* u16 */
+	P4TC_PIPELINE_NUMTABLES, /* u16 */
 	P4TC_PIPELINE_STATE, /* u8 */
 	P4TC_PIPELINE_PREACTIONS, /* nested preactions */
 	P4TC_PIPELINE_POSTACTIONS, /* nested postactions */
@@ -74,8 +72,7 @@ enum {
 	P4TC_OBJ_UNSPEC,
 	P4TC_OBJ_PIPELINE,
 	P4TC_OBJ_META,
-	P4TC_OBJ_TABLE_CLASS,
-	P4TC_OBJ_TABLE_INST,
+	P4TC_OBJ_TABLE,
 	P4TC_OBJ_HDR_FIELD,
 	P4TC_OBJ_ACT,
 	P4TC_OBJ_TABLE_ENTRY,
@@ -188,28 +185,17 @@ enum {
 
 /* Table type attributes */
 enum {
-	P4TC_TCLASS_UNSPEC,
-	P4TC_TCLASS_NAME, /* string */
-	P4TC_TCLASS_INFO, /* struct tc_p4_table_type_parm */
-	P4TC_TCLASS_PREACTIONS, /* nested table preactions */
-	P4TC_TCLASS_KEYS, /* nested table keys */
-	P4TC_TCLASS_POSTACTIONS, /* nested table postactions */
-	P4TC_TCLASS_DEFAULT_HIT, /* default hit action */
-	P4TC_TCLASS_DEFAULT_MISS, /* default miss action */
-	__P4TC_TCLASS_MAX
+	P4TC_TABLE_UNSPEC,
+	P4TC_TABLE_NAME, /* string */
+	P4TC_TABLE_INFO, /* struct tc_p4_table_type_parm */
+	P4TC_TABLE_PREACTIONS, /* nested table preactions */
+	P4TC_TABLE_KEYS, /* nested table keys */
+	P4TC_TABLE_POSTACTIONS, /* nested table postactions */
+	P4TC_TABLE_DEFAULT_HIT, /* default hit action */
+	P4TC_TABLE_DEFAULT_MISS, /* default miss action */
+	__P4TC_TABLE_MAX
 };
-#define P4TC_TCLASS_MAX __P4TC_TCLASS_MAX
-
-/* Table instance attributes */
-enum {
-	P4TC_TINST_UNSPEC,
-	P4TC_TINST_CLASS, /* string */
-	P4TC_TINST_NAME, /* string */
-	P4TC_TINST_CUR_ENTRIES, /* u32 */
-	P4TC_TINST_MAX_ENTRIES, /* u32 */
-	__P4TC_TINST_MAX
-};
-#define P4TC_TINST_MAX __P4TC_TINST_MAX
+#define P4TC_TABLE_MAX __P4TC_TABLE_MAX
 
 struct p4tc_header_field_ty {
 	__u16 startbit;
@@ -268,8 +254,7 @@ struct p4tc_table_entry_tm {
 /* Table entry attributes */
 enum {
 	P4TC_ENTRY_UNSPEC,
-	P4TC_ENTRY_TBCNAME, /* string */
-	P4TC_ENTRY_TINAME, /* string */
+	P4TC_ENTRY_TBLNAME, /* string */
 	P4TC_ENTRY_KEY_BLOB, /* Key blob */
 	P4TC_ENTRY_MASK_BLOB, /* Mask blob */
 	P4TC_ENTRY_PRIO, /* u32 */
