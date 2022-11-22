@@ -31,6 +31,7 @@
 #define P4TC_AID_IDX 1
 #define P4TC_PARSEID_IDX 1
 #define P4TC_HDRFIELDID_IDX 2
+#define P4TC_REGID_IDX 1
 
 #define P4TC_HDRFIELD_IS_VALIDITY_BIT 0x1
 
@@ -92,6 +93,7 @@ struct p4tc_pipeline {
 	struct idr                  p_meta_idr;
 	struct idr                  p_act_idr;
 	struct idr                  p_tbl_idr;
+	struct idr                  p_reg_idr;
 	struct rcu_head             rcu;
 	struct p4tc_parser          *parser;
 	struct tc_action            **preacts;
@@ -308,6 +310,21 @@ struct p4tc_header_field {
 
 extern const struct p4tc_template_ops p4tc_hdrfield_ops;
 
+struct p4tc_register {
+	struct p4tc_template_common common;
+	spinlock_t                  reg_value_lock;
+	struct p4tc_type            *reg_type;
+	struct p4tc_type_mask_shift *reg_mask_shift;
+	void                        *reg_value;
+	u32                         reg_num_elems;
+	u32                         reg_id;
+	refcount_t                  reg_ref;
+	u16                         reg_startbit; /* Relative to its container */
+	u16                         reg_endbit; /* Relative to its container */
+};
+
+extern const struct p4tc_template_ops p4tc_register_ops;
+
 struct p4tc_metadata *
 tcf_meta_find_byany(struct p4tc_pipeline *pipeline, const char *mname,
 		    const u32 m_id, struct netlink_ext_ack *extack);
@@ -415,10 +432,20 @@ bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
 void *tcf_hdrfield_fetch(struct sk_buff *skb,
 			 struct p4tc_header_field *hdrfield);
 
+struct p4tc_register *tcf_register_find_byid(struct p4tc_pipeline *pipeline,
+					     const u32 reg_id);
+struct p4tc_register *
+tcf_register_find_byany(struct p4tc_pipeline *pipeline,
+			const char *regname, const u32 reg_id,
+			struct netlink_ext_ack *extack);
+
+void tcf_register_put_rcu(struct rcu_head *head);
+
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
 #define to_meta(t) ((struct p4tc_metadata *)t)
 #define to_act(t) ((struct p4tc_act *)t)
 #define to_hdrfield(t) ((struct p4tc_header_field *)t)
 #define to_table(t) ((struct p4tc_table *)t)
+#define to_register(t) ((struct p4tc_register *)t)
 
 #endif
