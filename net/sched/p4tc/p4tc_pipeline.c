@@ -298,6 +298,7 @@ static void tcf_pipeline_destroy(struct p4tc_pipeline *pipeline,
 	idr_destroy(&pipeline->p_meta_idr);
 	idr_destroy(&pipeline->p_act_idr);
 	idr_destroy(&pipeline->p_tbl_idr);
+	idr_destroy(&pipeline->p_reg_idr);
 
 	if (free_pipeline)
 		kfree(pipeline);
@@ -324,8 +325,9 @@ static int tcf_pipeline_put(struct net *net,
 	struct p4tc_pipeline *pipeline = to_pipeline(template);
 	struct net *pipeline_net = maybe_get_net(net);
 	struct p4tc_act_dep_node *act_node, *node_tmp;
-	unsigned long tbl_id, m_id, tmp;
+	unsigned long reg_id, tbl_id, m_id, tmp;
 	struct p4tc_metadata *meta;
+	struct p4tc_register *reg;
 	struct p4tc_table *table;
 
 	if (!refcount_dec_if_one(&pipeline->p_ctrl_ref)) {
@@ -370,6 +372,9 @@ static int tcf_pipeline_put(struct net *net,
 
 	if (pipeline->parser)
 		tcf_parser_del(net, pipeline, pipeline->parser, extack);
+
+	idr_for_each_entry_ul(&pipeline->p_reg_idr, reg, tmp, reg_id)
+		reg->common.ops->put(net, &reg->common, true, extack);
 
 	idr_remove(&pipe_net->pipeline_idr, pipeline->common.p_id);
 
@@ -566,6 +571,8 @@ static struct p4tc_pipeline *tcf_pipeline_create(struct net *net,
 
 	idr_init(&pipeline->p_meta_idr);
 	pipeline->p_meta_offset = 0;
+
+	idr_init(&pipeline->p_reg_idr);
 
 	INIT_LIST_HEAD(&pipeline->act_dep_graph);
 	INIT_LIST_HEAD(&pipeline->act_topological_order);
