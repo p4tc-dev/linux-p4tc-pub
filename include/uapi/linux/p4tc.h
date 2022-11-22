@@ -22,6 +22,7 @@ struct p4tcmsg {
 #define P4TC_MAX_KEYSZ 512
 #define HEADER_MAX_LEN 512
 #define META_MAX_LEN 512
+#define P4TC_MAX_REGISTER_ELEMS 128
 
 #define P4TC_MAX_KEYSZ 512
 
@@ -32,6 +33,7 @@ struct p4tcmsg {
 #define HDRFIELDNAMSIZ TEMPLATENAMSZ
 #define ACTPARAMNAMSIZ TEMPLATENAMSZ
 #define TABLENAMSIZ TEMPLATENAMSZ
+#define REGISTERNAMSIZ TEMPLATENAMSZ
 
 #define P4TC_TABLE_FLAGS_KEYSZ 0x01
 #define P4TC_TABLE_FLAGS_MAX_ENTRIES 0x02
@@ -120,6 +122,7 @@ enum {
 	P4TC_OBJ_ACT,
 	P4TC_OBJ_TABLE,
 	P4TC_OBJ_TABLE_ENTRY,
+	P4TC_OBJ_REGISTER,
 	__P4TC_OBJ_MAX,
 };
 #define P4TC_OBJ_MAX __P4TC_OBJ_MAX
@@ -352,6 +355,31 @@ enum {
 	P4TC_ENTITY_TC,
 	P4TC_ENTITY_MAX
 };
+
+#define P4TC_REGISTER_FLAGS_DATATYPE 0x1
+#define P4TC_REGISTER_FLAGS_STARTBIT 0x2
+#define P4TC_REGISTER_FLAGS_ENDBIT 0x4
+#define P4TC_REGISTER_FLAGS_NUMELEMS 0x8
+#define P4TC_REGISTER_FLAGS_INDEX 0x10
+
+struct p4tc_u_register {
+	__u32 num_elems;
+	__u32 datatype;
+	__u32 index;
+	__u16 startbit;
+	__u16 endbit;
+	__u16 flags;
+};
+
+/* P4 Register attributes */
+enum {
+	P4TC_REGISTER_UNSPEC,
+	P4TC_REGISTER_NAME, /* string */
+	P4TC_REGISTER_INFO, /* struct p4tc_u_register */
+	P4TC_REGISTER_VALUE, /* value blob */
+	__P4TC_REGISTER_MAX
+};
+#define P4TC_REGISTER_MAX (__P4TC_REGISTER_MAX - 1)
 
 #define P4TC_RTA(r) \
 	((struct rtattr *)(((char *)(r)) + NLMSG_ALIGN(sizeof(struct p4tcmsg))))
