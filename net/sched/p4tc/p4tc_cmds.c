@@ -59,6 +59,8 @@ static void *p4tc_fetch_param(struct sk_buff *skb, struct p4tc_cmd_operand *op,
 			      struct tcf_p4act *cmd, struct tcf_result *res);
 static void *p4tc_fetch_dev(struct sk_buff *skb, struct p4tc_cmd_operand *op,
 			    struct tcf_p4act *cmd, struct tcf_result *res);
+static void *p4tc_fetch_reg(struct sk_buff *skb, struct p4tc_cmd_operand *op,
+			    struct tcf_p4act *cmd, struct tcf_result *res);
 static int p4tc_cmd_SET(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res);
 static int p4tc_cmd_ACT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
@@ -470,6 +472,51 @@ static int validate_res_operand(struct p4tc_cmd_operand *kopnd,
 	return -EINVAL;
 }
 
+static int validate_reg_operand(struct p4tc_cmd_operand *kopnd,
+				struct netlink_ext_ack *extack)
+{
+	struct p4tc_pipeline *pipeline;
+	struct p4tc_register *reg;
+	struct p4tc_type *t;
+
+	pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
+	if (!pipeline) {
+		NL_SET_ERR_MSG_MOD(extack, "Unable to find pipeline");
+		return -EINVAL;
+	}
+
+	reg = tcf_register_find_byid(pipeline, kopnd->immedv);
+	if (!reg) {
+		NL_SET_ERR_MSG_MOD(extack, "Unknown register id");
+		return -EINVAL;
+	}
+
+	if (kopnd->immedv2 >= reg->reg_num_elems) {
+		NL_SET_ERR_MSG_MOD(extack, "Register index out of bounds");
+		return -EINVAL;
+	}
+
+	t = reg->reg_type;
+	kopnd->oper_datatype = t;
+
+	if (reg->reg_type->typeid != kopnd->oper_datatype->typeid) {
+		NL_SET_ERR_MSG_MOD(extack, "Invalid register data type");
+		return -EINVAL;
+	}
+
+	if (kopnd->oper_bitstart > kopnd->oper_bitend) {
+		NL_SET_ERR_MSG_MOD(extack, "Register startbit > endbit");
+		return -EINVAL;
+	}
+
+	/* Should never fail */
+	WARN_ON(!refcount_inc_not_zero(&reg->reg_ref));
+
+	kopnd->priv = reg;
+
+	return 0;
+}
+
 static struct p4tc_type_mask_shift *
 create_metadata_bitops(struct p4tc_cmd_operand *kopnd,
 		       struct p4tc_metadata *meta, struct p4tc_type *t,
@@ -652,6 +699,9 @@ static int validate_operand(struct net *net, struct p4tc_cmd_operand *kopnd,
 	case P4TC_OPER_DEV:
 		err = validate_dev_operand(net, kopnd, extack);
 		break;
+	case P4TC_OPER_REG:
+		err = validate_reg_operand(kopnd, extack);
+		break;
 	default:
 		NL_SET_ERR_MSG_MOD(extack, "Unknown operand type");
 		err = -EINVAL;
@@ -659,6 +709,8 @@ static int validate_operand(struct net *net, struct p4tc_cmd_operand *kopnd,
 
 	return err;
 }
+
+#define noop
 
 static void _free_operand(struct p4tc_cmd_operand *op)
 {
@@ -669,6 +721,26 @@ static void _free_operand(struct p4tc_cmd_operand *op)
 		/* Should never be NULL */
 		if (pipeline)
 			refcount_dec(&pipeline->p_hdrs_used);
+	} else if (op->oper_type == P4TC_OPER_REG) {
+		struct p4tc_pipeline *pipeline;
+
+		pipeline = tcf_pipeline_find_byid(op->pipeid);
+		/* Should never be NULL */
+		if (pipeline) {
+			struct p4tc_register *reg;
+
+			reg = tcf_register_find_byid(pipeline, op->immedv);
+			/* The cmd creation may be aborted before we call
+			 * validate_operand, but the free function will always
+			 * be called after an abort. With this in mind, what may
+			 * happen is this function is called and
+			 * validate_operand is never called. When that happends,
+			 * the refcount was not incremented. To account for this
+			 * case, we need to check the refcount before decrementing
+			 */
+			if (reg && !refcount_dec_not_one(&reg->reg_ref))
+				noop;
+		}
 	}
 	if (op->oper_mask_shift)
 		p4t_release(op->oper_mask_shift);
@@ -1161,6 +1233,80 @@ int validate_CONCAT(struct net *net, struct p4tc_cmd_operate *ope,
 	return 0;
 }
 
+static void p4tc_reg_lock(struct p4tc_cmd_operand *A,
+			  struct p4tc_cmd_operand *B,
+			  struct p4tc_cmd_operand *C)
+{
+	struct p4tc_register *regA, *regB, *regC;
+
+	if (A->oper_type == P4TC_OPER_REG) {
+		regA = A->priv;
+		spin_lock_bh(&regA->reg_value_lock);
+	}
+
+	if (B && B->oper_type == P4TC_OPER_REG) {
+		regB = B->priv;
+		spin_lock_bh(&regB->reg_value_lock);
+	}
+
+	if (C && C->oper_type == P4TC_OPER_REG) {
+		regC = C->priv;
+		spin_lock_bh(&regC->reg_value_lock);
+	}
+}
+
+static void p4tc_reg_unlock(struct p4tc_cmd_operand *A,
+			    struct p4tc_cmd_operand *B,
+			    struct p4tc_cmd_operand *C)
+{
+	struct p4tc_register *regA, *regB, *regC;
+
+	if (C && C->oper_type == P4TC_OPER_REG) {
+		regC = C->priv;
+		spin_unlock_bh(&regC->reg_value_lock);
+	}
+
+	if (B && B->oper_type == P4TC_OPER_REG) {
+		regB = B->priv;
+		spin_unlock_bh(&regB->reg_value_lock);
+	}
+
+	if (A->oper_type == P4TC_OPER_REG) {
+		regA = A->priv;
+		spin_unlock_bh(&regA->reg_value_lock);
+	}
+}
+
+static int p4tc_cmp_op(struct p4tc_cmd_operand *A, struct p4tc_cmd_operand *B,
+		       void *Aval, void *Bval)
+{
+	int res;
+
+	p4tc_reg_lock(A, B, NULL);
+
+	res = p4t_cmp(A->oper_mask_shift, A->oper_datatype, Aval,
+		      B->oper_mask_shift, B->oper_datatype, Bval);
+
+	p4tc_reg_unlock(A, B, NULL);
+
+	return res;
+}
+
+static int p4tc_copy_op(struct p4tc_cmd_operand *A, struct p4tc_cmd_operand *B,
+			void *Aval, void *Bval)
+{
+	int res;
+
+	p4tc_reg_lock(A, B, NULL);
+
+	res = p4t_copy(A->oper_mask_shift, A->oper_datatype, Aval,
+		       B->oper_mask_shift, B->oper_datatype, Bval);
+
+	p4tc_reg_unlock(A, B, NULL);
+
+	return res;
+}
+
 /* Syntax: BRANCHOP A B
  * BRANCHOP := BEQ, BNEQ, etc
  * Operation: B's value is compared to A's value.
@@ -1188,8 +1334,7 @@ static int p4tc_cmd_BEQ(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(A->oper_mask_shift, A->oper_datatype, Aval,
-			  B->oper_mask_shift, B->oper_datatype, Bval);
+	res_cmp = p4tc_cmp_op(A, B, Aval, Bval);
 	if (!res_cmp)
 		return op->ctl1;
 
@@ -1214,8 +1359,7 @@ static int p4tc_cmd_BNE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(A->oper_mask_shift, A->oper_datatype, Aval,
-			  B->oper_mask_shift, B->oper_datatype, Bval);
+	res_cmp = p4tc_cmp_op(A, B, Aval, Bval);
 	if (res_cmp)
 		return op->ctl1;
 
@@ -1240,8 +1384,7 @@ static int p4tc_cmd_BLT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(A->oper_mask_shift, A->oper_datatype, Aval,
-			  B->oper_mask_shift, B->oper_datatype, Bval);
+	res_cmp = p4tc_cmp_op(A, B, Aval, Bval);
 	if (res_cmp < 0)
 		return op->ctl1;
 
@@ -1266,8 +1409,7 @@ static int p4tc_cmd_BLE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(A->oper_mask_shift, A->oper_datatype, Aval,
-			  B->oper_mask_shift, B->oper_datatype, Bval);
+	res_cmp = p4tc_cmp_op(A, B, Aval, Bval);
 	if (!res_cmp || res_cmp < 0)
 		return op->ctl1;
 
@@ -1292,8 +1434,7 @@ static int p4tc_cmd_BGT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(A->oper_mask_shift, A->oper_datatype, Aval,
-			  B->oper_mask_shift, B->oper_datatype, Bval);
+	res_cmp = p4tc_cmp_op(A, B, Aval, Bval);
 	if (res_cmp > 0)
 		return op->ctl1;
 
@@ -1318,8 +1459,7 @@ static int p4tc_cmd_BGE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	if (!Aval || !Bval)
 		return TC_ACT_OK;
 
-	res_cmp = p4t_cmp(A->oper_mask_shift, A->oper_datatype, Aval,
-			  B->oper_mask_shift, B->oper_datatype, Bval);
+	res_cmp = p4tc_cmp_op(A, B, Aval, Bval);
 	if (!res_cmp || res_cmp > 0)
 		return op->ctl1;
 
@@ -1502,6 +1642,8 @@ static int p4tc_cmds_process_opnd(struct nlattr *nla,
 		kopnd->fetch = p4tc_fetch_param;
 	} else if (uopnd->oper_type == P4TC_OPER_DEV) {
 		kopnd->fetch = p4tc_fetch_dev;
+	} else if (uopnd->oper_type == P4TC_OPER_REG) {
+		kopnd->fetch = p4tc_fetch_reg;
 	} else {
 		NL_SET_ERR_MSG_MOD(extack, "Unknown operand type");
 		return -EINVAL;
@@ -1510,6 +1652,7 @@ static int p4tc_cmds_process_opnd(struct nlattr *nla,
 	wantbits = 1 + uopnd->oper_endbit - uopnd->oper_startbit;
 	if (uopnd->oper_type != P4TC_OPER_ACTID &&
 	    uopnd->oper_type != P4TC_OPER_TBL &&
+	    uopnd->oper_type != P4TC_OPER_REG &&
 	    uopnd->oper_cbitsize < wantbits) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "Start and end bit dont fit in space");
@@ -1975,6 +2118,18 @@ static void *p4tc_fetch_metadata(struct sk_buff *skb,
 	return op->oper_value_ops->fetch(skb, op->oper_value_ops);
 }
 
+static void *p4tc_fetch_reg(struct sk_buff *skb,
+			    struct p4tc_cmd_operand *op,
+			    struct tcf_p4act *cmd, struct tcf_result *res)
+{
+	struct p4tc_register *reg = op->priv;
+	size_t bytesz;
+
+	bytesz = BITS_TO_BYTES(reg->reg_type->container_bitsz);
+
+	return reg->reg_value + bytesz * op->immedv2;
+}
+
 /* SET A B  - A is set from B
  *
  * Assumes everything has been vetted - meaning no checks here
@@ -2002,8 +2157,8 @@ static int p4tc_cmd_SET(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	dst_ops = A->oper_datatype->ops;
 	src_ops = B->oper_datatype->ops;
 
-	err = p4t_copy(A->oper_mask_shift, A->oper_datatype, dst,
-		       B->oper_mask_shift, B->oper_datatype, src);
+	err = p4tc_copy_op(A, B, dst, src);
+
 	if (err)
 		return TC_ACT_SHOT;
 
@@ -2040,6 +2195,7 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	if (!val)
 		return TC_ACT_OK;
 
+	p4tc_reg_lock(A, NULL, NULL);
 	if (val_t->ops->host_read)
 		val_t->ops->host_read(val_t, A->oper_mask_shift, val,
 				      &readval);
@@ -2095,9 +2251,19 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			val_t->ops->print(val_t, "res.hit", &readval);
 		else if (A->immedv == P4TC_CMDS_RESULTS_MISS)
 			val_t->ops->print(val_t, "res.miss", &readval);
+	} else if (A->oper_type == P4TC_OPER_REG) {
+		struct p4tc_pipeline *pipeline;
+		struct p4tc_register *reg;
+
+		pipeline = tcf_pipeline_find_byid(A->pipeid);
+		reg = tcf_register_find_byid(pipeline, A->immedv);
+		snprintf(name, TEMPLATENAMSZ * 2, "register.%s.%s[%u]",
+			 pipeline->common.name, reg->common.name, A->immedv2);
+		val_t->ops->print(val_t, name, &readval);
 	} else {
 		pr_info("Unsupported operand for print\n");
 	}
+	p4tc_reg_unlock(A, NULL, NULL);
 
 	return op->ctl1;
 }
@@ -2328,12 +2494,16 @@ static int p4tc_cmd_BINARITH(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	srcB_ops = B->oper_datatype->ops;
 	srcC_ops = C->oper_datatype->ops;
 
+	p4tc_reg_lock(A, B, C);
+
 	srcB_ops->host_read(B->oper_datatype, B->oper_mask_shift, srcB, Bval);
 	srcC_ops->host_read(C->oper_datatype, C->oper_mask_shift, srcC, Cval);
 
 	p4tc_arith_op(result, Bval, Cval);
 
 	dst_ops->host_write(A->oper_datatype, A->oper_mask_shift, result, dst);
+
+	p4tc_reg_unlock(A, B, C);
 
 	return op->ctl1;
 }
