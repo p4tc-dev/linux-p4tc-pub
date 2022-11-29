@@ -28,12 +28,16 @@ EOF
 verify_arch() {
    case "$1" in
       x86)
+         QEMU_ARCH="i386"
+         LINUX_ARCH="x86"
          ;;
       x86_64)
-         ARCH="x86"
+         QEMU_ARCH="x86_64"
+         LINUX_ARCH="x86"
          ;;
       s390x)
-         ARCH="s390x"
+         QEMU_ARCH="s390x"
+         LINUX_ARCH="s390"
          ;;
       *)
          echo "archicteture $1 is not supported"
@@ -86,7 +90,7 @@ recrec() {
 }
 
 # Default architecture
-ARCH="x86"
+ARCH="x86_64"
 CROSS="n"
 
 # Known directories and files
@@ -120,7 +124,6 @@ while getopts 'ha:r:i:c:m:j:f:sgd' OPT; do
          ;;
       a)
          ARCH="$OPTARG"
-         verify_arch "$ARCH"
          ;;
       r)
          ROOTFS=$(realpath "$OPTARG")
@@ -174,15 +177,16 @@ else
    CMD="$@"
 fi
 
-# Check if we are cross-compiling
 
-if ! "$(uname -m | grep -q "$ARCH")"; then
+# Check if we are cross-compiling
+verify_arch "$ARCH"
+if ! uname -m | grep -q "$LINUX_ARCH"; then
    echo ">>> Cross architecture detected <<<"
    CROSS="y"
 fi
 
 if [ -z "$_KIMG" ]; then
-   KIMG="$KDIR"/arch/"$ARCH"/boot/bzImage
+   KIMG="$KDIR"/arch/"$LINUX_ARCH"/boot/bzImage
    if ! [ "$DRYRUN" == "y" ]; then
       recrec
    fi
@@ -192,7 +196,7 @@ fi
 
 if [ "$DRYRUN" == "y" ]; then
    virtme-run \
-      --arch "$ARCH" \
+      --arch "$QEMU_ARCH" \
       --root "$ROOTFS" \
       --kimg "$KIMG" \
       --cpus "$VMCPUS" \
@@ -205,7 +209,7 @@ fi
 
 if [ "$VMSHELL" == "y" ]; then
    virtme-run \
-      --arch "$ARCH" \
+      --arch "$QEMU_ARCH" \
       --root "$ROOTFS" \
       --kimg "$KIMG" \
       --cpus "$VMCPUS" \
@@ -213,7 +217,7 @@ if [ "$VMSHELL" == "y" ]; then
       --rwdir="/mnt=$KDIR"
 else
    virtme-run \
-      --arch "$ARCH" \
+      --arch "$QEMU_ARCH" \
       --root "$ROOTFS" \
       --kimg "$KIMG" \
       --cpus "$VMCPUS" \
