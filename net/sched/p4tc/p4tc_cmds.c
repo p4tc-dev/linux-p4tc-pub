@@ -41,8 +41,8 @@
 	(list_next_entry(GET_OPB(operands_list), oper_list_node))
 
 #define P4TC_FETCH_DECLARE(fname)                                            \
-	static void *(fname)(struct sk_buff *skb, struct p4tc_cmd_operand *op, \
-			     struct tcf_p4act *cmd, struct tcf_result *res)
+	static void *fname(struct sk_buff *skb, struct p4tc_cmd_operand *op, \
+			   struct tcf_p4act *cmd, struct tcf_result *res)
 
 P4TC_FETCH_DECLARE(p4tc_fetch_metadata);
 P4TC_FETCH_DECLARE(p4tc_fetch_constant);
@@ -56,7 +56,7 @@ P4TC_FETCH_DECLARE(p4tc_fetch_reg);
 
 #define P4TC_CMD_DECLARE(fname)                                            \
 	static int fname(struct sk_buff *skb, struct p4tc_cmd_operate *op, \
-			 struct tcf_p4act *cmd, struct tcf_result *res)
+			 struct tcf_p4act *cmd, struct tcf_result *res);
 
 P4TC_CMD_DECLARE(p4tc_cmd_SET);
 P4TC_CMD_DECLARE(p4tc_cmd_ACT);
@@ -72,6 +72,61 @@ P4TC_CMD_DECLARE(p4tc_cmd_BOR);
 P4TC_CMD_DECLARE(p4tc_cmd_BXOR);
 P4TC_CMD_DECLARE(p4tc_cmd_JUMP);
 P4TC_CMD_DECLARE(p4tc_cmd_RET);
+
+#ifdef CONFIG_RETPOLINE
+int __p4tc_cmd_run(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+		   struct tcf_p4act *cmd, struct tcf_result *res)
+{
+
+	#define RUN(fname) \
+		if (op->cmd->run == fname) \
+			return fname(skb, op, cmd, res)
+
+	RUN(p4tc_cmd_SET);
+	RUN(p4tc_cmd_ACT);
+	RUN(p4tc_cmd_PRINT);
+	RUN(p4tc_cmd_TBLAPP);
+	RUN(p4tc_cmd_SNDPORTEGR);
+	RUN(p4tc_cmd_MIRPORTEGR);
+	RUN(p4tc_cmd_PLUS);
+	RUN(p4tc_cmd_SUB);
+	RUN(p4tc_cmd_CONCAT);
+	RUN(p4tc_cmd_BAND);
+	RUN(p4tc_cmd_BOR);
+	RUN(p4tc_cmd_BXOR);
+
+        return op->cmd->run(skb, op, cmd, res);
+}
+
+static inline void *__p4tc_fetch(struct sk_buff *skb,
+				 struct p4tc_cmd_operand *oprnd,
+				 struct tcf_p4act *cmd, struct tcf_result *res)
+{
+	#define FETCH(fname) \
+		if (oprnd->fetch == fname) \
+			return fname(skb, oprnd, cmd, res)
+
+
+	FETCH(p4tc_fetch_metadata);
+	FETCH(p4tc_fetch_constant);
+	FETCH(p4tc_fetch_table);
+	FETCH(p4tc_fetch_key);
+	FETCH(p4tc_fetch_result);
+	FETCH(p4tc_fetch_hdrfield);
+	FETCH(p4tc_fetch_param);
+	FETCH(p4tc_fetch_dev);
+	FETCH(p4tc_fetch_reg);
+
+	return oprnd->fetch(skb, oprnd, cmd, res);
+}
+#else
+static inline void *__p4tc_fetch(struct sk_buff *skb,
+				 struct p4tc_cmd_operand *oprnd,
+				 struct tcf_p4act *cmd, struct tcf_result *res)
+{
+	return oprnd->fetch(skb, oprnd, cmd, res);
+}
+#endif
 
 static void kfree_opentry(struct net *net, struct p4tc_cmd_operate *ope,
 			  bool called_from_template)
@@ -259,7 +314,7 @@ static int validate_metadata_operand(struct p4tc_cmd_operand *kopnd,
 				     struct p4tc_type *container_type,
 				     struct netlink_ext_ack *extack)
 {
-	struct p4tc_type_ops *type_ops = container_type->ops;
+	const struct p4tc_type_ops *type_ops = container_type->ops;
 	int err;
 
 	if (kopnd->oper_cbitsize < kopnd->oper_bitsize) {
@@ -1947,8 +2002,8 @@ static int p4tc_cmd_BEQ(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	A = GET_OPA(&op->operands_list);
 	B = GET_OPB(&op->operands_list);
 
-	A_val = A->fetch(skb, A, cmd, res);
-	B_val = B->fetch(skb, B, cmd, res);
+	A_val = __p4tc_fetch(skb, A, cmd, res);
+	B_val = __p4tc_fetch(skb, B, cmd, res);
 
 	if (!A_val || !B_val)
 		return TC_ACT_OK;
@@ -1972,8 +2027,8 @@ static int p4tc_cmd_BNE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	A = GET_OPA(&op->operands_list);
 	B = GET_OPB(&op->operands_list);
 
-	A_val = A->fetch(skb, A, cmd, res);
-	B_val = B->fetch(skb, B, cmd, res);
+	A_val = __p4tc_fetch(skb, A, cmd, res);
+	B_val = __p4tc_fetch(skb, B, cmd, res);
 
 	if (!A_val || !B_val)
 		return TC_ACT_OK;
@@ -1997,8 +2052,8 @@ static int p4tc_cmd_BLT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	A = GET_OPA(&op->operands_list);
 	B = GET_OPB(&op->operands_list);
 
-	A_val = A->fetch(skb, A, cmd, res);
-	B_val = B->fetch(skb, B, cmd, res);
+	A_val = __p4tc_fetch(skb, A, cmd, res);
+	B_val = __p4tc_fetch(skb, B, cmd, res);
 
 	if (!A_val || !B_val)
 		return TC_ACT_OK;
@@ -2022,8 +2077,8 @@ static int p4tc_cmd_BLE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	A = GET_OPA(&op->operands_list);
 	B = GET_OPB(&op->operands_list);
 
-	A_val = A->fetch(skb, A, cmd, res);
-	B_val = B->fetch(skb, B, cmd, res);
+	A_val = __p4tc_fetch(skb, A, cmd, res);
+	B_val = __p4tc_fetch(skb, B, cmd, res);
 
 	if (!A_val || !B_val)
 		return TC_ACT_OK;
@@ -2047,8 +2102,8 @@ static int p4tc_cmd_BGT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	A = GET_OPA(&op->operands_list);
 	B = GET_OPB(&op->operands_list);
 
-	A_val = A->fetch(skb, A, cmd, res);
-	B_val = B->fetch(skb, B, cmd, res);
+	A_val = __p4tc_fetch(skb, A, cmd, res);
+	B_val = __p4tc_fetch(skb, B, cmd, res);
 
 	if (!A_val || !B_val)
 		return TC_ACT_OK;
@@ -2072,8 +2127,8 @@ static int p4tc_cmd_BGE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	A = GET_OPA(&op->operands_list);
 	B = GET_OPB(&op->operands_list);
 
-	A_val = A->fetch(skb, A, cmd, res);
-	B_val = B->fetch(skb, B, cmd, res);
+	A_val = __p4tc_fetch(skb, A, cmd, res);
+	B_val = __p4tc_fetch(skb, B, cmd, res);
 
 	if (!A_val || !B_val)
 		return TC_ACT_OK;
@@ -2731,7 +2786,8 @@ static int p4tc_cmds_copy_opnd(struct p4tc_act *act,
 		   kopnd->oper_type == P4TC_OPER_PARAM ||
 		   kopnd->oper_type == P4TC_OPER_REG) {
 		if (kopnd->oper_datatype->ops->create_bitops) {
-			struct p4tc_type_ops *ops = kopnd->oper_datatype->ops;
+			const struct p4tc_type_ops *ops =
+				kopnd->oper_datatype->ops;
 
 			mask_shift = ops->create_bitops(kopnd->oper_bitsize,
 							kopnd->oper_bitstart,
@@ -2989,7 +3045,7 @@ static void *p4tc_fetch_param(struct sk_buff *skb, struct p4tc_cmd_operand *op,
 	if (param->flags & P4TC_ACT_PARAM_FLAGS_ISDYN) {
 		struct p4tc_cmd_operand *intern_op = param->value;
 
-		return intern_op->fetch(skb, intern_op, cmd, res);
+		return __p4tc_fetch(skb, intern_op, cmd, res);
 	}
 
 	return param->value;
@@ -3047,8 +3103,8 @@ static int p4tc_cmd_SET(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	A = GET_OPA(&op->operands_list);
 	B = GET_OPB(&op->operands_list);
 
-	src = B->fetch(skb, B, cmd, res);
-	dst = A->fetch(skb, A, cmd, res);
+	src = __p4tc_fetch(skb, B, cmd, res);
+	dst = __p4tc_fetch(skb, A, cmd, res);
 
 	if (!src || !dst)
 		return TC_ACT_SHOT;
@@ -3072,7 +3128,16 @@ static int p4tc_cmd_ACT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	struct p4tc_cmd_operand *A = GET_OPA(&op->operands_list);
 	const struct tc_action *action = A->action;
 
+	/* This should be moved to core TC and applied to other actions as well */
+#ifdef CONFIG_RETPOLINE
+	if (likely(action->ops->act == tcf_p4_dyna_act)) {
+		return tcf_p4_dyna_act(skb, action, res);
+	} else {
+		return action->ops->act(skb, action, res);
+	}
+#else
 	return action->ops->act(skb, action, res);
+#endif
 }
 
 static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
@@ -3086,7 +3151,7 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	void *val;
 
 	A = GET_OPA(&op->operands_list);
-	val = A->fetch(skb, A, cmd, res);
+	val = __p4tc_fetch(skb, A, cmd, res);
 	val_t = A->oper_datatype;
 
 	if (!val)
@@ -3226,7 +3291,7 @@ static int p4tc_cmd_SNDPORTEGR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	int err;
 
 	A = GET_OPA(&op->operands_list);
-	ifindex = A->fetch(skb, A, cmd, res);
+	ifindex = __p4tc_fetch(skb, A, cmd, res);
 
 	rec_level = __this_cpu_inc_return(redirect_rec_level);
 	if (unlikely(rec_level > REDIRECT_RECURSION_LIMIT)) {
@@ -3295,7 +3360,7 @@ static int p4tc_cmd_MIRPORTEGR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	int err;
 
 	A = GET_OPA(&op->operands_list);
-	ifindex = A->fetch(skb, A, cmd, res);
+	ifindex = __p4tc_fetch(skb, A, cmd, res);
 
 	rec_level = __this_cpu_inc_return(redirect_rec_level);
 	if (unlikely(rec_level > REDIRECT_RECURSION_LIMIT)) {
@@ -3358,13 +3423,13 @@ static int p4tc_cmd_TBLAPP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			   struct tcf_p4act *cmd, struct tcf_result *res)
 {
 	struct p4tc_cmd_operand *A = GET_OPA(&op->operands_list);
-	struct p4tc_table *table = A->fetch(skb, A, cmd, res);
+	struct p4tc_table *table = __p4tc_fetch(skb, A, cmd, res);
 	struct p4tc_table_entry *entry;
 	struct p4tc_table_key *key;
 	int ret;
 
 	A = GET_OPA(&op->operands_list);
-	table = A->fetch(skb, A, cmd, res);
+	table = __p4tc_fetch(skb, A, cmd, res);
 	if (unlikely(!table))
 		return TC_ACT_SHOT;
 
@@ -3423,9 +3488,9 @@ static int p4tc_cmd_BINARITH(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	u64 B_val = 0;
 	u64 C_val = 0;
 	struct p4tc_cmd_operand *A, *B, *C;
-	struct p4tc_type_ops *src_C_ops;
-	struct p4tc_type_ops *src_B_ops;
-	struct p4tc_type_ops *dst_ops;
+	const struct p4tc_type_ops *src_C_ops;
+	const struct p4tc_type_ops *src_B_ops;
+	const struct p4tc_type_ops *dst_ops;
 	void *src_B;
 	void *src_C;
 	void *dst;
@@ -3434,9 +3499,9 @@ static int p4tc_cmd_BINARITH(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	B = GET_OPB(&op->operands_list);
 	C = GET_OPC(&op->operands_list);
 
-	dst = A->fetch(skb, A, cmd, res);
-	src_B = B->fetch(skb, B, cmd, res);
-	src_C = C->fetch(skb, C, cmd, res);
+	dst = __p4tc_fetch(skb, A, cmd, res);
+	src_B = __p4tc_fetch(skb, B, cmd, res);
+	src_C = __p4tc_fetch(skb, C, cmd, res);
 
 	if (!src_B || !src_C || !dst)
 		return TC_ACT_SHOT;
@@ -3447,14 +3512,15 @@ static int p4tc_cmd_BINARITH(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 
 	p4tc_reg_lock(A, B, C);
 
-	src_B_ops->host_read(B->oper_datatype, B->oper_mask_shift, src_B,
-			     &B_val);
-	src_C_ops->host_read(C->oper_datatype, C->oper_mask_shift, src_C,
-			     &C_val);
+	__p4tc_type_host_read(src_B_ops, B->oper_datatype, B->oper_mask_shift,
+			      src_B, &B_val);
+	__p4tc_type_host_read(src_C_ops, C->oper_datatype, C->oper_mask_shift,
+			      src_C, &C_val);
 
 	p4tc_arith_op(&result, B_val, C_val);
 
-	dst_ops->host_write(A->oper_datatype, A->oper_mask_shift, &result, dst);
+	__p4tc_type_host_write(dst_ops, A->oper_datatype, A->oper_mask_shift,
+			       &result, dst);
 
 	p4tc_reg_unlock(A, B, C);
 
@@ -3524,7 +3590,7 @@ static int p4tc_cmd_CONCAT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	u64 RvalAcc[BITS_TO_U64(P4T_MAX_BITSZ)] = { 0 };
 	size_t rvalue_tot_sz = 0;
 	struct p4tc_cmd_operand *cursor;
-	struct p4tc_type_ops *dst_ops;
+	const struct p4tc_type_ops *dst_ops;
 	struct p4tc_cmd_operand *A;
 	void *dst;
 
@@ -3534,22 +3600,23 @@ static int p4tc_cmd_CONCAT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	list_for_each_entry_continue(cursor, &op->operands_list, oper_list_node) {
 		size_t cursor_bytesz = BITS_TO_BYTES(cursor->oper_bitsize);
 		struct p4tc_type *cursor_type = cursor->oper_datatype;
-		struct p4tc_type_ops *cursor_type_ops = cursor_type->ops;
-		void *srcR = cursor->fetch(skb, cursor, cmd, res);
-		u64 Rval[BITS_TO_U64(P4T_MAX_BITSZ)] = { 0 };
+		const struct p4tc_type_ops *cursor_type_ops = cursor_type->ops;
+		void *srcR = __p4tc_fetch(skb, cursor, cmd, res);
+		u64 Rval[BITS_TO_U64(P4T_MAX_BITSZ)] = {0};
 
-		cursor_type_ops->host_read(cursor->oper_datatype,
-					   cursor->oper_mask_shift, srcR,
-					   &Rval);
-		cursor_type_ops->host_write(cursor->oper_datatype,
-					    cursor->oper_mask_shift, &Rval,
-					    (char *)RvalAcc + rvalue_tot_sz);
+		__p4tc_type_host_read(cursor_type_ops, cursor->oper_datatype,
+				      cursor->oper_mask_shift, srcR, &Rval);
+
+		__p4tc_type_host_write(cursor_type_ops, cursor->oper_datatype,
+				       cursor->oper_mask_shift, &Rval,
+				       (char *)RvalAcc + rvalue_tot_sz);
 		rvalue_tot_sz += cursor_bytesz;
 	}
 
-	dst = A->fetch(skb, A, cmd, res);
+	dst = __p4tc_fetch(skb, A, cmd, res);
 	dst_ops = A->oper_datatype->ops;
-	dst_ops->host_write(A->oper_datatype, A->oper_mask_shift, RvalAcc, dst);
+	__p4tc_type_host_write(dst_ops, A->oper_datatype, A->oper_mask_shift,
+			       RvalAcc, dst);
 
 	return op->ctl1;
 }

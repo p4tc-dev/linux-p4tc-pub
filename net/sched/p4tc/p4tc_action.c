@@ -9,6 +9,7 @@
  *              Pedro Tammela <pctammela@mojatatu.com>
  */
 
+#include <linux/indirect_call_wrapper.h>
 #include <linux/err.h>
 #include <linux/errno.h>
 #include <linux/init.h>
@@ -566,8 +567,9 @@ release_idr:
 	return err;
 }
 
-static int tcf_p4_dyna_act(struct sk_buff *skb, const struct tc_action *a,
-			   struct tcf_result *res)
+INDIRECT_CALLABLE_SCOPE int tcf_p4_dyna_act(struct sk_buff *skb,
+					    const struct tc_action *a,
+					    struct tcf_result *res)
 {
 	struct tcf_p4act *dynact = to_p4act(a);
 	int ret = 0;
@@ -586,7 +588,7 @@ static int tcf_p4_dyna_act(struct sk_buff *skb, const struct tc_action *a,
 			continue;
 		}
 
-		ret = op->cmd->run(skb, op, dynact, res);
+		ret = __p4tc_cmd_run(skb, op, dynact, res);
 		if (TC_ACT_EXT_CMP(ret, TC_ACT_JUMP)) {
 			jmp_cnt = ret & TC_ACT_EXT_VAL_MASK;
 			continue;

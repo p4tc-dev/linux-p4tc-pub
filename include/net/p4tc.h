@@ -170,6 +170,7 @@ static inline bool pipeline_sealed(struct p4tc_pipeline *pipeline)
 {
 	return pipeline->p_state == P4TC_STATE_READY;
 }
+
 void tcf_pipeline_add_dep_edge(struct p4tc_pipeline *pipeline,
 			       struct p4tc_act_dep_edge_node *edge_node,
 			       u32 vertex_id);
@@ -508,7 +509,6 @@ struct p4tc_table *tcf_table_find_byany(struct p4tc_pipeline *pipeline,
 					struct netlink_ext_ack *extack);
 struct p4tc_table *tcf_table_find_byid(struct p4tc_pipeline *pipeline,
 				       const u32 tbl_id);
-void *tcf_table_fetch(struct sk_buff *skb, void *tbl_value_ops);
 int tcf_table_try_set_state_ready(struct p4tc_pipeline *pipeline,
 				  struct netlink_ext_ack *extack);
 struct p4tc_table *tcf_table_get(struct p4tc_pipeline *pipeline,
@@ -556,6 +556,7 @@ struct p4tc_hdrfield *tcf_hdrfield_get(struct p4tc_parser *parser,
 				       const char *hdrfield_name,
 				       u32 hdrfield_id,
 				       struct netlink_ext_ack *extack);
+void *tcf_hdrfield_fetch(struct sk_buff *skb, struct p4tc_hdrfield *hdrfield);
 void tcf_hdrfield_put_ref(struct p4tc_hdrfield *hdrfield);
 
 int p4tc_init_net_ops(struct net *net, unsigned int id);
@@ -666,5 +667,16 @@ struct p4tc_cmd_s {
 	int (*run)(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		   struct tcf_p4act *cmd, struct tcf_result *res);
 };
+
+#ifdef CONFIG_RETPOLINE
+int __p4tc_cmd_run(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+		   struct tcf_p4act *cmd, struct tcf_result *res);
+#else
+int __p4tc_cmd_run(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+		   struct tcf_p4act *cmd, struct tcf_result *res)
+{
+	return op->cmd->run(skb, op, cmd, res);
+}
+#endif
 
 #endif
