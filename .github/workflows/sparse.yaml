@@ -15,7 +15,13 @@ jobs:
         with:
           fetch-depth: 0
       - run: |
-          sudo apt update && sudo apt install -y gawk flex bison openssl libssl-dev libelf-dev libudev-dev libpci-dev libiberty-dev sparse
+          sudo apt update && sudo apt install -y gawk flex bison openssl libssl-dev libelf-dev libudev-dev libpci-dev libiberty-dev
+          pushd .
+          git clone git://git.kernel.org/pub/scm/devel/sparse/sparse.git
+          cd sparse
+          make
+          sudo PREFIX=/usr make install
+          popd
           make tinyconfig
           ./scripts/config --enable NET
           ./scripts/config --enable NET_INGRESS
@@ -27,4 +33,8 @@ jobs:
           ./scripts/config --enable NET_TC_SKB_EXT
           ./scripts/config --enable NET_P4_TC
           make listnewconfig >> .config
-          make C=2 net/
+          make C=2 net/sched/ > sparse-logs 2>&1
+          if grep -q "p4tc_.*\.c:" sparse-logs; then
+            cat sparse-logs
+            exit 1
+          fi
