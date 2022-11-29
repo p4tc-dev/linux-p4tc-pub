@@ -193,8 +193,6 @@ int p4tc_cmds_fillup(struct sk_buff *skb, struct list_head *cmd_operations)
 	int err;
 
 	list_for_each_entry(entry, cmd_operations, cmd_operations) {
-		if (!entry)
-			continue;
 		nest_op = nla_nest_start(skb, i);
 
 		op.op_type = entry->op_id;
@@ -2116,7 +2114,7 @@ static int p4tc_cmds_copy_ops(struct p4tc_cmd_operate **new_op_entry,
 {
 	struct p4tc_cmd_operate *_new_op_entry;
 	struct p4tc_cmd_operand *cursor;
-	int err;
+	int err = 0;
 
 	_new_op_entry = kzalloc(sizeof(*_new_op_entry), GFP_KERNEL);
 	if (!_new_op_entry)
@@ -2124,7 +2122,7 @@ static int p4tc_cmds_copy_ops(struct p4tc_cmd_operate **new_op_entry,
 
 	INIT_LIST_HEAD(&_new_op_entry->operands_list);
 	list_for_each_entry(cursor, &op_entry->operands_list, oper_list_node) {
-		struct p4tc_cmd_operand *new_opnd;
+		struct p4tc_cmd_operand *new_opnd = NULL;
 
 		err = p4tc_cmds_copy_opnd(&new_opnd, cursor, extack);
 		if (new_opnd) {
@@ -2202,14 +2200,11 @@ int p4tc_cmds_parse(struct net *net,
 		return err;
 
 	for (i = 1; i < P4TC_CMDS_LIST_MAX + 1 && oplist_attr[i]; i++) {
-		struct p4tc_cmd_operate *o;
-
 		if (!oplist_attr[i])
 			break;
 		err =
 		    p4tc_cmd_process_ops(net, act, oplist_attr[i],
 					 &oplist[i - 1], extack);
-		o = oplist[i - 1];
 		if (err) {
 			kfree_tmp_oplist(oplist);
 
@@ -2325,8 +2320,6 @@ static int p4tc_cmd_SET(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res)
 {
 	struct p4tc_cmd_operand *A, *B;
-	struct p4tc_type_ops *dst_ops;
-	struct p4tc_type_ops *src_ops;
 	void *src;
 	void *dst;
 	int err;
@@ -2339,9 +2332,6 @@ static int p4tc_cmd_SET(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 
 	if (!src || !dst)
 		return TC_ACT_SHOT;
-
-	dst_ops = A->oper_datatype->ops;
-	src_ops = B->oper_datatype->ops;
 
 	err = p4tc_copy_op(A, B, dst, src);
 
