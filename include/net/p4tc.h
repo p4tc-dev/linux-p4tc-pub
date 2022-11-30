@@ -23,6 +23,8 @@
 #define P4TC_MAX_TIENTRIES 512
 #define P4TC_DEFAULT_TIENTRIES 128
 
+#define P4TC_MAX_PERMISSION ((1 << (P4TC_CONTROL_PERMISSIONS_C_BIT + 1)) - 1)
+
 #define P4TC_KERNEL_PIPEID 0
 
 #define P4TC_PID_IDX 0
@@ -156,33 +158,47 @@ struct p4tc_table_key {
 	u32              key_id;
 };
 
+#define P4TC_CONTROL_PERMISSIONS (GENMASK(9, 5))
+#define P4TC_DATA_PERMISSIONS (GENMASK(4, 0))
+
+struct p4tc_table_defact {
+	struct tc_action **default_acts;
+	/* Will have 2 5 bits blocks containing CRUDX (Create, read, update,
+	 * delete, execute) permissions for control plane and data plane.
+	 * The first 5 bits are for control and the next five are for data plane.
+	 * |crudxcrudx| if we were to denote it as UNIX permission flags.
+	 */
+	__u16 permissions;
+	struct rcu_head  rcu;
+};
+
 struct p4tc_table {
-	struct p4tc_template_common common;
-	struct idr                  tbl_keys_idr;
-	struct idr                  tbl_masks_idr;
-	struct idr                  tbl_prio_idr;
-	struct p4tc_cmd_value_ops   tbl_value_ops;
-	struct rhltable             tbl_entries;
-	struct tc_action            **tbl_preacts;
-	int                         tbl_num_preacts;
-	struct tc_action            **tbl_postacts;
-	struct tc_action            **tbl_default_hitact;
-	struct tc_action            **tbl_default_missact;
-	spinlock_t                  tbl_masks_idr_lock;
-	spinlock_t                  tbl_prio_idr_lock;
-	int                         tbl_num_postacts;
-	u32                         tbl_count;
-	u32                         tbl_curr_count;
-	u32                         tbl_keysz;
-	u32                         tbl_id;
-	u32                         tbl_keys_count;
-	u32                         tbl_max_entries;
-	u32                         tbl_max_masks;
-	u32                         tbl_curr_used_entries;
-	u32                         tbl_default_key;
-	refcount_t                  tbl_ctrl_ref;
-	refcount_t                  tbl_ref;
-	refcount_t                  tbl_entries_ref;
+	struct p4tc_template_common    common;
+	struct idr                     tbl_keys_idr;
+	struct idr                     tbl_masks_idr;
+	struct idr                     tbl_prio_idr;
+	struct p4tc_cmd_value_ops      tbl_value_ops;
+	struct rhltable                tbl_entries;
+	struct tc_action               **tbl_preacts;
+	struct tc_action               **tbl_postacts;
+	struct p4tc_table_defact __rcu *tbl_default_hitact;
+	struct p4tc_table_defact __rcu *tbl_default_missact;
+	spinlock_t                     tbl_masks_idr_lock;
+	spinlock_t                     tbl_prio_idr_lock;
+	int                            tbl_num_postacts;
+	int                            tbl_num_preacts;
+	u32                            tbl_count;
+	u32                            tbl_curr_count;
+	u32                            tbl_keysz;
+	u32                            tbl_id;
+	u32                            tbl_keys_count;
+	u32                            tbl_max_entries;
+	u32                            tbl_max_masks;
+	u32                            tbl_curr_used_entries;
+	u32                            tbl_default_key;
+	refcount_t                     tbl_ctrl_ref;
+	refcount_t                     tbl_ref;
+	refcount_t                     tbl_entries_ref;
 };
 
 extern const struct p4tc_template_ops p4tc_table_ops;
