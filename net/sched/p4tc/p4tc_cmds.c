@@ -2446,16 +2446,22 @@ static int p4tc_cmd_TBLAPP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 
 	ret = TC_ACT_PIPE;
 	if (res->hit) {
+		struct p4tc_table_defact *hitact;
+
+		hitact = rcu_dereference(table->tbl_default_hitact);
 		if (entry->acts)
 			ret = tcf_action_exec(skb, entry->acts, entry->num_acts,
 					      res);
-		else if (table->tbl_default_hitact)
-			ret = tcf_action_exec(skb, table->tbl_default_hitact,
-					      1, res);
+		else if (hitact)
+			ret = tcf_action_exec(skb, hitact->default_acts, 1,
+					      res);
 	} else {
-		if (table->tbl_default_missact)
-			ret = tcf_action_exec(skb, table->tbl_default_missact,
-					      1, res);
+		struct p4tc_table_defact *missact;
+
+		missact = rcu_dereference(table->tbl_default_missact);
+		if (missact)
+			ret = tcf_action_exec(skb, missact->default_acts, 1,
+					      res);
 	}
 	if (ret != TC_ACT_PIPE)
 		return ret;
