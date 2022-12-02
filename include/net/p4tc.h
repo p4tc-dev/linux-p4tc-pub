@@ -262,6 +262,7 @@ struct p4tc_table_entry_mask {
 
 struct p4tc_table_entry {
 	struct p4tc_table_entry_key      key;
+	struct work_struct	         work;
 	struct p4tc_table_entry_tm __rcu *tm;
 	u32                              prio;
 	u32                              mask_id;

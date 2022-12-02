@@ -377,23 +377,33 @@ tcf_table_entry_mask_add(struct p4tc_table *table,
 	return mask_found;
 }
 
+static void tcf_table_entry_del_act_work(struct work_struct *work)
+{
+	struct p4tc_table_entry *entry;
+
+	entry = container_of(work, typeof(*entry), work);
+
+	tcf_action_destroy(entry->acts, TCA_ACT_UNBIND);
+	kfree(entry->acts);
+	kfree(entry);
+}
+
 static void tcf_table_entry_put(struct rcu_head *rcu)
 {
 	struct p4tc_table_entry *entry;
 	struct p4tc_table_entry_tm *tm;
 
 	entry = container_of(rcu, struct p4tc_table_entry, rcu);
-	if (entry->acts) {
-		tcf_action_destroy(entry->acts, TCA_ACT_UNBIND);
-		kfree(entry->acts);
-	}
-
-	tm = rcu_dereference_protected(entry->tm, 1);
+	tm = rcu_dereference(entry->tm);
 	kfree(tm);
 
 	kfree(entry->key.unmasked_key);
 	kfree(entry->key.value);
-	kfree(entry);
+
+	if (entry->acts)
+		schedule_work(&entry->work);
+	else
+		kfree(entry);
 }
 
 static int tcf_table_entry_destroy(struct p4tc_table *table,
@@ -566,15 +576,15 @@ static int ___tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 		goto inc_p_ref;
 	}
 
+	spin_lock_bh(&table->tbl_prio_idr_lock);
+	idr_remove(&table->tbl_prio_idr, entry->prio);
+	spin_unlock_bh(&table->tbl_prio_idr_lock);
+
 	if (tcf_table_entry_destroy(table, entry) < 0) {
 		NL_SET_ERR_MSG(extack,
 			       "Unable to destroy referenced entry");
 		goto inc_entries_ref;
 	}
-
-	spin_lock_bh(&table->tbl_prio_idr_lock);
-	idr_remove(&table->tbl_prio_idr, entry->prio);
-	spin_unlock_bh(&table->tbl_prio_idr_lock);
 
 	goto out;
 
@@ -1134,6 +1144,8 @@ static int tcf_table_entry_cu(struct sk_buff *skb, struct net *net,
 		}
 		entry->num_acts = ret;
 	}
+
+	INIT_WORK(&entry->work, tcf_table_entry_del_act_work);
 
 	rcu_read_lock();
 	if (flags & NLM_F_REPLACE)
