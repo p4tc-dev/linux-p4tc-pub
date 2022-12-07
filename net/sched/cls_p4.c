@@ -265,6 +265,9 @@ static int p4_dump(struct net *net, struct tcf_proto *tp, void *fh,
 	if (!nest)
 		goto nla_put_failure;
 
+	if (nla_put_string(skb, TCA_P4_PNAME, head->pipeline->common.name))
+		goto nla_put_failure;
+
 	if (head->res.classid &&
 	    nla_put_u32(skb, TCA_P4_CLASSID, head->res.classid))
 		goto nla_put_failure;
