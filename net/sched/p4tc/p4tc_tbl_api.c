@@ -1652,6 +1652,7 @@ static int tcf_table_entry_dump(struct sk_buff *skb, struct nlattr *arg,
 						       table->tbl_id) <= 0) {
 				NL_SET_ERR_MSG(extack,
 					       "Failed to fill notification attributes for table entry");
+				kfree(ctx->iter);
 				goto out_nlmsg_trim;
 			}
 			nla_nest_end(skb, count);
