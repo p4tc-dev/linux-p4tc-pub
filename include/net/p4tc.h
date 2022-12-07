@@ -165,6 +165,8 @@ struct p4tc_table_key {
 	((GENMASK(P4TC_CONTROL_PERMISSIONS_C_BIT, P4TC_CONTROL_PERMISSIONS_D_BIT)) | \
 	P4TC_DATA_PERMISSIONS_R | P4TC_DATA_PERMISSIONS_X)
 
+#define P4TC_PERMISSIONS_UNINIT 0x400
+
 struct p4tc_table_defact {
 	struct tc_action **default_acts;
 	/* Will have 2 5 bits blocks containing CRUDX (Create, read, update,
@@ -190,6 +192,7 @@ struct p4tc_table {
 	struct rhltable                     tbl_entries;
 	struct tc_action                    **tbl_preacts;
 	struct tc_action                    **tbl_postacts;
+	struct p4tc_table_entry             *tbl_const_entry;
 	struct p4tc_table_defact __rcu      *tbl_default_hitact;
 	struct p4tc_table_defact __rcu      *tbl_default_missact;
 	struct p4tc_table_permissions __rcu *tbl_permissions;
@@ -284,6 +287,7 @@ struct p4tc_table_entry {
 	refcount_t                       entries_ref;
 	u16                              who_created;
 	u16                              who_updated;
+	u16                              permissions;
 };
 
 extern const struct nla_policy p4tc_root_policy[P4TC_ROOT_MAX + 1];
@@ -391,6 +395,16 @@ int tcf_table_try_set_state_ready(struct p4tc_pipeline *pipeline,
 				   struct netlink_ext_ack *extack);
 
 void tcf_table_entry_destroy_hash(void *ptr, void *arg);
+
+int tcf_table_const_entry_cu(struct net *net, struct nlattr *arg,
+			     struct p4tc_table_entry *entry,
+			     struct p4tc_pipeline *pipeline,
+			     struct p4tc_table *table,
+			     struct netlink_ext_ack *extack);
+int p4tca_table_get_entry_fill(struct sk_buff *skb,
+			       struct p4tc_table *table,
+			       struct p4tc_table_entry *entry,
+			       u32 tbl_id);
 
 struct p4tc_parser *tcf_parser_create(struct p4tc_pipeline *pipeline,
 				      const char *parser_name,

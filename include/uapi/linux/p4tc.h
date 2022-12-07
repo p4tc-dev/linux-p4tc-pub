@@ -229,6 +229,7 @@ enum {
 	P4TC_TABLE_POSTACTIONS, /* nested table postactions */
 	P4TC_TABLE_DEFAULT_HIT, /* nested default hit action attributes */
 	P4TC_TABLE_DEFAULT_MISS, /* nested default miss action attributes */
+	P4TC_TABLE_OPT_ENTRY, /* nested const table entry*/
 	__P4TC_TABLE_MAX
 };
 #define P4TC_TABLE_MAX __P4TC_TABLE_MAX
@@ -299,6 +300,7 @@ enum {
 	P4TC_ENTRY_WHODUNNIT, /* tells who's modifying the entry */
 	P4TC_ENTRY_CREATE_WHODUNNIT, /* tells who created the entry */
 	P4TC_ENTRY_UPDATE_WHODUNNIT, /* tells who updated the entry last */
+	P4TC_ENTRY_PERMISSIONS, /* entry CRUDX permissions */
 	P4TC_ENTRY_PAD,
 	__P4TC_ENTRY_MAX
 };

@@ -89,6 +89,7 @@ static const struct nla_policy p4tc_table_policy[P4TC_TABLE_MAX + 1] = {
 	[P4TC_TABLE_POSTACTIONS] = { .type = NLA_NESTED },
 	[P4TC_TABLE_DEFAULT_HIT] = { .type = NLA_NESTED },
 	[P4TC_TABLE_DEFAULT_MISS] = { .type = NLA_NESTED },
+	[P4TC_TABLE_OPT_ENTRY] = { .type = NLA_NESTED },
 };
 
 static const struct nla_policy p4tc_table_key_policy[P4TC_MAXPARSE_KEYS + 1] = {
@@ -229,6 +230,16 @@ static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 		rcu_read_unlock();
 		nla_nest_end(skb, default_missact);
 	}
+
+	if (table->tbl_const_entry) {
+		struct nlattr *const_nest;
+
+		const_nest = nla_nest_start(skb, P4TC_TABLE_OPT_ENTRY);
+		p4tca_table_get_entry_fill(skb, table, table->tbl_const_entry,
+					   table->tbl_id);
+		nla_nest_end(skb, const_nest);
+	}
+	kfree(table->tbl_const_entry);
 
 	if (nla_put(skb, P4TC_TABLE_INFO, sizeof(parm), &parm))
 		goto out_nlmsg_trim;
@@ -923,6 +934,7 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 		ret = -ENOMEM;
 		goto out;
 	}
+	table->tbl_const_entry = NULL;
 
 	table->common.p_id = pipeline->common.p_id;
 	strscpy(table->common.name, nla_data(tb[P4TC_TABLE_NAME]), TABLENAMSIZ);
@@ -1362,8 +1374,6 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 	}
 
 	if (parm && parm->tbl_flags & P4TC_TABLE_FLAGS_DEFAULT_KEY) {
-		struct p4tc_table_key *default_key;
-
 		if (!parm->tbl_default_key) {
 			NL_SET_ERR_MSG(extack, "default_key cannot be zero");
 			ret = -EINVAL;
@@ -1376,6 +1386,29 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 			ret = -EINVAL;
 			goto free_perm;
 		}
+	}
+
+	if (tb[P4TC_TABLE_OPT_ENTRY]) {
+		struct p4tc_table_entry *entry;
+
+		entry = kzalloc(GFP_KERNEL, sizeof(*entry));
+		if (!entry) {
+			ret = -ENOMEM;
+			goto free_perm;
+		}
+
+		/* Workaround to make this work */
+		ret = tcf_table_const_entry_cu(net, tb[P4TC_TABLE_OPT_ENTRY],
+					       entry, pipeline, table, extack);
+		if (ret < 0) {
+			kfree(entry);
+			goto free_perm;
+		}
+		table->tbl_const_entry = entry;
+	}
+
+	if (parm && parm->tbl_flags & P4TC_TABLE_FLAGS_DEFAULT_KEY) {
+		struct p4tc_table_key *default_key;
 
 		default_key = keys[parm->tbl_default_key - 1];
 		table->tbl_default_key = default_key->key_id;
