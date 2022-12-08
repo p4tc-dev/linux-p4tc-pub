@@ -37,6 +37,7 @@ struct p4tcmsg {
 #define P4TC_TABLE_FLAGS_MAX_ENTRIES 0x02
 #define P4TC_TABLE_FLAGS_MAX_MASKS 0x04
 #define P4TC_TABLE_FLAGS_DEFAULT_KEY 0x08
+#define P4TC_TABLE_FLAGS_PERMISSIONS 0x10
 
 #define P4TC_CONTROL_PERMISSIONS_C_BIT 9
 #define P4TC_CONTROL_PERMISSIONS_R_BIT 8
@@ -67,6 +68,8 @@ struct p4tc_table_parm {
 	__u32 tbl_default_key;
 	__u32 tbl_flags;
 	__u32 tbl_num_entries;
+	__u16 tbl_permissions;
+	__u16 PAD0;
 };
 
 /* Root attributes */
