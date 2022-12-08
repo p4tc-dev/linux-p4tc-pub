@@ -357,8 +357,9 @@ static int validate_hdrfield_operand(struct p4tc_cmd_operand *kopnd,
 				     struct netlink_ext_ack *extack)
 {
 	struct p4tc_header_field *hdrfield;
-	struct p4tc_parser *parser;
 	struct p4tc_pipeline *pipeline;
+	struct p4tc_parser *parser;
+	struct p4tc_type *typ;
 
 	pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
 	if (!pipeline) {
@@ -383,6 +384,19 @@ static int validate_hdrfield_operand(struct p4tc_cmd_operand *kopnd,
 	    hdrfield->datatype != kopnd->oper_datatype->typeid) {
 		NL_SET_ERR_MSG_MOD(extack, "Header field type mismatch");
 		return -EINVAL;
+	}
+	typ = kopnd->oper_datatype;
+	if (typ->ops->create_bitops) {
+		struct p4tc_type_mask_shift *mask_shift;
+
+		mask_shift = typ->ops->create_bitops(kopnd->oper_bitsize,
+						     kopnd->oper_bitstart,
+						     kopnd->oper_bitend,
+						     extack);
+		if (IS_ERR(mask_shift))
+			return PTR_ERR(mask_shift);
+
+		kopnd->oper_mask_shift = mask_shift;
 	}
 
 	kopnd->oper_value_ops = &hdrfield->h_value_ops;
@@ -458,6 +472,29 @@ static int validate_param_operand(struct p4tc_cmd_operand *kopnd,
 		return -EINVAL;
 	}
 
+	if (kopnd->oper_bitstart != 0) {
+		NL_SET_ERR_MSG_MOD(extack, "Param startbit must be zero");
+		return -EINVAL;
+	}
+
+	if (kopnd->oper_bitstart > kopnd->oper_bitend) {
+		NL_SET_ERR_MSG_MOD(extack, "Param startbit > endbit");
+		return -EINVAL;
+	}
+
+	if (t->ops->create_bitops) {
+		struct p4tc_type_mask_shift *mask_shift;
+
+		mask_shift = t->ops->create_bitops(kopnd->oper_bitsize,
+						   kopnd->oper_bitstart,
+						   kopnd->oper_bitend,
+						   extack);
+		if (IS_ERR(mask_shift))
+			return PTR_ERR(mask_shift);
+
+		kopnd->oper_mask_shift = mask_shift;
+	}
+
 	return 0;
 }
 
@@ -507,6 +544,19 @@ static int validate_reg_operand(struct p4tc_cmd_operand *kopnd,
 	if (kopnd->oper_bitstart > kopnd->oper_bitend) {
 		NL_SET_ERR_MSG_MOD(extack, "Register startbit > endbit");
 		return -EINVAL;
+	}
+
+	if (t->ops->create_bitops) {
+		struct p4tc_type_mask_shift *mask_shift;
+
+		mask_shift = t->ops->create_bitops(kopnd->oper_bitsize,
+						   kopnd->oper_bitstart,
+						   kopnd->oper_bitend,
+						   extack);
+		if (IS_ERR(mask_shift))
+			return PTR_ERR(mask_shift);
+
+		kopnd->oper_mask_shift = mask_shift;
 	}
 
 	/* Should never fail */
@@ -1908,6 +1958,19 @@ static int p4tc_cmds_copy_opnd(struct p4tc_cmd_operand **new_kopnd,
 						    extack);
 		if (IS_ERR(mask_shift))
 			return -EINVAL;
+	} else if (kopnd->oper_type == P4TC_OPER_HDRFIELD  ||
+		   kopnd->oper_type == P4TC_OPER_PARAM ||
+		   kopnd->oper_type == P4TC_OPER_REG) {
+		if (kopnd->oper_datatype->ops->create_bitops) {
+			struct p4tc_type_ops *ops = kopnd->oper_datatype->ops;
+
+			mask_shift = ops->create_bitops(kopnd->oper_bitsize,
+							kopnd->oper_bitstart,
+							kopnd->oper_bitend,
+							extack);
+			if (IS_ERR(mask_shift))
+				return -EINVAL;
+		}
 	}
 
 	_new_kopnd->path_or_value = kzalloc(kopnd->path_or_value_sz,
