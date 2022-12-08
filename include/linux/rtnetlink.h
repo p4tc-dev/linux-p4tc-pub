@@ -72,6 +72,18 @@ static inline bool lockdep_rtnl_is_held(void)
 	rcu_dereference_bh_check(p, lockdep_rtnl_is_held())
 
 /**
+ * rcu_replace_pointer_rtnl - replace an RCU pointer under rtnl_lock, returning
+ * its old value
+ * @rcu_ptr: RCU pointer, whose old value is returned
+ * @ptr: regular pointer
+ *
+ * Perform a replacement under rtnl_lock, where @rcu_ptr is an RCU-annotated
+ * pointer. The old value of @rcu_ptr is returned, and @rcu_ptr is set to @ptr
+ */
+#define rcu_replace_pointer_rtnl(rcu_ptr, ptr) \
+	rcu_replace_pointer(rcu_ptr, ptr, lockdep_rtnl_is_held())
+
+/**
  * rtnl_dereference - fetch RCU pointer when updates are prevented by RTNL
  * @p: The pointer to read, prior to dereferencing
  *
