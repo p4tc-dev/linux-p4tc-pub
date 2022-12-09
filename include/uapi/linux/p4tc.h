@@ -37,6 +37,7 @@ struct p4tcmsg {
 #define P4TC_TABLE_FLAGS_MAX_ENTRIES 0x02
 #define P4TC_TABLE_FLAGS_MAX_MASKS 0x04
 #define P4TC_TABLE_FLAGS_DEFAULT_KEY 0x08
+#define P4TC_TABLE_FLAGS_PERMISSIONS 0x10
 
 #define P4TC_CONTROL_PERMISSIONS_C_BIT 9
 #define P4TC_CONTROL_PERMISSIONS_R_BIT 8
@@ -67,6 +68,8 @@ struct p4tc_table_parm {
 	__u32 tbl_default_key;
 	__u32 tbl_flags;
 	__u32 tbl_num_entries;
+	__u16 tbl_permissions;
+	__u16 PAD0;
 };
 
 /* Root attributes */
@@ -226,6 +229,7 @@ enum {
 	P4TC_TABLE_POSTACTIONS, /* nested table postactions */
 	P4TC_TABLE_DEFAULT_HIT, /* nested default hit action attributes */
 	P4TC_TABLE_DEFAULT_MISS, /* nested default miss action attributes */
+	P4TC_TABLE_OPT_ENTRY, /* nested const table entry*/
 	__P4TC_TABLE_MAX
 };
 #define P4TC_TABLE_MAX __P4TC_TABLE_MAX
@@ -296,6 +300,7 @@ enum {
 	P4TC_ENTRY_WHODUNNIT, /* tells who's modifying the entry */
 	P4TC_ENTRY_CREATE_WHODUNNIT, /* tells who created the entry */
 	P4TC_ENTRY_UPDATE_WHODUNNIT, /* tells who updated the entry last */
+	P4TC_ENTRY_PERMISSIONS, /* entry CRUDX permissions */
 	P4TC_ENTRY_PAD,
 	__P4TC_ENTRY_MAX
 };

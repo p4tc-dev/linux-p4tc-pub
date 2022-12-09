@@ -161,6 +161,12 @@ struct p4tc_table_key {
 #define P4TC_CONTROL_PERMISSIONS (GENMASK(9, 5))
 #define P4TC_DATA_PERMISSIONS (GENMASK(4, 0))
 
+#define P4TC_TABLE_PERMISSIONS \
+	((GENMASK(P4TC_CONTROL_PERMISSIONS_C_BIT, P4TC_CONTROL_PERMISSIONS_D_BIT)) | \
+	P4TC_DATA_PERMISSIONS_R | P4TC_DATA_PERMISSIONS_X)
+
+#define P4TC_PERMISSIONS_UNINIT 0x400
+
 struct p4tc_table_defact {
 	struct tc_action **default_acts;
 	/* Will have 2 5 bits blocks containing CRUDX (Create, read, update,
@@ -172,33 +178,40 @@ struct p4tc_table_defact {
 	struct rcu_head  rcu;
 };
 
+struct p4tc_table_permissions {
+	__u16           permissions;
+	struct rcu_head rcu;
+};
+
 struct p4tc_table {
-	struct p4tc_template_common    common;
-	struct idr                     tbl_keys_idr;
-	struct idr                     tbl_masks_idr;
-	struct idr                     tbl_prio_idr;
-	struct p4tc_cmd_value_ops      tbl_value_ops;
-	struct rhltable                tbl_entries;
-	struct tc_action               **tbl_preacts;
-	struct tc_action               **tbl_postacts;
-	struct p4tc_table_defact __rcu *tbl_default_hitact;
-	struct p4tc_table_defact __rcu *tbl_default_missact;
-	spinlock_t                     tbl_masks_idr_lock;
-	spinlock_t                     tbl_prio_idr_lock;
-	int                            tbl_num_postacts;
-	int                            tbl_num_preacts;
-	u32                            tbl_count;
-	u32                            tbl_curr_count;
-	u32                            tbl_keysz;
-	u32                            tbl_id;
-	u32                            tbl_keys_count;
-	u32                            tbl_max_entries;
-	u32                            tbl_max_masks;
-	u32                            tbl_curr_used_entries;
-	u32                            tbl_default_key;
-	refcount_t                     tbl_ctrl_ref;
-	refcount_t                     tbl_ref;
-	refcount_t                     tbl_entries_ref;
+	struct p4tc_template_common         common;
+	struct idr                          tbl_keys_idr;
+	struct idr                          tbl_masks_idr;
+	struct idr                          tbl_prio_idr;
+	struct p4tc_cmd_value_ops           tbl_value_ops;
+	struct rhltable                     tbl_entries;
+	struct tc_action                    **tbl_preacts;
+	struct tc_action                    **tbl_postacts;
+	struct p4tc_table_entry             *tbl_const_entry;
+	struct p4tc_table_defact __rcu      *tbl_default_hitact;
+	struct p4tc_table_defact __rcu      *tbl_default_missact;
+	struct p4tc_table_permissions __rcu *tbl_permissions;
+	spinlock_t                          tbl_masks_idr_lock;
+	spinlock_t                          tbl_prio_idr_lock;
+	int                                 tbl_num_postacts;
+	int                                 tbl_num_preacts;
+	u32                                 tbl_count;
+	u32                                 tbl_curr_count;
+	u32                                 tbl_keysz;
+	u32                                 tbl_id;
+	u32                                 tbl_keys_count;
+	u32                                 tbl_max_entries;
+	u32                                 tbl_max_masks;
+	u32                                 tbl_curr_used_entries;
+	u32                                 tbl_default_key;
+	refcount_t                          tbl_ctrl_ref;
+	refcount_t                          tbl_ref;
+	refcount_t                          tbl_entries_ref;
 };
 
 extern const struct p4tc_template_ops p4tc_table_ops;
@@ -262,6 +275,7 @@ struct p4tc_table_entry_mask {
 
 struct p4tc_table_entry {
 	struct p4tc_table_entry_key      key;
+	struct work_struct	         work;
 	struct p4tc_table_entry_tm __rcu *tm;
 	u32                              prio;
 	u32                              mask_id;
@@ -273,6 +287,7 @@ struct p4tc_table_entry {
 	refcount_t                       entries_ref;
 	u16                              who_created;
 	u16                              who_updated;
+	u16                              permissions;
 };
 
 extern const struct nla_policy p4tc_root_policy[P4TC_ROOT_MAX + 1];
@@ -380,6 +395,16 @@ int tcf_table_try_set_state_ready(struct p4tc_pipeline *pipeline,
 				   struct netlink_ext_ack *extack);
 
 void tcf_table_entry_destroy_hash(void *ptr, void *arg);
+
+int tcf_table_const_entry_cu(struct net *net, struct nlattr *arg,
+			     struct p4tc_table_entry *entry,
+			     struct p4tc_pipeline *pipeline,
+			     struct p4tc_table *table,
+			     struct netlink_ext_ack *extack);
+int p4tca_table_get_entry_fill(struct sk_buff *skb,
+			       struct p4tc_table *table,
+			       struct p4tc_table_entry *entry,
+			       u32 tbl_id);
 
 struct p4tc_parser *tcf_parser_create(struct p4tc_pipeline *pipeline,
 				      const char *parser_name,

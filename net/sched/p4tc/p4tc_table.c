@@ -89,6 +89,7 @@ static const struct nla_policy p4tc_table_policy[P4TC_TABLE_MAX + 1] = {
 	[P4TC_TABLE_POSTACTIONS] = { .type = NLA_NESTED },
 	[P4TC_TABLE_DEFAULT_HIT] = { .type = NLA_NESTED },
 	[P4TC_TABLE_DEFAULT_MISS] = { .type = NLA_NESTED },
+	[P4TC_TABLE_OPT_ENTRY] = { .type = NLA_NESTED },
 };
 
 static const struct nla_policy p4tc_table_key_policy[P4TC_MAXPARSE_KEYS + 1] = {
@@ -123,6 +124,7 @@ static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 {
 	unsigned char *b = skb_tail_pointer(skb);
 	int i = 1;
+	struct p4tc_table_permissions *tbl_perm;
 	struct nlattr *default_missact;
 	struct nlattr *default_hitact;
 	unsigned long tbl_id, tmp;
@@ -149,6 +151,9 @@ static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 	parm.tbl_max_masks = table->tbl_max_masks;
 	parm.tbl_default_key = table->tbl_default_key;
 	parm.tbl_num_entries = refcount_read(&table->tbl_entries_ref) - 1;
+
+	tbl_perm = rcu_dereference_rtnl(table->tbl_permissions);
+	parm.tbl_permissions = tbl_perm->permissions;
 
 	nest_key = nla_nest_start(skb, P4TC_TABLE_KEYS);
 	idr_for_each_entry_ul(&table->tbl_keys_idr, key, tmp, tbl_id) {
@@ -225,6 +230,16 @@ static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 		rcu_read_unlock();
 		nla_nest_end(skb, default_missact);
 	}
+
+	if (table->tbl_const_entry) {
+		struct nlattr *const_nest;
+
+		const_nest = nla_nest_start(skb, P4TC_TABLE_OPT_ENTRY);
+		p4tca_table_get_entry_fill(skb, table, table->tbl_const_entry,
+					   table->tbl_id);
+		nla_nest_end(skb, const_nest);
+	}
+	kfree(table->tbl_const_entry);
 
 	if (nla_put(skb, P4TC_TABLE_INFO, sizeof(parm), &parm))
 		goto out_nlmsg_trim;
@@ -311,6 +326,7 @@ static inline int _tcf_table_put(struct net *net,
 				 struct netlink_ext_ack *extack)
 {
 	bool default_act_del = false;
+	struct p4tc_table_permissions *perm;
 	unsigned long tmp, tbl_id;
 	struct p4tc_table_key *key;
 
@@ -412,6 +428,9 @@ static inline int _tcf_table_put(struct net *net,
 	idr_destroy(&table->tbl_keys_idr);
 	idr_destroy(&table->tbl_masks_idr);
 	idr_destroy(&table->tbl_prio_idr);
+
+	perm = rcu_replace_pointer_rtnl(table->tbl_permissions, NULL);
+	kfree_rcu(perm, rcu);
 
 	idr_remove(&pipeline->p_tbl_idr, table->tbl_id);
 	pipeline->curr_tables -= 1;
@@ -915,6 +934,7 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 		ret = -ENOMEM;
 		goto out;
 	}
+	table->tbl_const_entry = NULL;
 
 	table->common.p_id = pipeline->common.p_id;
 	strscpy(table->common.name, nla_data(tb[P4TC_TABLE_NAME]), TABLENAMSIZ);
@@ -983,6 +1003,42 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 		table->tbl_max_masks = P4TC_DEFAULT_TMASKS;
 	}
 
+	if (parm->tbl_flags & P4TC_TABLE_FLAGS_PERMISSIONS) {
+		if (parm->tbl_permissions > P4TC_MAX_PERMISSION) {
+			NL_SET_ERR_MSG(extack,
+				       "Permission may only have 10 bits turned on");
+			ret = -EINVAL;
+			goto free;
+		}
+		if (!(parm->tbl_permissions & P4TC_DATA_PERMISSIONS_X)) {
+			NL_SET_ERR_MSG(extack,
+				       "Table must have execute permissions");
+			ret = -EINVAL;
+			goto free;
+		}
+		if (!(parm->tbl_permissions & P4TC_DATA_PERMISSIONS_R)) {
+			NL_SET_ERR_MSG(extack,
+				       "Data path read permissions must be set");
+			ret = -EINVAL;
+			goto free;
+		}
+		table->tbl_permissions = kzalloc(sizeof(*table->tbl_permissions),
+						 GFP_KERNEL);
+		if (!table->tbl_permissions) {
+			ret = -ENOMEM;
+			goto free;
+		}
+		table->tbl_permissions->permissions = parm->tbl_permissions;
+	} else {
+		table->tbl_permissions = kzalloc(sizeof(*table->tbl_permissions),
+						 GFP_KERNEL);
+		if (!table->tbl_permissions) {
+			ret = -ENOMEM;
+			goto free;
+		}
+		table->tbl_permissions->permissions = P4TC_TABLE_PERMISSIONS;
+	}
+
 	refcount_set(&table->tbl_ref, 1);
 	refcount_set(&table->tbl_ctrl_ref, 1);
 
@@ -993,7 +1049,7 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 				    GFP_KERNEL);
 		if (ret < 0) {
 			NL_SET_ERR_MSG(extack, "Unable to allocate table id");
-			goto free;
+			goto free_permissions;
 		}
 	} else {
 		table->tbl_id = 1;
@@ -1001,7 +1057,7 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 				    UINT_MAX, GFP_KERNEL);
 		if (ret < 0) {
 			NL_SET_ERR_MSG(extack, "Unable to allocate table id");
-			goto free;
+			goto free_permissions;
 		}
 	}
 
@@ -1157,6 +1213,9 @@ preactions_destroy:
 idr_rm:
 	idr_remove(&pipeline->p_tbl_idr, table->tbl_id);
 
+free_permissions:
+	kfree(table->tbl_permissions);
+
 free:
 	kfree(table);
 
@@ -1167,13 +1226,14 @@ out:
 static struct p4tc_table *
 tcf_table_update(struct net *net, struct nlattr **tb,
 		 u32 tbl_id, struct p4tc_pipeline *pipeline,
-		 struct netlink_ext_ack *extack)
+		 u32 flags, struct netlink_ext_ack *extack)
 {
 	struct p4tc_table_key *keys[P4TC_MAXPARSE_KEYS] = {NULL};
 	int num_postacts = 0, num_preacts = 0, num_keys = 0;
 	int cu_res[P4TC_MAXPARSE_KEYS] = {P4TC_P_UNSPEC};
 	struct p4tc_table_defact *default_hitact = NULL;
 	struct p4tc_table_defact *default_missact = NULL;
+	struct p4tc_table_permissions *perm = NULL;
 	struct p4tc_table_parm *parm = NULL;
 	struct tc_action **postacts = NULL;
 	struct tc_action **preacts = NULL;
@@ -1284,23 +1344,71 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 			}
 			table->tbl_max_masks = parm->tbl_max_masks;
 		}
+		if (parm->tbl_flags & P4TC_TABLE_FLAGS_PERMISSIONS) {
+			if (parm->tbl_permissions > P4TC_MAX_PERMISSION) {
+				NL_SET_ERR_MSG(extack,
+					       "Permission may only have 10 bits turned on");
+				ret = -EINVAL;
+				goto keys_destroy;
+			}
+			if (!(parm->tbl_permissions & P4TC_DATA_PERMISSIONS_X)) {
+				NL_SET_ERR_MSG(extack,
+					       "Table must have execute permissions");
+				ret = -EINVAL;
+				goto keys_destroy;
+			}
+			if (!(parm->tbl_permissions & P4TC_DATA_PERMISSIONS_R)) {
+				NL_SET_ERR_MSG(extack,
+					       "Data path read permissions must be set");
+				ret = -EINVAL;
+				goto keys_destroy;
+			}
+
+			perm = kzalloc(sizeof(*perm), GFP_KERNEL);
+			if (!perm) {
+				ret = -ENOMEM;
+				goto keys_destroy;
+			}
+			perm->permissions = parm->tbl_permissions;
+		}
 	}
 
 	if (parm && parm->tbl_flags & P4TC_TABLE_FLAGS_DEFAULT_KEY) {
-		struct p4tc_table_key *default_key;
-
 		if (!parm->tbl_default_key) {
 			NL_SET_ERR_MSG(extack, "default_key cannot be zero");
 			ret = -EINVAL;
-			goto keys_destroy;
+			goto free_perm;
 		}
 
 		if (num_keys < parm->tbl_default_key) {
 			NL_SET_ERR_MSG(extack,
 				       "default_key field is inconsistent with keys nested field");
 			ret = -EINVAL;
-			goto keys_destroy;
+			goto free_perm;
 		}
+	}
+
+	if (tb[P4TC_TABLE_OPT_ENTRY]) {
+		struct p4tc_table_entry *entry;
+
+		entry = kzalloc(GFP_KERNEL, sizeof(*entry));
+		if (!entry) {
+			ret = -ENOMEM;
+			goto free_perm;
+		}
+
+		/* Workaround to make this work */
+		ret = tcf_table_const_entry_cu(net, tb[P4TC_TABLE_OPT_ENTRY],
+					       entry, pipeline, table, extack);
+		if (ret < 0) {
+			kfree(entry);
+			goto free_perm;
+		}
+		table->tbl_const_entry = entry;
+	}
+
+	if (parm && parm->tbl_flags & P4TC_TABLE_FLAGS_DEFAULT_KEY) {
+		struct p4tc_table_key *default_key;
 
 		default_key = keys[parm->tbl_default_key - 1];
 		table->tbl_default_key = default_key->key_id;
@@ -1350,7 +1458,15 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 	if (tb[P4TC_TABLE_KEYS])
 		tcf_table_key_replace_many(keys, table, cu_res, num_keys);
 
+	if (perm) {
+		perm = rcu_replace_pointer_rtnl(table->tbl_permissions, perm);
+		kfree_rcu(perm, rcu);
+	}
+
 	return table;
+
+free_perm:
+	kfree(perm);
 
 keys_destroy:
 	if (tb[P4TC_TABLE_KEYS])
@@ -1396,7 +1512,16 @@ static bool tcf_table_check_runtime_udpate(struct nlmsghdr *n,
 	    !(n->nlmsg_flags & NLM_F_REPLACE))
 		return false;
 
-	for (i = P4TC_TABLE_INFO; i < P4TC_TABLE_MAX; i++) {
+	if (tb[P4TC_TABLE_INFO]) {
+		struct p4tc_table_parm *info;
+
+		info = nla_data(tb[P4TC_TABLE_INFO]);
+		if ((info->tbl_flags & ~P4TC_TABLE_FLAGS_PERMISSIONS) ||
+		    !(info->tbl_flags & P4TC_TABLE_FLAGS_PERMISSIONS))
+			return false;
+	}
+
+	for (i = P4TC_TABLE_PREACTIONS; i < P4TC_TABLE_MAX; i++) {
 		if (i != P4TC_TABLE_DEFAULT_HIT && i != P4TC_TABLE_DEFAULT_MISS && tb[i])
 			return false;
 	}
@@ -1430,7 +1555,8 @@ tcf_table_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	}
 
 	if (n->nlmsg_flags & NLM_F_REPLACE)
-		table = tcf_table_update(net, tb, tbl_id, pipeline, extack);
+		table = tcf_table_update(net, tb, tbl_id, pipeline,
+					 n->nlmsg_flags, extack);
 	else
 		table = tcf_table_create(net, tb, tbl_id, pipeline, extack);
 
