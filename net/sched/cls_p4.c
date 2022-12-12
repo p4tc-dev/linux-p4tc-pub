@@ -32,8 +32,8 @@ static int p4_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 	struct cls_p4_head *head = rcu_dereference_bh(tp->root);
 	struct p4tc_pipeline *pipeline = head->pipeline;
 	struct tcf_result p4res = { };
+	int rc = 0;
 	struct p4tc_skb_ext *p4tc_ext;
-	int rc;
 
 	if (unlikely(!head)) {
 		pr_err("P4 classifier not found\n");
@@ -47,7 +47,12 @@ static int p4_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 	}
 
 	if (refcount_read(&pipeline->p_hdrs_used) > 1)
-		tcf_skb_parse(skb, p4tc_ext, pipeline->parser);
+		rc = tcf_skb_parse(skb, p4tc_ext, pipeline->parser);
+
+	if (rc > 0) {
+		pr_warn("P4 parser error %d\n", rc);
+		return TC_ACT_SHOT;
+	}
 
 	rc = tcf_action_exec(skb, pipeline->preacts, pipeline->num_preacts,
 			     &p4res);
@@ -263,6 +268,9 @@ static int p4_dump(struct net *net, struct tcf_proto *tp, void *fh,
 
 	nest = nla_nest_start(skb, TCA_OPTIONS);
 	if (!nest)
+		goto nla_put_failure;
+
+	if (nla_put_string(skb, TCA_P4_PNAME, head->pipeline->common.name))
 		goto nla_put_failure;
 
 	if (head->res.classid &&

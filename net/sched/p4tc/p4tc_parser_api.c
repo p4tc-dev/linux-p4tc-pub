@@ -106,8 +106,9 @@ int tcf_skb_parse(struct sk_buff *skb, struct p4tc_skb_ext *p4tc_skb_ext,
 		  struct p4tc_parser *parser)
 {
 	void *hdr = skb_mac_header(skb);
+	size_t pktlen = skb_mac_header_len(skb) + skb->len;
 
-	return __kparser_parse(parser->kparser, hdr, skb->len,
+	return __kparser_parse(parser->kparser, hdr, pktlen,
 			       p4tc_skb_ext->p4tc_ext->hdrs, HEADER_MAX_LEN);
 }
 
