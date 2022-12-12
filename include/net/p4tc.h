@@ -423,6 +423,9 @@ int tcf_skb_parse(struct sk_buff *skb, struct p4tc_skb_ext *p4tc_ext,
 		  struct p4tc_parser *parser);
 struct p4tc_header_field *tcf_hdrfield_find_byid(struct p4tc_parser *parser,
 						 const u32 hdrfield_id);
+struct p4tc_header_field *
+tcf_hdrfield_find_byany(struct p4tc_parser *parser, const char *hdrfield_name,
+			u32 hdrfield_id, struct netlink_ext_ack *extack);
 bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
 				struct p4tc_header_field *hdrfield);
 
