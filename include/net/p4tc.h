@@ -384,8 +384,8 @@ struct p4tc_act_param *tcf_param_find_byid(struct idr *params_idr,
 					   const u32 param_id);
 
 struct p4tc_table *
-tcf_table_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
-		      const u32 tbl_id, struct netlink_ext_ack *extack);
+tcf_table_find_byany(struct p4tc_pipeline *pipeline, const char *tblname,
+		     const u32 tbl_id, struct netlink_ext_ack *extack);
 struct p4tc_table *tcf_table_find_byid(struct p4tc_pipeline *pipeline,
 					      const u32 tbl_id);
 struct p4tc_table_key *tcf_table_key_find(struct p4tc_table *table,
