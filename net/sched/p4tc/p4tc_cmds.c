@@ -115,7 +115,7 @@ static int copy_u2k_operand(struct p4tc_u_operand *uopnd,
 	struct p4tc_type *type;
 
 	type = p4type_find_byid(uopnd->oper_datatype);
-	if (!type) {
+	if (kopnd->oper_flags & DATA_HAS_TYPE_INFO && !type) {
 		NL_SET_ERR_MSG_MOD(extack, "Invalid operand type");
 		return -EINVAL;
 	}
@@ -152,10 +152,24 @@ static int p4tc_cmds_fill_operands_list(struct sk_buff *skb,
 			    sizeof(struct p4tc_u_operand), &oper))
 			goto nla_put_failure;
 
-		plen = cursor->path_or_value_sz;
+		if (cursor->path_or_value &&
+		    nla_put_string(skb, P4TC_CMD_OPND_PATH, cursor->path_or_value))
+			goto nla_put_failure;
 
-		if (plen && nla_put(skb, P4TC_CMD_OPND_PATH, plen,
-				    cursor->path_or_value))
+		if (cursor->path_or_value_extra &&
+		    nla_put_string(skb, P4TC_CMD_OPND_PATH_EXTRA,
+				   cursor->path_or_value_extra))
+			goto nla_put_failure;
+
+		if (cursor->print_prefix &&
+		    nla_put_string(skb, P4TC_CMD_OPND_PREFIX,
+				   cursor->print_prefix))
+			goto nla_put_failure;
+
+		plen = cursor->immedv_large_sz;
+
+		if (plen && nla_put(skb, P4TC_CMD_OPND_LARGE_CONSTANT, plen,
+				    cursor->immedv_large))
 			goto nla_put_failure;
 		nla_nest_end(skb, nest_count);
 		i++;
@@ -258,7 +272,7 @@ static int validate_metadata_operand(struct p4tc_cmd_operand *kopnd,
 							     extack);
 			} else {
 				err = type_ops->validate_p4t(container_type,
-							     kopnd->path_or_value,
+							     kopnd->immedv_large,
 							     kopnd->oper_bitstart,
 							     kopnd->oper_bitend,
 							     extack);
@@ -276,23 +290,17 @@ static int validate_metadata_operand(struct p4tc_cmd_operand *kopnd,
 	return 0;
 }
 
-static int validate_table_operand(struct p4tc_cmd_operand *kopnd,
+static int validate_table_operand(struct p4tc_act *act,
+				  struct p4tc_cmd_operand *kopnd,
 				  struct netlink_ext_ack *extack)
 {
 	struct p4tc_table *table;
-	struct p4tc_pipeline *pipeline;
 
-	pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
-	if (!pipeline) {
-		NL_SET_ERR_MSG_MOD(extack, "Unable to find pipeline");
-		return -EINVAL;
-	}
-
-	table = tcf_table_find_byid(pipeline, kopnd->immedv);
-	if (!table) {
-		NL_SET_ERR_MSG_MOD(extack, "Unknown table");
-		return -EINVAL;
-	}
+	table = tcf_table_find_byany(act->pipeline,
+				     (const char*)kopnd->path_or_value,
+				     kopnd->immedv, extack);
+	if (IS_ERR(table))
+		return PTR_ERR(table);
 
 	if (kopnd->immedv2) {
 		if (!tcf_table_key_find(table, kopnd->immedv2)) {
@@ -308,82 +316,106 @@ static int validate_table_operand(struct p4tc_cmd_operand *kopnd,
 	return 0;
 }
 
-static int validate_key_operand(struct p4tc_cmd_operand *kopnd,
+static int validate_key_operand(struct p4tc_act *act,
+				struct p4tc_cmd_operand *kopnd,
 				struct netlink_ext_ack *extack)
 {
 	struct p4tc_type *t = kopnd->oper_datatype;
 	struct p4tc_table *table;
-	struct p4tc_pipeline *pipeline;
 
-	pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
-	if (!pipeline) {
-		NL_SET_ERR_MSG_MOD(extack, "Unable to find pipeline");
-		return -EINVAL;
-	}
+	kopnd->pipeid = act->pipeline->common.p_id;
 
-	table = tcf_table_find_byid(pipeline, kopnd->immedv);
-	if (!table) {
-		NL_SET_ERR_MSG_MOD(extack, "Unknown table");
-		return -EINVAL;
-	}
+	table = tcf_table_find_byany(act->pipeline,
+				     (const char*)kopnd->path_or_value,
+				     kopnd->immedv, extack);
+	if (IS_ERR(table))
+		return PTR_ERR(table);
+	kopnd->immedv = table->tbl_id;
 
 	if (!tcf_table_key_find(table, kopnd->immedv2)) {
 		NL_SET_ERR_MSG_MOD(extack, "Unknown key id");
 		return -EINVAL;
 	}
 
-	if (kopnd->oper_bitstart != 0) {
-		NL_SET_ERR_MSG_MOD(extack, "Key bitstart must be zero");
-		return -EINVAL;
-	}
+	if (kopnd->oper_flags & DATA_HAS_TYPE_INFO) {
+		if (kopnd->oper_bitstart != 0) {
+			NL_SET_ERR_MSG_MOD(extack, "Key bitstart must be zero");
+			return -EINVAL;
+		}
 
-	if (t->typeid != P4T_KEY) {
-		NL_SET_ERR_MSG_MOD(extack, "Key type must be key");
-		return -EINVAL;
-	}
+		if (t->typeid != P4T_KEY) {
+			NL_SET_ERR_MSG_MOD(extack, "Key type must be key");
+			return -EINVAL;
+		}
 
-	if (table->tbl_keysz != kopnd->oper_bitsize) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Type size doesn't match table keysz");
-		return -EINVAL;
-	}
+		if (table->tbl_keysz != kopnd->oper_bitsize) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "Type size doesn't match table keysz");
+			return -EINVAL;
+		}
 
-	t->bitsz = kopnd->oper_bitsize;
+		t->bitsz = kopnd->oper_bitsize;
+	} else {
+		t = p4type_find_byid(P4T_KEY);
+		if (!t)
+			return -EINVAL;
+
+		kopnd->oper_bitstart = 0;
+		kopnd->oper_bitend = table->tbl_keysz - 1;
+		kopnd->oper_bitsize = table->tbl_keysz;
+		kopnd->oper_datatype = t;
+	}
 
 	return 0;
 }
 
-static int validate_hdrfield_operand(struct p4tc_cmd_operand *kopnd,
-				     struct netlink_ext_ack *extack)
+static int validate_hdrfield_operand_type(struct p4tc_cmd_operand *kopnd,
+					  struct p4tc_header_field *hdrfield,
+					  struct netlink_ext_ack *extack)
 {
-	struct p4tc_header_field *hdrfield;
-	struct p4tc_pipeline *pipeline;
-	struct p4tc_parser *parser;
-	struct p4tc_type *typ;
-
-	pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
-	if (!pipeline) {
-		NL_SET_ERR_MSG_MOD(extack, "Unable to find pipeline");
-		return -EINVAL;
-	}
-
-	parser = tcf_parser_find_byid(pipeline, kopnd->immedv);
-	if (!parser) {
-		NL_SET_ERR_MSG_MOD(extack, "Unknown parser inst id");
-		return -EINVAL;
-	}
-
-	hdrfield = tcf_hdrfield_find_byid(parser, kopnd->immedv2);
-	if (!hdrfield) {
-		NL_SET_ERR_MSG_MOD(extack, "Unknown header field id");
-		return -EINVAL;
-	}
-
 	if (hdrfield->startbit != kopnd->oper_bitstart ||
 	    hdrfield->endbit != kopnd->oper_bitend ||
 	    hdrfield->datatype != kopnd->oper_datatype->typeid) {
 		NL_SET_ERR_MSG_MOD(extack, "Header field type mismatch");
 		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int validate_hdrfield_operand(struct p4tc_act *act,
+				     struct p4tc_cmd_operand *kopnd,
+				     struct netlink_ext_ack *extack)
+{
+	struct p4tc_header_field *hdrfield;
+	struct p4tc_parser *parser;
+	struct p4tc_type *typ;
+
+	kopnd->pipeid = act->pipeline->common.p_id;
+
+	parser = tcf_parser_find_byany(act->pipeline,
+				       (const char*)kopnd->path_or_value,
+				       kopnd->immedv, extack);
+	if (IS_ERR(parser))
+		return PTR_ERR(parser);
+	kopnd->immedv = parser->parser_inst_id;
+
+	hdrfield = tcf_hdrfield_find_byany(parser,
+					   (const char*)kopnd->path_or_value_extra,
+					   kopnd->immedv2, extack);
+	if (IS_ERR(hdrfield))
+		return PTR_ERR(hdrfield);
+	kopnd->immedv2 = hdrfield->hdr_field_id;
+
+	if (kopnd->oper_flags & DATA_HAS_TYPE_INFO) {
+		if (validate_hdrfield_operand_type(kopnd, hdrfield, extack) < 0)
+			return -EINVAL;
+	} else {
+		kopnd->oper_bitstart = hdrfield->startbit;
+		kopnd->oper_bitend = hdrfield->endbit;
+		kopnd->oper_datatype = p4type_find_byid(hdrfield->datatype);
+		kopnd->oper_bitsize = hdrfield->endbit - hdrfield->startbit + 1;
+		kopnd->oper_cbitsize = kopnd->oper_datatype->container_bitsz;
 	}
 	typ = kopnd->oper_datatype;
 	if (typ->ops->create_bitops) {
@@ -401,7 +433,7 @@ static int validate_hdrfield_operand(struct p4tc_cmd_operand *kopnd,
 
 	kopnd->oper_value_ops = &hdrfield->h_value_ops;
 
-	refcount_inc(&pipeline->p_hdrs_used);
+	refcount_inc(&act->pipeline->p_hdrs_used);
 
 	return 0;
 }
@@ -435,41 +467,40 @@ int validate_dev_operand(struct net *net, struct p4tc_cmd_operand *kopnd,
 	return 0;
 }
 
-static int validate_param_operand(struct p4tc_cmd_operand *kopnd,
+static int validate_param_operand(struct p4tc_act *act,
+				  struct p4tc_cmd_operand *kopnd,
 				  struct netlink_ext_ack *extack)
 {
-	struct p4tc_pipeline *pipeline;
 	struct p4tc_act_param *param;
 	struct p4tc_type *t;
-	struct p4tc_act *act;
 
-	pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
-	if (!pipeline) {
-		NL_SET_ERR_MSG_MOD(extack, "Unable to find pipeline");
-		return -EINVAL;
-	}
+	param = tcf_param_find_byany(act,
+				    (const char*)kopnd->path_or_value,
+				    kopnd->immedv2, extack);
 
-	act = tcf_action_find_byid(pipeline, kopnd->immedv);
-	if (!act) {
-		NL_SET_ERR_MSG_MOD(extack, "Unknown action template id");
-		return -EINVAL;
-	}
+	if (IS_ERR(param))
+		return PTR_ERR(param);
 
-	param = tcf_param_find_byid(&act->params_idr, kopnd->immedv2);
-	if (!param) {
-		NL_SET_ERR_MSG_MOD(extack, "Unknown param id");
-		return -EINVAL;
-	}
+	kopnd->pipeid = act->pipeline->common.p_id;
+	kopnd->immedv = act->a_id;
+	kopnd->immedv2 = param->id;
 
 	t = p4type_find_byid(param->type);
-	if (t->typeid != kopnd->oper_datatype->typeid) {
-		NL_SET_ERR_MSG_MOD(extack, "Param type mismatch");
-		return -EINVAL;
-	}
+	if (kopnd->oper_flags & DATA_HAS_TYPE_INFO) {
+		if (t->typeid != kopnd->oper_datatype->typeid) {
+			NL_SET_ERR_MSG_MOD(extack, "Param type mismatch");
+			return -EINVAL;
+		}
 
-	if (t->bitsz != kopnd->oper_datatype->bitsz) {
-		NL_SET_ERR_MSG_MOD(extack, "Param size mismatch");
-		return -EINVAL;
+		if (t->bitsz != kopnd->oper_datatype->bitsz) {
+			NL_SET_ERR_MSG_MOD(extack, "Param size mismatch");
+			return -EINVAL;
+		}
+	} else {
+		kopnd->oper_datatype = t;
+		kopnd->oper_bitstart = 0;
+		kopnd->oper_bitend = t->bitsz - 1;
+		kopnd->oper_bitsize = t->bitsz;
 	}
 
 	if (kopnd->oper_bitstart != 0) {
@@ -509,41 +540,44 @@ static int validate_res_operand(struct p4tc_cmd_operand *kopnd,
 	return -EINVAL;
 }
 
-static int validate_reg_operand(struct p4tc_cmd_operand *kopnd,
+static int validate_reg_operand(struct p4tc_act *act,
+				struct p4tc_cmd_operand *kopnd,
 				struct netlink_ext_ack *extack)
 {
-	struct p4tc_pipeline *pipeline;
 	struct p4tc_register *reg;
 	struct p4tc_type *t;
 
-	pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
-	if (!pipeline) {
-		NL_SET_ERR_MSG_MOD(extack, "Unable to find pipeline");
-		return -EINVAL;
-	}
+	reg = tcf_register_find_byany(act->pipeline,
+				      (const char *)kopnd->path_or_value,
+				      kopnd->immedv, extack);
+	if (IS_ERR(reg))
+		return PTR_ERR(reg);
 
-	reg = tcf_register_find_byid(pipeline, kopnd->immedv);
-	if (!reg) {
-		NL_SET_ERR_MSG_MOD(extack, "Unknown register id");
-		return -EINVAL;
-	}
+	kopnd->pipeid = act->pipeline->common.p_id;
 
 	if (kopnd->immedv2 >= reg->reg_num_elems) {
 		NL_SET_ERR_MSG_MOD(extack, "Register index out of bounds");
 		return -EINVAL;
 	}
+	kopnd->immedv = reg->reg_id;
 
 	t = reg->reg_type;
 	kopnd->oper_datatype = t;
 
-	if (reg->reg_type->typeid != kopnd->oper_datatype->typeid) {
-		NL_SET_ERR_MSG_MOD(extack, "Invalid register data type");
-		return -EINVAL;
-	}
+	if (kopnd->oper_flags & DATA_HAS_TYPE_INFO) {
+		if (reg->reg_type->typeid != kopnd->oper_datatype->typeid) {
+			NL_SET_ERR_MSG_MOD(extack, "Invalid register data type");
+			return -EINVAL;
+		}
 
-	if (kopnd->oper_bitstart > kopnd->oper_bitend) {
-		NL_SET_ERR_MSG_MOD(extack, "Register startbit > endbit");
-		return -EINVAL;
+		if (kopnd->oper_bitstart > kopnd->oper_bitend) {
+			NL_SET_ERR_MSG_MOD(extack, "Register startbit > endbit");
+			return -EINVAL;
+		}
+	} else {
+		kopnd->oper_bitstart = 0;
+		kopnd->oper_bitend = t->bitsz - 1;
+		kopnd->oper_bitsize = t->bitsz;
 	}
 
 	if (t->ops->create_bitops) {
@@ -584,7 +618,8 @@ create_metadata_bitops(struct p4tc_cmd_operand *kopnd,
 	return mask_shift;
 }
 
-static int __validate_metadata_operand(struct p4tc_cmd_operand *kopnd,
+static int __validate_metadata_operand(struct p4tc_act *act,
+				       struct p4tc_cmd_operand *kopnd,
 				       struct netlink_ext_ack *extack)
 {
 	struct p4tc_type *container_type;
@@ -593,38 +628,53 @@ static int __validate_metadata_operand(struct p4tc_cmd_operand *kopnd,
 	u32 bitsz;
 	int err;
 
-	pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
-	if (!pipeline) {
-		NL_SET_ERR_MSG_MOD(extack, "Unable to find pipeline");
-		return -EINVAL;
+	if (kopnd->oper_flags & DATA_USES_ROOT_PIPE)
+		pipeline = tcf_pipeline_find_byid(0);
+	else
+		pipeline = act->pipeline;
+
+	kopnd->pipeid = pipeline->common.p_id;
+
+	meta = tcf_meta_find_byany(pipeline, (const char *)kopnd->path_or_value,
+				   kopnd->immedv, extack);
+	if (IS_ERR(meta))
+		return PTR_ERR(meta);
+	kopnd->immedv = meta->m_id;
+
+	if (!(kopnd->oper_flags & DATA_IS_SLICE)) {
+		kopnd->oper_bitstart = meta->m_startbit;
+		kopnd->oper_bitend = meta->m_endbit;
+
+		bitsz = meta->m_endbit - meta->m_startbit + 1;
+		kopnd->oper_bitsize = bitsz;
+	} else {
+		bitsz = kopnd->oper_bitend - kopnd->oper_bitstart + 1;
 	}
 
-	meta = tcf_meta_find_byid(pipeline, kopnd->immedv);
-	if (!meta) {
-		NL_SET_ERR_MSG_MOD(extack, "Unknown metadata");
-		return -EINVAL;
-	}
+	if (kopnd->oper_flags & DATA_HAS_TYPE_INFO) {
+		if (meta->m_datatype != kopnd->oper_datatype->typeid) {
+			NL_SET_ERR_MSG_MOD(extack, "Invalid metadata data type");
+			return -EINVAL;
+		}
 
-	if (meta->m_datatype != kopnd->oper_datatype->typeid) {
-		NL_SET_ERR_MSG_MOD(extack, "Invalid metadata data type");
-		return -EINVAL;
-	}
+		if (bitsz < kopnd->oper_bitsize) {
+			NL_SET_ERR_MSG_MOD(extack, "Invalid metadata bit size");
+			return -EINVAL;
+		}
 
-	bitsz = meta->m_endbit - meta->m_startbit + 1;
+		if (kopnd->oper_bitstart > meta->m_endbit) {
+			NL_SET_ERR_MSG_MOD(extack, "Invalid metadata slice start bit");
+			return -EINVAL;
+		}
 
-	if (bitsz < kopnd->oper_bitsize) {
-		NL_SET_ERR_MSG_MOD(extack, "Invalid metadata bit size");
-		return -EINVAL;
-	}
-
-	if (kopnd->oper_bitstart > meta->m_endbit) {
-		NL_SET_ERR_MSG_MOD(extack, "Invalid metadata slice start bit");
-		return -EINVAL;
-	}
-
-	if (kopnd->oper_bitend > meta->m_endbit) {
-		NL_SET_ERR_MSG_MOD(extack, "Invalid metadata slice end bit");
-		return -EINVAL;
+		if (kopnd->oper_bitend > meta->m_endbit) {
+			NL_SET_ERR_MSG_MOD(extack, "Invalid metadata slice end bit");
+			return -EINVAL;
+		}
+	} else {
+		kopnd->oper_datatype = p4type_find_byid(meta->m_datatype);
+		kopnd->oper_bitsize = bitsz;
+		kopnd->oper_cbitsize = bitsz;
 	}
 
 	container_type = p4type_find_byid(meta->m_datatype);
@@ -709,7 +759,8 @@ static int validate_immediate_operand(struct p4tc_cmd_operand *kopnd,
 	return 0;
 }
 
-static int validate_operand(struct net *net, struct p4tc_cmd_operand *kopnd,
+static int validate_operand(struct net *net, struct p4tc_act *act,
+			    struct p4tc_cmd_operand *kopnd,
 			    struct netlink_ext_ack *extack)
 {
 	int err = 0;
@@ -725,32 +776,31 @@ static int validate_operand(struct net *net, struct p4tc_cmd_operand *kopnd,
 			err = validate_large_operand(kopnd, extack);
 		break;
 	case P4TC_OPER_META:
-		err = __validate_metadata_operand(kopnd, extack);
+		err = __validate_metadata_operand(act, kopnd, extack);
 		break;
 	case P4TC_OPER_ACTID:
-		/* Need to write this */
 		err = 0;
 		break;
 	case P4TC_OPER_TBL:
-		err = validate_table_operand(kopnd, extack);
+		err = validate_table_operand(act, kopnd, extack);
 		break;
 	case P4TC_OPER_KEY:
-		err = validate_key_operand(kopnd, extack);
+		err = validate_key_operand(act, kopnd, extack);
 		break;
 	case P4TC_OPER_RES:
 		err = validate_res_operand(kopnd, extack);
 		break;
 	case P4TC_OPER_HDRFIELD:
-		err = validate_hdrfield_operand(kopnd, extack);
+		err = validate_hdrfield_operand(act, kopnd, extack);
 		break;
 	case P4TC_OPER_PARAM:
-		err = validate_param_operand(kopnd, extack);
+		err = validate_param_operand(act, kopnd, extack);
 		break;
 	case P4TC_OPER_DEV:
 		err = validate_dev_operand(net, kopnd, extack);
 		break;
 	case P4TC_OPER_REG:
-		err = validate_reg_operand(kopnd, extack);
+		err = validate_reg_operand(act, kopnd, extack);
 		break;
 	default:
 		NL_SET_ERR_MSG_MOD(extack, "Unknown operand type");
@@ -795,6 +845,8 @@ static void _free_operand(struct p4tc_cmd_operand *op)
 	if (op->oper_mask_shift)
 		p4t_release(op->oper_mask_shift);
 	kfree(op->path_or_value);
+	kfree(op->path_or_value_extra);
+	kfree(op->print_prefix);
 	kfree(op);
 }
 
@@ -889,7 +941,7 @@ static void free_op_ACT(struct p4tc_cmd_operate *ope,
 	return _free_operation(ope, extack);
 }
 
-static int __validate_BINARITH(struct net *net,
+static int __validate_BINARITH(struct net *net, struct p4tc_act *act,
 			       struct list_head *operands_list,
 			       const size_t max_operands,
 			       struct netlink_ext_ack *extack)
@@ -900,7 +952,7 @@ static int __validate_BINARITH(struct net *net,
 	int i = 0;
 
 	A = GET_OPA(operands_list);
-	err = validate_operand(net, A, extack);
+	err = validate_operand(net, act, A, extack);
 	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
 		return err;
 
@@ -938,16 +990,16 @@ static int __validate_BINARITH(struct net *net,
 			return -EINVAL;
 		}
 
+		err = validate_operand(net, act, cursor, extack);
+		if (err < 0)
+			return err;
+
 		cursor_type = cursor->oper_datatype;
 		if (!cursor_type->ops->host_read) {
 			NL_SET_ERR_MSG_MOD(extack,
 					   "Rvalue operand's types must have host_read op");
 			return -EINVAL;
 		}
-
-		err = validate_operand(net, cursor, extack);
-		if (err < 0)
-			return err;
 		if (cursor->oper_bitsize % 8 != 0) {
 			NL_SET_ERR_MSG_MOD(extack,
 					   "All Rvalues must have bitsize multiple of 8");
@@ -979,7 +1031,8 @@ static int validate_num_opnds(struct p4tc_cmd_operate *ope, u32 cmd_num_opnds)
  * is executed.
  * Restriction: The action instance must exist.
  */
-int validate_ACT(struct net *net, struct p4tc_cmd_operate *ope,
+int validate_ACT(struct net *net, struct p4tc_act *act,
+		 struct p4tc_cmd_operate *ope,
 		 u32 cmd_num_opnds, struct netlink_ext_ack *extack)
 {
 	struct tc_action_ops *action_ops;
@@ -995,35 +1048,32 @@ int validate_ACT(struct net *net, struct p4tc_cmd_operate *ope,
 
 	A = GET_OPA(&ope->operands_list);
 	if (A->oper_type != P4TC_OPER_ACTID) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "ACT: Operand type MUST be P4TC_OPER_ACTID\n");
+		NL_SET_ERR_MSG_MOD(extack, "ACT: Operand type MUST be P4TC_OPER_ACTID\n");
 		return -EINVAL;
 	}
 
-	if (A->pipeid) {
-		struct p4tc_pipeline *pipeline;
-		struct p4tc_act *act;
+	A->oper_datatype = p4type_find_byid(P4T_U32);
 
-		pipeline = tcf_pipeline_find_byid(A->pipeid);
-		if (!pipeline) {
-			NL_SET_ERR_MSG_MOD(extack,
-					   "ACT: Unknown pipeline id");
-			return -EINVAL;
-		}
-
-		act = tcf_action_find_byid(pipeline, A->immedv);
-		if (!act) {
-			NL_SET_ERR_MSG_MOD(extack, "ACT: unknown Action Kind\n");
-			return -EINVAL;
-		}
-
-		action_ops = &act->ops;
-	} else {
+	if (A->oper_flags & DATA_USES_ROOT_PIPE) {
 		action_ops = tc_lookup_action_byid(A->immedv);
 		if (!action_ops) {
-			NL_SET_ERR_MSG_MOD(extack, "ACT: unknown Action Kind\n");
+			NL_SET_ERR_MSG_MOD(extack,
+					   "ACT: unknown Action Kind");
 			return -EINVAL;
 		}
+		A->pipeid = 0;
+	} else {
+		act = tcf_action_find_byany(act->pipeline,
+					    (const char*)A->path_or_value,
+					    A->immedv, extack);
+
+		if (IS_ERR(act))
+			return PTR_ERR(act);
+
+		A->pipeid = act->pipeline->common.p_id;
+		A->immedv = act->a_id;
+
+		action_ops = &act->ops;
 	}
 
 	if (__tcf_idr_search(net, action_ops, &action, A->immedv2) == false) {
@@ -1045,7 +1095,8 @@ int validate_ACT(struct net *net, struct p4tc_cmd_operate *ope,
  * as long as B's value could be less bits than A
  * (example a U16 setting into a U32, etc)
  */
-int validate_SET(struct net *net, struct p4tc_cmd_operate *ope,
+int validate_SET(struct net *net, struct p4tc_act *act,
+		 struct p4tc_cmd_operate *ope,
 		 u32 cmd_num_opnds, struct netlink_ext_ack *extack)
 {
 	struct p4tc_cmd_operand *A, *B;
@@ -1083,6 +1134,14 @@ int validate_SET(struct net *net, struct p4tc_cmd_operate *ope,
 		return -EINVAL;
 	}
 
+	err = validate_operand(net, act, A, extack);
+	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
+		return err;
+
+	err = validate_operand(net, act, B, extack);
+	if (err)
+		return err;
+
 	Atype = A->oper_datatype;
 	Btype = B->oper_datatype;
 	if (!Atype->ops->host_read || !Btype->ops->host_read) {
@@ -1102,14 +1161,6 @@ int validate_SET(struct net *net, struct p4tc_cmd_operate *ope,
 				   "set: B.bitsize has to be <= A.bitsize\n");
 		return -EINVAL;
 	}
-
-	err = validate_operand(net, A, extack);
-	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
-		return err;
-
-	err = validate_operand(net, B, extack);
-	if (err)
-		return err;
 
 	if (A->oper_bitsize != B->oper_bitsize) {
 		/* We allow them as long as the value of B can fit in A
@@ -1139,7 +1190,8 @@ int validate_SET(struct net *net, struct p4tc_cmd_operate *ope,
 	return 0;
 }
 
-int validate_PRINT(struct net *net, struct p4tc_cmd_operate *ope,
+int validate_PRINT(struct net *net, struct p4tc_act *act,
+		   struct p4tc_cmd_operate *ope,
 		   u32 cmd_num_opnds, struct netlink_ext_ack *extack)
 {
 	struct p4tc_cmd_operand *A;
@@ -1158,10 +1210,11 @@ int validate_PRINT(struct net *net, struct p4tc_cmd_operate *ope,
 		return -EINVAL;
 	}
 
-	return validate_operand(net, A, extack);
+	return validate_operand(net, act, A, extack);
 }
 
-int validate_TBLAPP(struct net *net, struct p4tc_cmd_operate *ope,
+int validate_TBLAPP(struct net *net, struct p4tc_act *act,
+		    struct p4tc_cmd_operate *ope,
 		    u32 cmd_num_opnds, struct netlink_ext_ack *extack)
 {
 	struct p4tc_cmd_operand *A;
@@ -1179,14 +1232,15 @@ int validate_TBLAPP(struct net *net, struct p4tc_cmd_operate *ope,
 		return -EINVAL;
 	}
 
-	err = validate_operand(net, A, extack);
+	err = validate_operand(net, act, A, extack);
 	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
 		return err;
 
 	return 0;
 }
 
-int validate_SNDPORTEGR(struct net *net, struct p4tc_cmd_operate *ope,
+int validate_SNDPORTEGR(struct net *net, struct p4tc_act *act,
+			struct p4tc_cmd_operate *ope,
 			u32 cmd_num_opnds, struct netlink_ext_ack *extack)
 {
 	struct p4tc_cmd_operand *A;
@@ -1201,14 +1255,15 @@ int validate_SNDPORTEGR(struct net *net, struct p4tc_cmd_operate *ope,
 
 	A = GET_OPA(&ope->operands_list);
 
-	err = validate_operand(net, A, extack);
+	err = validate_operand(net, act, A, extack);
 	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
 		return err;
 
 	return 0;
 }
 
-int validate_BINARITH(struct net *net, struct p4tc_cmd_operate *ope,
+int validate_BINARITH(struct net *net, struct p4tc_act *act,
+		      struct p4tc_cmd_operate *ope,
 		      u32 cmd_num_opnds, struct netlink_ext_ack *extack)
 {
 	struct p4tc_cmd_operand *A, *B, *C;
@@ -1217,7 +1272,7 @@ int validate_BINARITH(struct net *net, struct p4tc_cmd_operate *ope,
 	struct p4tc_type *Ctype;
 	int err;
 
-	err = __validate_BINARITH(net, &ope->operands_list, cmd_num_opnds,
+	err = __validate_BINARITH(net, act, &ope->operands_list, cmd_num_opnds,
 				  extack);
 	if (err)
 		return err;
@@ -1242,7 +1297,8 @@ int validate_BINARITH(struct net *net, struct p4tc_cmd_operate *ope,
 	return 0;
 }
 
-int validate_CONCAT(struct net *net, struct p4tc_cmd_operate *ope,
+int validate_CONCAT(struct net *net, struct p4tc_act *act,
+		    struct p4tc_cmd_operate *ope,
 		    u32 cmd_num_opnds, struct netlink_ext_ack *extack)
 {
 	struct p4tc_cmd_operand *cursor, *A;
@@ -1252,7 +1308,7 @@ int validate_CONCAT(struct net *net, struct p4tc_cmd_operate *ope,
 
 	A = GET_OPA(&ope->operands_list);
 
-	err = __validate_BINARITH(net, &ope->operands_list,
+	err = __validate_BINARITH(net, act, &ope->operands_list,
 				  cmd_num_opnds, extack);
 	if (err)
 		return err;
@@ -1516,9 +1572,9 @@ static int p4tc_cmd_BGE(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	return op->ctl2;
 }
 
-int validate_BRN(struct net *net, struct p4tc_cmd_operate *ope,
-		 u32 cmd_num_opnds,
-		 struct netlink_ext_ack *extack)
+int validate_BRN(struct net *net, struct p4tc_act *act,
+		 struct p4tc_cmd_operate *ope,
+		 u32 cmd_num_opnds, struct netlink_ext_ack *extack)
 {
 	struct p4tc_cmd_operand *A, *B;
 	int err = 0;
@@ -1532,6 +1588,14 @@ int validate_BRN(struct net *net, struct p4tc_cmd_operate *ope,
 	A = GET_OPA(&ope->operands_list);
 	B = GET_OPB(&ope->operands_list);
 
+	err = validate_operand(net, act, A, extack);
+	if (err)
+		return err;
+
+	err = validate_operand(net, act, B, extack);
+	if (err)
+		return err;
+
 	if (A->oper_type == P4TC_OPER_CONST && B &&
 	    B->oper_type == P4TC_OPER_CONST) {
 		NL_SET_ERR_MSG_MOD(extack, "Branch: A and B can't both be constant\n");
@@ -1544,14 +1608,6 @@ int validate_BRN(struct net *net, struct p4tc_cmd_operate *ope,
 				   "Operands A and B must be unsigned\n");
 		return -EINVAL;
 	}
-
-	err = validate_operand(net, A, extack);
-	if (err)
-		return err;
-
-	err = validate_operand(net, B, extack);
-	if (err)
-		return err;
 
 	return 0;
 }
@@ -1641,8 +1697,13 @@ static struct p4tc_cmd_s *p4tc_get_cmd_byid(u16 cmdid)
 static const struct nla_policy p4tc_cmd_policy_oper[P4TC_CMD_OPND_MAX + 1] = {
 	[P4TC_CMD_OPND_INFO] = { .type = NLA_BINARY,
 				    .len = sizeof(struct p4tc_u_operand) },
-	[P4TC_CMD_OPND_PATH] = { .type = NLA_BINARY,
-				    .len = P4TC_CMD_MAX_OPER_PATH_LEN },
+	[P4TC_CMD_OPND_PATH] = { .type = NLA_STRING, .len = TEMPLATENAMSZ },
+	[P4TC_CMD_OPND_PATH_EXTRA] = { .type = NLA_STRING, .len = TEMPLATENAMSZ },
+	[P4TC_CMD_OPND_LARGE_CONSTANT] = {
+		.type = NLA_BINARY,
+		.len = BITS_TO_BYTES(P4T_MAX_BITSZ),
+	},
+	[P4TC_CMD_OPND_PREFIX] = { .type = NLA_STRING, .len = TEMPLATENAMSZ },
 };
 
 /*
@@ -1654,6 +1715,8 @@ static int p4tc_cmds_process_opnd(struct nlattr *nla,
 				  struct p4tc_cmd_operand *kopnd,
 				  struct netlink_ext_ack *extack)
 {
+	int oper_extra_sz = 0;
+	int oper_prefix_sz = 0;
 	u32 wantbits = 0;
 	int oper_sz = 0;
 	int err = 0;
@@ -1700,7 +1763,8 @@ static int p4tc_cmds_process_opnd(struct nlattr *nla,
 	}
 
 	wantbits = 1 + uopnd->oper_endbit - uopnd->oper_startbit;
-	if (uopnd->oper_type != P4TC_OPER_ACTID &&
+	if (uopnd->oper_flags & DATA_HAS_TYPE_INFO &&
+	    uopnd->oper_type != P4TC_OPER_ACTID &&
 	    uopnd->oper_type != P4TC_OPER_TBL &&
 	    uopnd->oper_type != P4TC_OPER_REG &&
 	    uopnd->oper_cbitsize < wantbits) {
@@ -1713,30 +1777,73 @@ static int p4tc_cmds_process_opnd(struct nlattr *nla,
 	if (err < 0)
 		return err;
 
+	if (tb[P4TC_CMD_OPND_LARGE_CONSTANT]) {
+		int const_sz;
+
+		const_sz = nla_len(tb[P4TC_CMD_OPND_LARGE_CONSTANT]);
+		if (const_sz)
+			memcpy(kopnd->immedv_large,
+			       nla_data(tb[P4TC_CMD_OPND_LARGE_CONSTANT]),
+			       const_sz);
+		else
+			kopnd->oper_flags |= DATA_IS_IMMEDIATE;
+
+		kopnd->immedv_large_sz = const_sz;
+	}
+
 	if (tb[P4TC_CMD_OPND_PATH])
 		oper_sz = nla_len(tb[P4TC_CMD_OPND_PATH]);
 
 	kopnd->path_or_value_sz = oper_sz;
 
-	if (!oper_sz) {
-		kopnd->oper_flags |= DATA_IS_IMMEDIATE;
-		return 0;
+	if (oper_sz) {
+		kopnd->path_or_value = kzalloc(oper_sz, GFP_KERNEL);
+		if (!kopnd->path_or_value) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "Failed to alloc operand path data");
+			return -ENOMEM;
+		}
+
+		nla_memcpy(kopnd->path_or_value, tb[P4TC_CMD_OPND_PATH], oper_sz);
 	}
 
-	kopnd->path_or_value = kzalloc(oper_sz, GFP_KERNEL);
-	if (!kopnd->path_or_value) {
-		NL_SET_ERR_MSG_MOD(extack, "Failed to alloc operand path data");
+	if (tb[P4TC_CMD_OPND_PATH_EXTRA])
+		oper_extra_sz = nla_len(tb[P4TC_CMD_OPND_PATH_EXTRA]);
+
+	kopnd->path_or_value_extra_sz = oper_extra_sz;
+
+	if (oper_extra_sz) {
+		kopnd->path_or_value_extra = kzalloc(oper_extra_sz, GFP_KERNEL);
+		if (!kopnd->path_or_value_extra) {
+			kfree(kopnd->path_or_value);
+			NL_SET_ERR_MSG_MOD(extack,
+					   "Failed to alloc extra operand path data");
+			return -ENOMEM;
+		}
+
+		nla_memcpy(kopnd->path_or_value_extra, tb[P4TC_CMD_OPND_PATH_EXTRA],
+			   oper_extra_sz);
+	}
+
+	if (tb[P4TC_CMD_OPND_PREFIX])
+		oper_prefix_sz = nla_len(tb[P4TC_CMD_OPND_PREFIX]);
+
+	if (!oper_prefix_sz)
+		return 0;
+
+	kopnd->print_prefix_sz = oper_prefix_sz;
+
+	kopnd->print_prefix = kzalloc(oper_prefix_sz, GFP_KERNEL);
+	if (!kopnd->print_prefix) {
+		kfree(kopnd->path_or_value);
+		kfree(kopnd->path_or_value_extra);
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Failed to alloc operand print prefix");
 		return -ENOMEM;
 	}
 
-	err = nla_memcpy(kopnd->path_or_value, tb[P4TC_CMD_OPND_PATH],
-			 oper_sz);
-	if (unlikely(err != oper_sz)) {
-		NL_SET_ERR_MSG_MOD(extack, "Malformed operand path data");
-		kfree(kopnd->path_or_value);
-		return -EINVAL;
-	}
-
+	nla_memcpy(kopnd->print_prefix, tb[P4TC_CMD_OPND_PREFIX],
+		   oper_prefix_sz);
 	return 0;
 }
 
@@ -1803,7 +1910,8 @@ static int p4tc_cmd_process_operands_list(struct nlattr *nla,
 	return 0;
 }
 
-static int p4tc_cmd_process_ops(struct net *net, struct nlattr *nla,
+static int p4tc_cmd_process_ops(struct net *net, struct p4tc_act *act,
+				struct nlattr *nla,
 				struct p4tc_cmd_operate **op_entry,
 				struct netlink_ext_ack *extack)
 {
@@ -1839,7 +1947,7 @@ static int p4tc_cmd_process_ops(struct net *net, struct nlattr *nla,
 		}
 	}
 
-	err = cmd_t->validate_operands(net, ope, cmd_t->num_opnds, extack);
+	err = cmd_t->validate_operands(net, act, ope, cmd_t->num_opnds, extack);
 	if (err) {
 		//XXX: think about getting rid of this P4TC_CMD_POLICY
 		err =  P4TC_CMD_POLICY;
@@ -1932,6 +2040,7 @@ static int p4tc_cmds_copy_opnd(struct p4tc_cmd_operand **new_kopnd,
 		return -ENOMEM;
 
 	memcpy(_new_kopnd, kopnd, sizeof(*_new_kopnd));
+	memset(&_new_kopnd->oper_list_node, 0, sizeof(struct list_head));
 
 	if (kopnd->oper_type == P4TC_OPER_CONST &&
 	    kopnd->oper_datatype->ops->create_bitops) {
@@ -1973,14 +2082,28 @@ static int p4tc_cmds_copy_opnd(struct p4tc_cmd_operand **new_kopnd,
 		}
 	}
 
-	_new_kopnd->path_or_value = kzalloc(kopnd->path_or_value_sz,
-					    GFP_KERNEL);
-	if (!_new_kopnd->path_or_value)
-		return -ENOMEM;
-	memcpy(_new_kopnd->path_or_value, kopnd->path_or_value,
-	       kopnd->path_or_value_sz);
-
 	_new_kopnd->oper_mask_shift = mask_shift;
+
+	if (kopnd->path_or_value_sz) {
+		_new_kopnd->path_or_value = kzalloc(kopnd->path_or_value_sz,
+						    GFP_KERNEL);
+		if (!_new_kopnd->path_or_value)
+			return -ENOMEM;
+		memcpy(_new_kopnd->path_or_value, kopnd->path_or_value,
+		       kopnd->path_or_value_sz);
+	}
+
+	if (kopnd->path_or_value_extra_sz) {
+		_new_kopnd->path_or_value_extra = kzalloc(kopnd->path_or_value_extra_sz,
+							  GFP_KERNEL);
+		if (!_new_kopnd->path_or_value_extra)
+			return -ENOMEM;
+		memcpy(_new_kopnd->path_or_value_extra, kopnd->path_or_value_extra,
+		       kopnd->path_or_value_extra_sz);
+	}
+
+	memcpy(_new_kopnd->immedv_large, kopnd->immedv_large,
+	       kopnd->immedv_large_sz);
 
 	*new_kopnd = _new_kopnd;
 
@@ -2005,6 +2128,9 @@ static int p4tc_cmds_copy_ops(struct p4tc_cmd_operate **new_op_entry,
 
 		err = p4tc_cmds_copy_opnd(&new_opnd, cursor, extack);
 		if (new_opnd) {
+			struct list_head *head;
+
+			head = &new_opnd->oper_list_node;
 			list_add_tail(&new_opnd->oper_list_node,
 				      &_new_op_entry->operands_list);
 		}
@@ -2058,7 +2184,7 @@ free_oplist:
 #define SEPARATOR "/"
 
 int p4tc_cmds_parse(struct net *net,
-		    struct list_head *cmd_operations,
+		    struct p4tc_act *act,
 		    struct nlattr *nla, bool ovr,
 		    struct netlink_ext_ack *extack)
 {
@@ -2081,8 +2207,8 @@ int p4tc_cmds_parse(struct net *net,
 		if (!oplist_attr[i])
 			break;
 		err =
-		    p4tc_cmd_process_ops(net, oplist_attr[i], &oplist[i - 1],
-					 extack);
+		    p4tc_cmd_process_ops(net, act, oplist_attr[i],
+					 &oplist[i - 1], extack);
 		o = oplist[i - 1];
 		if (err) {
 			kfree_tmp_oplist(oplist);
@@ -2101,10 +2227,10 @@ int p4tc_cmds_parse(struct net *net,
 	}
 
 	if (ovr)
-		p4tc_cmd_ops_del_list(cmd_operations);
+		p4tc_cmd_ops_del_list(&act->cmd_operations);
 
 	/*XXX: At this point we have all the cmds and they are valid */
-	p4tc_cmds_ops_pass_to_list(oplist, cmd_operations);
+	p4tc_cmds_ops_pass_to_list(oplist, &act->cmd_operations);
 
 	return 0;
 }
@@ -2116,10 +2242,7 @@ static void *p4tc_fetch_constant(struct sk_buff *skb,
 	if (op->oper_flags & DATA_IS_IMMEDIATE)
 		return &op->immedv;
 
-	if (op->path_or_value_sz)
-		return op->path_or_value;
-
-	return NULL;
+	return op->immedv_large;
 }
 
 static void *p4tc_fetch_table(struct sk_buff *skb, struct p4tc_cmd_operand *op,
@@ -2267,7 +2390,7 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	/* This is a debug function, so performance is not a priority */
 	if (A->oper_type == P4TC_OPER_META) {
 		struct p4tc_pipeline *pipeline = NULL;
-		char *path = (char *)A->path_or_value;
+		char *path = (char *)A->print_prefix;
 		struct p4tc_metadata *meta;
 
 		pipeline = tcf_pipeline_find_byid(A->pipeid);

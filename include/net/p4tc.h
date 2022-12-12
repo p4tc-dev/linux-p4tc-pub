@@ -248,6 +248,7 @@ struct p4tc_act {
 	struct tc_action_ops        ops;
 	struct list_head            cmd_operations;
 	struct pernet_operations    *p4_net_ops;
+	struct p4tc_pipeline        *pipeline;
 	struct idr                  params_idr;
 	struct tcf_exts             exts;
 	struct list_head            head;
@@ -473,7 +474,7 @@ void tcf_register_put_rcu(struct rcu_head *head);
 #define to_register(t) ((struct p4tc_register *)t)
 
 /* P4TC COMMANDS */
-int p4tc_cmds_parse(struct net *net, struct list_head *cmd_operations,
+int p4tc_cmds_parse(struct net *net, struct p4tc_act *act,
 		    struct nlattr *nla, bool ovr,
 		    struct netlink_ext_ack *extack);
 int p4tc_cmds_copy(struct list_head *new_cmd_operations,
@@ -505,10 +506,16 @@ struct p4tc_cmd_operand {
 	struct p4tc_type_mask_shift *oper_mask_shift;
 	struct tc_action *action;
 	void *path_or_value;
+	void *path_or_value_extra;
+	void *print_prefix;
 	void *priv;
+	u64 immedv_large[BITS_TO_U64(P4T_MAX_BITSZ)];
 	u32 immedv;		/* one of: immediate value, metadata id, action id */
 	u32 immedv2;		/* one of: action instance */
 	u32 path_or_value_sz;
+	u32 path_or_value_extra_sz;
+	u32 print_prefix_sz;
+	u32 immedv_large_sz;
 	u32 pipeid;		/* 0 for kernel */
 	u8 oper_type;		/* P4TC_CMD_OPER_XXX */
 	u8 oper_cbitsize;	/* based on P4T_XXX container size */
@@ -521,7 +528,7 @@ struct p4tc_cmd_operand {
 struct p4tc_cmd_s {
 	int cmdid;
 	u32 num_opnds;
-	int (*validate_operands)(struct net *net,
+	int (*validate_operands)(struct net *net, struct p4tc_act *act,
 				 struct p4tc_cmd_operate *ope,
 				 u32 cmd_num_opns,
 				 struct netlink_ext_ack *extack);

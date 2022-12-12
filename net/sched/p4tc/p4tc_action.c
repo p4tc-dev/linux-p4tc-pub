@@ -1357,9 +1357,10 @@ tcf_act_create(struct net *net, struct nlattr **tb,
 	}
 
 	INIT_LIST_HEAD(&act->cmd_operations);
+	act->pipeline = pipeline;
 	if (tb[P4TC_ACT_CMDS_LIST]) {
-		ret = p4tc_cmds_parse(net, &act->cmd_operations,
-				      tb[P4TC_ACT_CMDS_LIST], false, extack);
+		ret = p4tc_cmds_parse(net, act, tb[P4TC_ACT_CMDS_LIST], false,
+				      extack);
 		if (ret < 0)
 			goto uninit;
 	}
@@ -1441,9 +1442,10 @@ tcf_act_update(struct net *net, struct nlattr **tb,
 		}
 	}
 
+	act->pipeline = pipeline;
 	if (tb[P4TC_ACT_CMDS_LIST]) {
-		ret = p4tc_cmds_parse(net, &act->cmd_operations,
-				      tb[P4TC_ACT_CMDS_LIST], true, extack);
+		ret = p4tc_cmds_parse(net, act, tb[P4TC_ACT_CMDS_LIST], true,
+				      extack);
 		if (ret < 0)
 			goto params_del;
 	}
