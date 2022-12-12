@@ -90,9 +90,9 @@ tcf_meta_find_byname_attr(struct nlattr *name_attr, struct p4tc_pipeline *pipeli
 	return tcf_meta_find_byname(nla_data(name_attr), pipeline);
 }
 
-struct p4tc_metadata *
-tcf_meta_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
-	      const u32 m_id, struct netlink_ext_ack *extack)
+struct p4tc_metadata *tcf_meta_find_byany(struct p4tc_pipeline *pipeline,
+					  const char *mname, const u32 m_id,
+					  struct netlink_ext_ack *extack)
 {
 	struct p4tc_metadata *meta;
 	int err;
@@ -106,8 +106,8 @@ tcf_meta_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
 			goto out;
 		}
 	} else {
-		if (name_attr) {
-			meta = tcf_meta_find_byname_attr(name_attr, pipeline);
+		if (mname) {
+			meta = tcf_meta_find_byname(mname, pipeline);
 			if (!meta) {
 				NL_SET_ERR_MSG(extack,
 					       "Metadatum name not found");
@@ -125,6 +125,18 @@ tcf_meta_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
 	return meta;
 out:
 	return ERR_PTR(err);
+}
+
+static struct p4tc_metadata *
+tcf_meta_find_byanyattr(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
+	      const u32 m_id, struct netlink_ext_ack *extack)
+{
+	char *mname = NULL;
+
+	if (name_attr)
+		mname = nla_data(name_attr);
+
+	return tcf_meta_find_byany(pipeline, mname, m_id, extack);
 }
 
 static int p4tc_check_meta_size(struct p4tc_meta_size_params *sz_params,
@@ -410,7 +422,7 @@ tcf_meta_update(struct nlmsghdr *n, struct nlattr *nla, u32 m_id,
 	if (ret < 0)
 		goto out;
 
-	meta = tcf_meta_find_byany(pipeline, tb[P4TC_META_NAME], m_id, extack);
+	meta = tcf_meta_find_byanyattr(pipeline, tb[P4TC_META_NAME], m_id, extack);
 	if (IS_ERR(meta))
 		return meta;
 
@@ -620,7 +632,7 @@ static int tcf_meta_gd(struct net *net, struct sk_buff *skb, struct nlmsghdr *n,
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE && (n->nlmsg_flags & NLM_F_ROOT))
 		return tcf_meta_flush(skb, pipeline, extack);
 
-	meta = tcf_meta_find_byany(pipeline, tb[P4TC_META_NAME], m_id, extack);
+	meta = tcf_meta_find_byanyattr(pipeline, tb[P4TC_META_NAME], m_id, extack);
 	if (IS_ERR(meta))
 		return PTR_ERR(meta);
 

@@ -335,7 +335,7 @@ struct p4tc_register {
 extern const struct p4tc_template_ops p4tc_register_ops;
 
 struct p4tc_metadata *
-tcf_meta_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
+tcf_meta_find_byany(struct p4tc_pipeline *pipeline, const char *mname,
 		    const u32 m_id, struct netlink_ext_ack *extack);
 struct p4tc_metadata *tcf_meta_find_byid(struct p4tc_pipeline *pipeline,
 					 u32 m_id);
