@@ -43,10 +43,8 @@ struct p4tc_register *tcf_register_find_byid(struct p4tc_pipeline *pipeline,
 }
 
 static struct p4tc_register *
-tcf_register_find_byname(struct nlattr *name_attr,
-			 struct p4tc_pipeline *pipeline)
+tcf_register_find_byname(const char *regname, struct p4tc_pipeline *pipeline)
 {
-	const char *regname = nla_data(name_attr);
 	struct p4tc_register *reg;
 	unsigned long tmp, id;
 
@@ -59,8 +57,7 @@ tcf_register_find_byname(struct nlattr *name_attr,
 
 struct p4tc_register *
 tcf_register_find_byany(struct p4tc_pipeline *pipeline,
-			struct nlattr *name_attr,
-			const u32 reg_id,
+			const char *regname, const u32 reg_id,
 			struct netlink_ext_ack *extack)
 {
 	struct p4tc_register *reg;
@@ -75,8 +72,8 @@ tcf_register_find_byany(struct p4tc_pipeline *pipeline,
 			goto out;
 		}
 	} else {
-		if (name_attr) {
-			reg = tcf_register_find_byname(name_attr, pipeline);
+		if (regname) {
+			reg = tcf_register_find_byname(regname, pipeline);
 			if (!reg) {
 				NL_SET_ERR_MSG(extack,
 					       "Register name not found");
@@ -94,6 +91,20 @@ tcf_register_find_byany(struct p4tc_pipeline *pipeline,
 	return reg;
 out:
 	return ERR_PTR(err);
+}
+
+static struct p4tc_register *
+tcf_register_find_byanyattr(struct p4tc_pipeline *pipeline,
+			    struct nlattr *name_attr,
+			    const u32 reg_id,
+			    struct netlink_ext_ack *extack)
+{
+	char *regname = NULL;
+
+	if (name_attr)
+		regname = nla_data(name_attr);
+
+	return tcf_register_find_byany(pipeline, regname, reg_id, extack);
 }
 
 static int _tcf_register_fill_nlmsg(struct sk_buff *skb,
@@ -240,7 +251,7 @@ tcf_register_create(struct net *net, struct nlmsghdr *n,
 		goto free_reg;
 	}
 
-	if (tcf_register_find_byname(tb[P4TC_REGISTER_NAME], pipeline) ||
+	if (tcf_register_find_byname(nla_data(tb[P4TC_REGISTER_NAME]), pipeline) ||
 	    tcf_register_find_byid(pipeline, reg_id)) {
 		NL_SET_ERR_MSG(extack, "Register already exists");
 		ret = -EEXIST;
@@ -409,8 +420,8 @@ tcf_register_update(struct net *net, struct nlmsghdr *n,
 	if (ret < 0)
 		return ERR_PTR(ret);
 
-	reg = tcf_register_find_byany(pipeline, tb[P4TC_REGISTER_NAME], reg_id,
-				      extack);
+	reg = tcf_register_find_byanyattr(pipeline, tb[P4TC_REGISTER_NAME],
+					  reg_id, extack);
 	if (IS_ERR(reg))
 		return reg;
 
@@ -612,8 +623,8 @@ static int tcf_register_gd(struct net *net, struct sk_buff *skb,
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE && (n->nlmsg_flags & NLM_F_ROOT))
 		return tcf_register_flush(skb, pipeline, extack);
 
-	reg = tcf_register_find_byany(pipeline, tb[P4TC_REGISTER_NAME], reg_id,
-				      extack);
+	reg = tcf_register_find_byanyattr(pipeline, tb[P4TC_REGISTER_NAME],
+					  reg_id, extack);
 	if (IS_ERR(reg))
 		return PTR_ERR(reg);
 
