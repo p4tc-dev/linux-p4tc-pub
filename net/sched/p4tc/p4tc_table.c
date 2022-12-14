@@ -240,6 +240,7 @@ static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 		nla_nest_end(skb, const_nest);
 	}
 	kfree(table->tbl_const_entry);
+	table->tbl_const_entry = NULL;
 
 	if (nla_put(skb, P4TC_TABLE_INFO, sizeof(parm), &parm))
 		goto out_nlmsg_trim;
