@@ -40,7 +40,8 @@ static int p4_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 		return -1;
 	}
 
-	if (!skb_ext_find(skb, P4TC_SKB_EXT)) {
+	p4tc_ext = skb_ext_find(skb, P4TC_SKB_EXT);
+	if (!p4tc_ext) {
 		p4tc_ext = p4tc_skb_ext_alloc(skb);
 		if (WARN_ON_ONCE(!p4tc_ext))
 			return TC_ACT_SHOT;

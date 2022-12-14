@@ -248,6 +248,7 @@ struct p4tc_act {
 	struct tc_action_ops        ops;
 	struct list_head            cmd_operations;
 	struct pernet_operations    *p4_net_ops;
+	struct p4tc_pipeline        *pipeline;
 	struct idr                  params_idr;
 	struct tcf_exts             exts;
 	struct list_head            head;
@@ -335,7 +336,7 @@ struct p4tc_register {
 extern const struct p4tc_template_ops p4tc_register_ops;
 
 struct p4tc_metadata *
-tcf_meta_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
+tcf_meta_find_byany(struct p4tc_pipeline *pipeline, const char *mname,
 		    const u32 m_id, struct netlink_ext_ack *extack);
 struct p4tc_metadata *tcf_meta_find_byid(struct p4tc_pipeline *pipeline,
 					 u32 m_id);
@@ -376,16 +377,20 @@ struct p4tc_act *tcf_action_find_byid(struct p4tc_pipeline *pipeline,
 				      const u32 a_id);
 struct p4tc_act *
 tcf_action_find_byname(const char *act_name, struct p4tc_pipeline *pipeline);
-struct p4tc_act *tcf_action_find_byany(struct nlattr *act_name_attr,
-			     const u32 a_id,
-			     struct p4tc_pipeline *pipeline,
-			     struct netlink_ext_ack *extack);
+struct p4tc_act *
+tcf_action_find_byany(struct p4tc_pipeline *pipeline,
+		      const char *act_name,
+		      const u32 a_id,
+		      struct netlink_ext_ack *extack);
 struct p4tc_act_param *tcf_param_find_byid(struct idr *params_idr,
 					   const u32 param_id);
+struct p4tc_act_param *
+tcf_param_find_byany(struct p4tc_act *act, const char *param_name,
+		     const u32 param_id, struct netlink_ext_ack *extack);
 
 struct p4tc_table *
-tcf_table_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
-		      const u32 tbl_id, struct netlink_ext_ack *extack);
+tcf_table_find_byany(struct p4tc_pipeline *pipeline, const char *tblname,
+		     const u32 tbl_id, struct netlink_ext_ack *extack);
 struct p4tc_table *tcf_table_find_byid(struct p4tc_pipeline *pipeline,
 					      const u32 tbl_id);
 struct p4tc_table_key *tcf_table_key_find(struct p4tc_table *table,
@@ -413,10 +418,9 @@ struct p4tc_parser *tcf_parser_create(struct p4tc_pipeline *pipeline,
 
 struct p4tc_parser *tcf_parser_find_byid(struct p4tc_pipeline *pipeline,
 					 const u32 parser_inst_id);
-struct p4tc_parser *tcf_parser_find_byany(struct p4tc_pipeline *pipeline,
-					  struct nlattr *name_attr,
-					  u32 parser_inst_id,
-					  struct netlink_ext_ack *extack);
+struct p4tc_parser *
+tcf_parser_find_byany(struct p4tc_pipeline *pipeline, const char *parser_name,
+		      u32 parser_inst_id, struct netlink_ext_ack *extack);
 int tcf_parser_del(struct p4tc_pipeline *pipeline,
 		   struct p4tc_parser *parser, struct netlink_ext_ack *extack);
 bool tcf_parser_is_callable(struct p4tc_parser *parser);
@@ -424,6 +428,9 @@ int tcf_skb_parse(struct sk_buff *skb, struct p4tc_skb_ext *p4tc_ext,
 		  struct p4tc_parser *parser);
 struct p4tc_header_field *tcf_hdrfield_find_byid(struct p4tc_parser *parser,
 						 const u32 hdrfield_id);
+struct p4tc_header_field *
+tcf_hdrfield_find_byany(struct p4tc_parser *parser, const char *hdrfield_name,
+			u32 hdrfield_id, struct netlink_ext_ack *extack);
 bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
 				struct p4tc_header_field *hdrfield);
 
@@ -452,6 +459,10 @@ int generic_dump_param_value(struct sk_buff *skb, struct p4tc_type *type,
 
 struct p4tc_register *tcf_register_find_byid(struct p4tc_pipeline *pipeline,
 					     const u32 reg_id);
+struct p4tc_register *
+tcf_register_find_byany(struct p4tc_pipeline *pipeline,
+			const char *regname, const u32 reg_id,
+			struct netlink_ext_ack *extack);
 
 void tcf_register_put_rcu(struct rcu_head *head);
 
@@ -463,7 +474,7 @@ void tcf_register_put_rcu(struct rcu_head *head);
 #define to_register(t) ((struct p4tc_register *)t)
 
 /* P4TC COMMANDS */
-int p4tc_cmds_parse(struct net *net, struct list_head *cmd_operations,
+int p4tc_cmds_parse(struct net *net, struct p4tc_act *act,
 		    struct nlattr *nla, bool ovr,
 		    struct netlink_ext_ack *extack);
 int p4tc_cmds_copy(struct list_head *new_cmd_operations,
@@ -495,10 +506,16 @@ struct p4tc_cmd_operand {
 	struct p4tc_type_mask_shift *oper_mask_shift;
 	struct tc_action *action;
 	void *path_or_value;
+	void *path_or_value_extra;
+	void *print_prefix;
 	void *priv;
+	u64 immedv_large[BITS_TO_U64(P4T_MAX_BITSZ)];
 	u32 immedv;		/* one of: immediate value, metadata id, action id */
 	u32 immedv2;		/* one of: action instance */
 	u32 path_or_value_sz;
+	u32 path_or_value_extra_sz;
+	u32 print_prefix_sz;
+	u32 immedv_large_sz;
 	u32 pipeid;		/* 0 for kernel */
 	u8 oper_type;		/* P4TC_CMD_OPER_XXX */
 	u8 oper_cbitsize;	/* based on P4T_XXX container size */
@@ -511,7 +528,7 @@ struct p4tc_cmd_operand {
 struct p4tc_cmd_s {
 	int cmdid;
 	u32 num_opnds;
-	int (*validate_operands)(struct net *net,
+	int (*validate_operands)(struct net *net, struct p4tc_act *act,
 				 struct p4tc_cmd_operate *ope,
 				 u32 cmd_num_opns,
 				 struct netlink_ext_ack *extack);

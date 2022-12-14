@@ -677,9 +677,8 @@ struct p4tc_table *tcf_table_find_byid(struct p4tc_pipeline *pipeline,
 }
 
 static struct p4tc_table *
-table_find_name(struct nlattr *name_attr, struct p4tc_pipeline *pipeline)
+table_find_byname(const char *tblname, struct p4tc_pipeline *pipeline)
 {
-	const char *tblname = nla_data(name_attr);
 	struct p4tc_table *table;
 	unsigned long tmp, id;
 
@@ -690,9 +689,15 @@ table_find_name(struct nlattr *name_attr, struct p4tc_pipeline *pipeline)
 	return NULL;
 }
 
+static struct p4tc_table *
+table_find_nameattr(struct nlattr *name_attr, struct p4tc_pipeline *pipeline)
+{
+	return table_find_byname(nla_data(name_attr), pipeline);
+}
+
 #define SEPARATOR '/'
 struct p4tc_table *
-tcf_table_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
+tcf_table_find_byany(struct p4tc_pipeline *pipeline, const char *tblname,
 		     const u32 tbl_id, struct netlink_ext_ack *extack)
 {
 	struct p4tc_table *table;
@@ -707,8 +712,8 @@ tcf_table_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
 			goto out;
 		}
 	} else {
-		if (name_attr) {
-			table = table_find_name(name_attr, pipeline);
+		if (tblname) {
+			table = table_find_byname(tblname, pipeline);
 			if (!table) {
 				NL_SET_ERR_MSG(extack,
 					       "Table name not found");
@@ -880,6 +885,18 @@ default_hitacts_free:
 }
 
 static struct p4tc_table *
+tcf_table_find_byanyattr(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
+			 const u32 tbl_id, struct netlink_ext_ack *extack)
+{
+	char *tblname = NULL;
+
+	if (name_attr)
+		tblname = nla_data(name_attr);
+
+	return tcf_table_find_byany(pipeline, tblname, tbl_id, extack);
+}
+
+static struct p4tc_table *
 tcf_table_create(struct net *net, struct nlattr **tb,
 		 u32 tbl_id, struct p4tc_pipeline *pipeline,
 		 struct netlink_ext_ack *extack)
@@ -921,7 +938,7 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 		goto out;
 	}
 
-	if (table_find_name(tb[P4TC_TABLE_NAME], pipeline) ||
+	if (table_find_nameattr(tb[P4TC_TABLE_NAME], pipeline) ||
 	    tcf_table_find_byid(pipeline, tbl_id)) {
 		NL_SET_ERR_MSG(extack, "Table already exists");
 		ret = -EEXIST;
@@ -1240,7 +1257,8 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 	int ret = 0;
 	struct p4tc_table *table;
 
-	table = tcf_table_find_byany(pipeline, tb[P4TC_TABLE_NAME], tbl_id, extack);
+	table = tcf_table_find_byanyattr(pipeline, tb[P4TC_TABLE_NAME], tbl_id,
+					 extack);
 	if (IS_ERR(table))
 		return table;
 
@@ -1661,8 +1679,8 @@ static int tcf_table_gd(struct net *net, struct sk_buff *skb,
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE && (n->nlmsg_flags & NLM_F_ROOT))
 		return tcf_table_flush(net, skb, pipeline, extack);
 
-	table = tcf_table_find_byany(pipeline, tb[P4TC_TABLE_NAME], tbl_id,
-				     extack);
+	table = tcf_table_find_byanyattr(pipeline, tb[P4TC_TABLE_NAME], tbl_id,
+					 extack);
 	if (IS_ERR(table))
 		return PTR_ERR(table);
 

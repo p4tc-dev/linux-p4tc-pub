@@ -80,9 +80,9 @@ struct p4tc_header_field *tcf_hdrfield_find_byid(struct p4tc_parser *parser,
 	return idr_find(&parser->hdr_fields_idr, hdrfield_id);
 }
 
-static struct p4tc_header_field *
-tcf_hdrfield_find(struct p4tc_parser *parser, struct nlattr *name_attr,
-		  u32 hdrfield_id, struct netlink_ext_ack *extack)
+struct p4tc_header_field *
+tcf_hdrfield_find_byany(struct p4tc_parser *parser, const char *hdrfield_name,
+			u32 hdrfield_id, struct netlink_ext_ack *extack)
 {
 	struct p4tc_header_field *hdrfield;
 	int err;
@@ -96,9 +96,7 @@ tcf_hdrfield_find(struct p4tc_parser *parser, struct nlattr *name_attr,
 			goto out;
 		}
 	} else {
-		if (name_attr) {
-			const char *hdrfield_name = nla_data(name_attr);
-
+		if (hdrfield_name) {
 			hdrfield = hdrfield_find_name(parser, hdrfield_name);
 			if (!hdrfield) {
 				NL_SET_ERR_MSG(extack,
@@ -118,6 +116,21 @@ tcf_hdrfield_find(struct p4tc_parser *parser, struct nlattr *name_attr,
 
 out:
 	return ERR_PTR(err);
+}
+
+static struct p4tc_header_field *
+tcf_hdrfield_find_byanyattr(struct p4tc_parser *parser,
+			    struct nlattr *name_attr,
+			    u32 hdrfield_id,
+			    struct netlink_ext_ack *extack)
+{
+	char *hdrfield_name = NULL;
+
+	if (name_attr)
+		hdrfield_name = nla_data(name_attr);
+
+	return tcf_hdrfield_find_byany(parser, hdrfield_name, hdrfield_id,
+				       extack);
 }
 
 static void *tcf_hdrfield_fetch(struct sk_buff *skb, void *hdr_value_ops)
@@ -178,7 +191,8 @@ tcf_hdrfield_create(struct nlmsghdr *n, struct nlattr *nla,
 	WARN_ON(!refcount_inc_not_zero(&pipeline->p_ref));
 
 	rcu_read_lock();
-	parser = tcf_parser_find_byany(pipeline, tb[P4TC_HDRFIELD_PARSER_NAME],
+	parser = tcf_parser_find_byany(pipeline,
+				       nla_data(tb[P4TC_HDRFIELD_PARSER_NAME]),
 				       parser_id, NULL);
 	if (IS_ERR(parser)) {
 		char *parser_name;
@@ -434,7 +448,8 @@ static int tcf_hdrfield_gd(struct net *net, struct sk_buff *skb,
 	if (ret < 0)
 		return ret;
 
-	parser = tcf_parser_find_byany(pipeline, tb[P4TC_HDRFIELD_PARSER_NAME],
+	parser = tcf_parser_find_byany(pipeline,
+				       nla_data(tb[P4TC_HDRFIELD_PARSER_NAME]),
 				       parser_inst_id, extack);
 	if (IS_ERR(parser))
 		return PTR_ERR(parser);
@@ -448,8 +463,8 @@ static int tcf_hdrfield_gd(struct net *net, struct sk_buff *skb,
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE && n->nlmsg_flags & NLM_F_ROOT)
 		return tcf_hdrfield_flush(skb, pipeline, parser, extack);
 
-	hdrfield = tcf_hdrfield_find(parser, tb[P4TC_HDRFIELD_NAME],
-				     hdrfield_id, extack);
+	hdrfield = tcf_hdrfield_find_byanyattr(parser, tb[P4TC_HDRFIELD_NAME],
+					       hdrfield_id, extack);
 	if (IS_ERR(hdrfield))
 		return PTR_ERR(hdrfield);
 
@@ -528,7 +543,7 @@ static int tcf_hdrfield_dump(struct sk_buff *skb, struct p4tc_dump_ctx *ctx,
 		}
 
 		parser = tcf_parser_find_byany(pipeline,
-					      tb[P4TC_HDRFIELD_PARSER_NAME],
+					      nla_data(tb[P4TC_HDRFIELD_PARSER_NAME]),
 					      ids[P4TC_PARSEID_IDX], extack);
 		if (IS_ERR(parser))
 			return PTR_ERR(parser);

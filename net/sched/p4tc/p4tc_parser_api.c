@@ -90,14 +90,9 @@ out:
 }
 
 struct p4tc_parser *
-tcf_parser_find_byany(struct p4tc_pipeline *pipeline, struct nlattr *name_attr,
+tcf_parser_find_byany(struct p4tc_pipeline *pipeline, const char *parser_name,
 		      u32 parser_inst_id, struct netlink_ext_ack *extack)
 {
-	const char *parser_name = NULL;
-
-	if (name_attr)
-		parser_name = nla_data(name_attr);
-
 	return __parser_find(pipeline, parser_name, parser_inst_id, extack);
 }
 

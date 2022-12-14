@@ -533,9 +533,8 @@ static const struct nla_policy p4tc_act_params_policy[P4TC_ACT_PARAMS_MAX + 1] =
 };
 
 static struct p4tc_act_param *
-param_find_byname(struct idr *params_idr, struct nlattr *name_attr)
+param_find_byname(struct idr *params_idr, const char *param_name)
 {
-	const char *param_name = nla_data(name_attr);
 	struct p4tc_act_param *param;
 	unsigned long tmp, id;
 
@@ -555,23 +554,23 @@ struct p4tc_act_param *tcf_param_find_byid(struct idr *params_idr,
 	return idr_find(params_idr, param_id);
 }
 
-static struct p4tc_act_param *
-param_find(struct idr *params_idr, struct nlattr *name_attr, const u32 param_id,
-	   struct netlink_ext_ack *extack)
+struct p4tc_act_param *
+tcf_param_find_byany(struct p4tc_act *act, const char *param_name,
+		 const u32 param_id, struct netlink_ext_ack *extack)
 {
 	struct p4tc_act_param *param;
 	int err;
 
 	if (param_id) {
-		param = tcf_param_find_byid(params_idr, param_id);
+		param = tcf_param_find_byid(&act->params_idr, param_id);
 		if (!param) {
 			NL_SET_ERR_MSG(extack, "Unable to find param by id");
 			err = -EINVAL;
 			goto out;
 		}
 	} else {
-		if (name_attr) {
-			param = param_find_byname(params_idr, name_attr);
+		if (param_name) {
+			param = param_find_byname(&act->params_idr, param_name);
 			if (!param) {
 				NL_SET_ERR_MSG(extack, "Param name not found");
 				err = -EINVAL;
@@ -588,6 +587,18 @@ param_find(struct idr *params_idr, struct nlattr *name_attr, const u32 param_id,
 
 out:
 	return ERR_PTR(err);
+}
+
+static struct p4tc_act_param *
+tcf_param_find_byanyattr(struct p4tc_act *act, struct nlattr *name_attr,
+		     const u32 param_id, struct netlink_ext_ack *extack)
+{
+	char *param_name = NULL;
+
+	if (name_attr)
+		param_name = nla_data(name_attr);
+
+	return tcf_param_find_byany(act, param_name, param_id, extack);
 }
 
 static int tcf_p4_act_init_param(struct net *net,
@@ -611,8 +622,8 @@ static int tcf_p4_act_init_param(struct net *net,
 	if (tb[P4TC_ACT_PARAMS_ID])
 		param_id = *((u32 *)nla_data(tb[P4TC_ACT_PARAMS_ID]));
 
-	param = param_find(&act->params_idr, tb[P4TC_ACT_PARAMS_NAME], param_id,
-			   extack);
+	param = tcf_param_find_byanyattr(act, tb[P4TC_ACT_PARAMS_NAME], param_id,
+					 extack);
 	if (IS_ERR(param))
 		return PTR_ERR(param);
 
@@ -717,10 +728,11 @@ struct p4tc_act *tcf_action_find_byid(struct p4tc_pipeline *pipeline,
 	return idr_find(&pipeline->p_act_idr, a_id);
 }
 
-struct p4tc_act *tcf_action_find_byany(struct nlattr *act_name_attr,
-			     const u32 a_id,
-			     struct p4tc_pipeline *pipeline,
-			     struct netlink_ext_ack *extack)
+struct p4tc_act *
+tcf_action_find_byany(struct p4tc_pipeline *pipeline,
+		      const char *act_name,
+		      const u32 a_id,
+		      struct netlink_ext_ack *extack)
 {
 	struct p4tc_act *act;
 	int err;
@@ -733,9 +745,7 @@ struct p4tc_act *tcf_action_find_byany(struct nlattr *act_name_attr,
 			goto out;
 		}
 	} else {
-		if (act_name_attr) {
-			const char *act_name = nla_data(act_name_attr);
-
+		if (act_name) {
 			act = tcf_action_find_byname(act_name, pipeline);
 			if (!act) {
 				NL_SET_ERR_MSG(extack, "Action name not found");
@@ -754,6 +764,20 @@ struct p4tc_act *tcf_action_find_byany(struct nlattr *act_name_attr,
 
 out:
 	return ERR_PTR(err);
+}
+
+static struct p4tc_act *
+tcf_action_find_byanyattr(struct nlattr *act_name_attr,
+			  const u32 a_id,
+			  struct p4tc_pipeline *pipeline,
+			  struct netlink_ext_ack *extack)
+{
+	char *act_name = NULL;
+
+	if (act_name_attr)
+		act_name = nla_data(act_name_attr);
+
+	return tcf_action_find_byany(pipeline, act_name, a_id, extack);
 }
 
 static void p4_put_param(struct idr *params_idr,
@@ -795,7 +819,7 @@ p4_create_param(struct p4tc_act *act, struct nlattr **tb,
 	}
 
 	if (tcf_param_find_byid(&act->params_idr, param_id) ||
-	    param_find_byname(&act->params_idr, tb[P4TC_ACT_PARAMS_NAME])) {
+	    param_find_byname(&act->params_idr, name)) {
 		NL_SET_ERR_MSG(extack, "Param already exists");
 		ret = -EEXIST;
 		goto free;
@@ -856,8 +880,8 @@ p4_update_param(struct p4tc_act *act, struct nlattr **tb,
 	struct p4tc_act_param *param_old, *param;
 	int ret;
 
-	param_old = param_find(&act->params_idr, tb[P4TC_ACT_PARAMS_NAME],
-			       param_id, extack);
+	param_old = tcf_param_find_byanyattr(act, tb[P4TC_ACT_PARAMS_NAME],
+					     param_id, extack);
 	if (IS_ERR(param_old))
 		return param_old;
 
@@ -1170,7 +1194,8 @@ static int tcf_act_gd(struct net *net, struct sk_buff *skb, struct nlmsghdr *n,
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE && (n->nlmsg_flags & NLM_F_ROOT))
 		return tcf_act_flush(skb, net, pipeline, extack);
 
-	act = tcf_action_find_byany(tb[P4TC_ACT_NAME], a_id, pipeline, extack);
+	act = tcf_action_find_byanyattr(tb[P4TC_ACT_NAME], a_id, pipeline,
+					extack);
 	if (IS_ERR(act))
 		return PTR_ERR(act);
 
@@ -1332,9 +1357,10 @@ tcf_act_create(struct net *net, struct nlattr **tb,
 	}
 
 	INIT_LIST_HEAD(&act->cmd_operations);
+	act->pipeline = pipeline;
 	if (tb[P4TC_ACT_CMDS_LIST]) {
-		ret = p4tc_cmds_parse(net, &act->cmd_operations,
-				      tb[P4TC_ACT_CMDS_LIST], false, extack);
+		ret = p4tc_cmds_parse(net, act, tb[P4TC_ACT_CMDS_LIST], false,
+				      extack);
 		if (ret < 0)
 			goto uninit;
 	}
@@ -1384,7 +1410,8 @@ tcf_act_update(struct net *net, struct nlattr **tb,
 	if (ret < 0)
 		goto out;
 
-	act = tcf_action_find_byany(tb[P4TC_ACT_NAME], a_id, pipeline, extack);
+	act = tcf_action_find_byanyattr(tb[P4TC_ACT_NAME], a_id, pipeline,
+					extack);
 	if (IS_ERR(act))
 		return act;
 
@@ -1415,9 +1442,10 @@ tcf_act_update(struct net *net, struct nlattr **tb,
 		}
 	}
 
+	act->pipeline = pipeline;
 	if (tb[P4TC_ACT_CMDS_LIST]) {
-		ret = p4tc_cmds_parse(net, &act->cmd_operations,
-				      tb[P4TC_ACT_CMDS_LIST], true, extack);
+		ret = p4tc_cmds_parse(net, act, tb[P4TC_ACT_CMDS_LIST], true,
+				      extack);
 		if (ret < 0)
 			goto params_del;
 	}
