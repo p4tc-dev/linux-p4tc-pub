@@ -1565,8 +1565,8 @@
                                     "OPA": {
                                         "type": "metadata",
                                         "container": "bit8",
-                                        "startbit": 0,
-                                        "endbit": 0,
+                                        "startbit": 4,
+                                        "endbit": 4,
                                         "pname": "kernel",
                                         "name": "skbpeek",
                                         "id": 15
@@ -1574,8 +1574,8 @@
                                     "OPB": {
                                         "type": "metadata",
                                         "container": "bit8",
-                                        "startbit": 0,
-                                        "endbit": 0,
+                                        "startbit": 3,
+                                        "endbit": 3,
                                         "pname": "kernel",
                                         "name": "skbidf",
                                         "id": 11
@@ -4904,8 +4904,8 @@
                                     "OPA": {
                                         "type": "metadata",
                                         "container": "bit8",
-                                        "startbit": 0,
-                                        "endbit": 0,
+                                        "startbit": 4,
+                                        "endbit": 4,
                                         "pname": "kernel",
                                         "name": "skbpeek",
                                         "id": 15
@@ -5450,8 +5450,8 @@
                                     "OPA": {
                                         "type": "metadata",
                                         "container": "bit8",
-                                        "startbit": 0,
-                                        "endbit": 0,
+                                        "startbit": 3,
+                                        "endbit": 3,
                                         "pname": "kernel",
                                         "name": "skbidf",
                                         "id": 11
@@ -5543,8 +5543,8 @@
                                     "OPA": {
                                         "type": "metadata",
                                         "container": "bit8",
-                                        "startbit": 0,
-                                        "endbit": 0,
+                                        "startbit": 7,
+                                        "endbit": 7,
                                         "pname": "kernel",
                                         "name": "skboook",
                                         "id": 13
@@ -5552,8 +5552,8 @@
                                     "OPB": {
                                         "type": "metadata",
                                         "container": "bit8",
-                                        "startbit": 0,
-                                        "endbit": 0,
+                                        "startbit": 3,
+                                        "endbit": 3,
                                         "pname": "kernel",
                                         "name": "skbidf",
                                         "id": 11
@@ -5638,8 +5638,8 @@
                                     "OPA": {
                                         "type": "metadata",
                                         "container": "bit8",
-                                        "startbit": 0,
-                                        "endbit": 0,
+                                        "startbit": 4,
+                                        "endbit": 4,
                                         "pname": "kernel",
                                         "name": "skbpeek",
                                         "id": 15
@@ -5647,8 +5647,8 @@
                                     "OPB": {
                                         "type": "metadata",
                                         "container": "bit8",
-                                        "startbit": 0,
-                                        "endbit": 0,
+                                        "startbit": 3,
+                                        "endbit": 3,
                                         "pname": "kernel",
                                         "name": "skbidf",
                                         "id": 11
@@ -5757,8 +5757,8 @@
                                     "OPA": {
                                         "type": "metadata",
                                         "container": "bit8",
-                                        "startbit": 0,
-                                        "endbit": 0,
+                                        "startbit": 3,
+                                        "endbit": 3,
                                         "pname": "kernel",
                                         "name": "skbidf",
                                         "id": 11
@@ -6784,8 +6784,8 @@
                                     "OPA": {
                                         "type": "metadata",
                                         "container": "bit8",
-                                        "startbit": 0,
-                                        "endbit": 0,
+                                        "startbit": 3,
+                                        "endbit": 3,
                                         "pname": "kernel",
                                         "name": "skbidf",
                                         "id": 11
@@ -6979,8 +6979,8 @@
                                     "OPA": {
                                         "type": "metadata",
                                         "container": "bit8",
-                                        "startbit": 0,
-                                        "endbit": 0,
+                                        "startbit": 3,
+                                        "endbit": 3,
                                         "pname": "kernel",
                                         "name": "skbidf",
                                         "id": 11
@@ -7121,8 +7121,8 @@
                                     "OPA": {
                                         "type": "metadata",
                                         "container": "bit8",
-                                        "startbit": 0,
-                                        "endbit": 0,
+                                        "startbit": 3,
+                                        "endbit": 3,
                                         "pname": "kernel",
                                         "name": "skbidf",
                                         "id": 11
@@ -7263,8 +7263,8 @@
                                     "OPA": {
                                         "type": "metadata",
                                         "container": "bit8",
-                                        "startbit": 0,
-                                        "endbit": 0,
+                                        "startbit": 3,
+                                        "endbit": 3,
                                         "pname": "kernel",
                                         "name": "skbidf",
                                         "id": 11
@@ -7405,8 +7405,8 @@
                                     "OPA": {
                                         "type": "metadata",
                                         "container": "bit8",
-                                        "startbit": 0,
-                                        "endbit": 0,
+                                        "startbit": 3,
+                                        "endbit": 3,
                                         "pname": "kernel",
                                         "name": "skbidf",
                                         "id": 11
@@ -7547,8 +7547,8 @@
                                     "OPA": {
                                         "type": "metadata",
                                         "container": "bit8",
-                                        "startbit": 0,
-                                        "endbit": 0,
+                                        "startbit": 3,
+                                        "endbit": 3,
                                         "pname": "kernel",
                                         "name": "skbidf",
                                         "id": 11
@@ -7713,8 +7713,8 @@
                                     "OPA": {
                                         "type": "metadata",
                                         "container": "bit8",
-                                        "startbit": 0,
-                                        "endbit": 0,
+                                        "startbit": 3,
+                                        "endbit": 3,
                                         "pname": "kernel",
                                         "name": "skbidf",
                                         "id": 11
@@ -7921,7 +7921,7 @@
                                         "pname": "kernel",
                                         "name": "skbmark",
                                         "id": 3,
-                                        "path": "before"
+                                        "prefix": "before"
                                     }
                                 }
                             },
@@ -7963,7 +7963,7 @@
                                         "pname": "kernel",
                                         "name": "skbmark",
                                         "id": 3,
-                                        "path": "after"
+                                        "prefix": "after"
                                     }
                                 }
                             }
@@ -10457,6 +10457,543 @@
             ]
         ],
         "cmdUnderTest": "$TC p4template create action/ptables/test param param1 type bit32 cmd concat results.hit metadata.ptables.mytest64 metadata.ptables.mymd",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get action/ptables/test",
+        "matchCount": "1",
+        "matchPattern": "Error: Action name not found.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "3cb8",
+        "name": "Create action template with set cmd where opA is a register",
+        "category": [
+            "p4tc",
+            "template"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/mymd type bit32 mid 1",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit32 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create action/ptables/test param param1 type bit32 cmd set register.ptables.my_reg[0] metadata.ptables.mymd",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get action/ptables/test",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "action template",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "aname": "ptables/test",
+                        "actid": 1,
+                        "params": [
+                            {
+                                "name": "param1",
+                                "type": "bit32",
+                                "id": 1
+                            }
+                        ],
+                        "operations": [
+                            {
+                                "instruction": "set",
+                                "control_action": {
+                                    "type": "pipe"
+                                },
+                                "operands": {
+                                    "OPA": {
+                                        "type": "register",
+                                        "pid": 22,
+                                        "pname": "ptables",
+                                        "container": "bit32",
+                                        "startbit": 0,
+                                        "endbit": 31,
+                                        "idx": 0,
+                                        "regname": "my_reg",
+                                        "regid": 1
+                                    },
+                                    "OPB": {
+                                        "type": "metadata",
+                                        "container": "bit32",
+                                        "startbit": 0,
+                                        "endbit": 31,
+                                        "pname": "ptables",
+                                        "name": "mymd",
+                                        "id": 1
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "487a",
+        "name": "Create action template with set cmd where opB is a register",
+        "category": [
+            "p4tc",
+            "template"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/mymd type bit32 mid 1",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit32 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create action/ptables/test param param1 type bit32 cmd set metadata.ptables.mymd register.ptables.my_reg[1]",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get action/ptables/test",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "action template",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "aname": "ptables/test",
+                        "actid": 1,
+                        "params": [
+                            {
+                                "name": "param1",
+                                "type": "bit32",
+                                "id": 1
+                            }
+                        ],
+                        "operations": [
+                            {
+                                "instruction": "set",
+                                "control_action": {
+                                    "type": "pipe"
+                                },
+                                "operands": {
+                                    "OPA": {
+                                        "type": "metadata",
+                                        "container": "bit32",
+                                        "startbit": 0,
+                                        "endbit": 31,
+                                        "pname": "ptables",
+                                        "name": "mymd",
+                                        "id": 1
+                                    },
+                                    "OPB": {
+                                        "type": "register",
+                                        "pid": 22,
+                                        "pname": "ptables",
+                                        "container": "bit32",
+                                        "startbit": 0,
+                                        "endbit": 31,
+                                        "idx": 1,
+                                        "regname": "my_reg",
+                                        "regid": 1
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "f46b",
+        "name": "Try to create action template with set cmd where opA is a register smaller than opB",
+        "category": [
+            "p4tc",
+            "template"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/mytest64 type bit64 mid 3",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit32 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create action/ptables/test param param1 type bit32 cmd set register.ptables.my_reg[1] metadata.ptables.mytest64",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get action/ptables/test",
+        "matchCount": "1",
+        "matchPattern": "Error: Action name not found.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "1748",
+        "name": "Create action template with print cmd where opA is a register out-of-bounds",
+        "category": [
+            "p4tc",
+            "template"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit32 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create action/ptables/test param param1 type bit32 cmd print register.ptables.my_reg[2]",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get action/ptables/test",
+        "matchCount": "1",
+        "matchPattern": "Error: Action name not found.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "b7bf",
+        "name": "Create action template with concat cmd where opC is a register",
+        "category": [
+            "p4tc",
+            "template"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/mymd type bit32 mid 1",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/mytest64 type bit64 mid 3",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit32 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create action/ptables/test param param1 type bit32 cmd concat metadata.ptables.mytest64 metadata.ptables.mymd register.ptables.my_reg[1]",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get action/ptables/test",
+        "matchCount": "1",
+        "matchPattern": "Error: Action name not found.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "9164",
+        "name": "Try to create action template with concat cmd where opB is a register",
+        "category": [
+            "p4tc",
+            "template"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/mymd type bit32 mid 1",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/mytest64 type bit64 mid 3",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit32 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create action/ptables/test param param1 type bit32 cmd concat metadata.ptables.mytest64 register.ptables.my_reg[1] metadata.ptables.mymd",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get action/ptables/test",
+        "matchCount": "1",
+        "matchPattern": "Error: Action name not found.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "4c51",
+        "name": "Try to create action template with concat cmd where opA is a register",
+        "category": [
+            "p4tc",
+            "template"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/mymd type bit32 mid 1",
+                0
+            ],
+            [
+                "$TC p4template create metadata/ptables/mytest64 type bit64 mid 3",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit32 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create action/ptables/test param param1 type bit32 cmd concat register.ptables.my_reg[1] metadata.ptables.mytest64 metadata.ptables.mymd",
         "expExitCode": "255",
         "verifyCmd": "$TC -j p4template get action/ptables/test",
         "matchCount": "1",
