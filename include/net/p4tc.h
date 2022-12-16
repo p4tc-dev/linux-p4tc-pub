@@ -147,7 +147,7 @@ struct p4tc_metadata {
 	u16                         m_startbit; /* Relative to its container */
 	u16                         m_endbit; /* Relative to its container */
 	u8                          m_datatype; /* T_XXX */
-	u32                         PAD0;
+	bool                        m_read_only;
 };
 
 extern const struct p4tc_template_ops p4tc_meta_ops;

@@ -260,7 +260,7 @@ void tcf_meta_fill_user_offsets(struct p4tc_pipeline *pipeline)
 static struct p4tc_metadata *
 __tcf_meta_create(struct p4tc_pipeline *pipeline, u32 m_id,
 		  const char *m_name, struct p4tc_meta_size_params *sz_params,
-		  gfp_t alloc_flag, struct netlink_ext_ack *extack)
+		  gfp_t alloc_flag, bool read_only, struct netlink_ext_ack *extack)
 {
 	u32 p_meta_offset = 0;
 	bool kmeta;
@@ -318,6 +318,7 @@ __tcf_meta_create(struct p4tc_pipeline *pipeline, u32 m_id,
 	meta->m_startbit = sz_params->startbit;
 	meta->m_endbit = sz_params->endbit;
 	meta->m_sz = sz_bits;
+	meta->m_read_only = read_only;
 
 	if (m_id) {
 		ret = idr_alloc_u32(&pipeline->p_meta_idr, meta, &m_id,
@@ -402,7 +403,7 @@ tcf_meta_create(struct nlmsghdr *n, struct nlattr *nla, u32 m_id,
 	}
 
 	return __tcf_meta_create(pipeline, m_id, m_name, sz_params, GFP_KERNEL,
-				 extack);
+				 false, extack);
 
 out:
 	return ERR_PTR(ret);
@@ -730,7 +731,7 @@ out_nlmsg_trim:
 
 static int p4tc_register_kmeta(struct p4tc_pipeline *pipeline, u32 m_id,
 				const char *m_name, u8 startbit, u8 endbit,
-				u32 datatype)
+				bool read_only, u32 datatype)
 {
 	struct p4tc_meta_size_params sz_params = {
 		.startbit = startbit,
@@ -740,7 +741,7 @@ static int p4tc_register_kmeta(struct p4tc_pipeline *pipeline, u32 m_id,
 	struct p4tc_metadata *meta;
 
 	meta = __tcf_meta_create(pipeline, m_id, m_name, &sz_params, GFP_ATOMIC,
-				 NULL);
+				 read_only, NULL);
 	if (IS_ERR(meta)) {
 		pr_err("Failed to register metadata %s %ld\n", m_name, PTR_ERR(meta));
 		return PTR_ERR(meta);
@@ -762,45 +763,45 @@ static void tcf_meta_init(void)
 	}
 
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PKTLEN, "pktlen", 0, 31,
-			    P4T_U32);
+			    false, P4T_U32);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_DATALEN, "datalen", 0,
-			    31, P4T_U32);
+			    31, false, P4T_U32);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_SKBMARK, "skbmark", 0,
-			    31, P4T_U32);
+			    31, false, P4T_U32);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_TCINDEX, "tcindex", 0,
-			    15, P4T_U16);
+			    15, false, P4T_U16);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_SKBHASH, "skbhash", 0,
-			    31, P4T_U32);
+			    31, false, P4T_U32);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_SKBPRIO, "skbprio", 0,
-			    31, P4T_U32);
+			    31, false, P4T_U32);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_IFINDEX, "ifindex", 0,
-			    31, P4T_S32);
+			    31, false, P4T_S32);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_SKBIIF, "iif", 0, 31,
-			    P4T_S32);
+			    true, P4T_DEV);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PROTOCOL, "skbproto", 0,
-			    15, P4T_BE16);
+			    15, false, P4T_BE16);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PKTYPE, "skbptype", 0, 2,
-			    P4T_U8);
+			    false, P4T_U8);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_IDF, "skbidf", 3, 3,
-			    P4T_U8);
+			    false, P4T_U8);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_IPSUM, "skbipsum", 5, 6,
-			    P4T_U8);
+			    false, P4T_U8);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_OOOK, "skboook", 7, 7,
-			    P4T_U8);
+			    false, P4T_U8);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_FCLONE, "fclone", 2, 3,
-			    P4T_U8);
+			    false, P4T_U8);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PEEKED, "skbpeek", 4, 4,
-			    P4T_U8);
+			    false, P4T_U8);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_QMAP, "skbqmap", 0, 15,
-			    P4T_U16);
+			    false, P4T_U16);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PTYPEOFF, "ptypeoff", 0,
-			    7, P4T_U8);
+			    7, false, P4T_U8);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_CLONEOFF, "cloneoff", 0,
-			    7, P4T_U8);
+			    7, false, P4T_U8);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PTCLNOFF, "ptclnoff", 0,
-			    15, P4T_U16);
+			    15, false, P4T_U16);
 	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_DIRECTION, "direction",
-			    7, 7, P4T_U8);
+			    7, 7, false, P4T_U8);
 }
 
 const struct p4tc_template_ops p4tc_meta_ops = {
