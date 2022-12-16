@@ -221,21 +221,23 @@ struct p4tc_ipv4_param_value {
 	u32 mask;
 };
 
+#define P4TC_ACT_PARAM_FLAGS_ISDYN BIT(0)
+
 struct p4tc_act_param {
 	char            name[ACTPARAMNAMSIZ];
+	struct list_head head;
+	struct rcu_head	rcu;
 	void            *value;
 	void            *mask;
 	u32             type;
 	u32             id;
-	struct rcu_head	rcu;
+	u8              flags;
 };
-
-struct p4tc_act_param_ops;
 
 struct p4tc_act_param_ops {
 	int (*init_value)(struct net *net, struct p4tc_act_param_ops *op,
-			  struct p4tc_act_param *nparam,
-			  struct nlattr **tb, struct netlink_ext_ack *extack);
+			  struct p4tc_act_param *nparam, struct nlattr **tb,
+			  struct netlink_ext_ack *extack);
 	int (*dump_value)(struct sk_buff *skb, struct p4tc_act_param_ops *op,
 			   struct p4tc_act_param *param);
 	void (*free)(struct p4tc_act_param *param);
@@ -382,6 +384,11 @@ tcf_action_find_byany(struct p4tc_pipeline *pipeline,
 		      const char *act_name,
 		      const u32 a_id,
 		      struct netlink_ext_ack *extack);
+int tcf_p4_dyna_template_init(struct net *net, struct tc_action **a,
+			      struct p4tc_act *act,
+			      struct list_head *params_list,
+			      struct tc_act_dyna *parm, u32 flags,
+			      struct netlink_ext_ack *extack);
 struct p4tc_act_param *tcf_param_find_byid(struct idr *params_idr,
 					   const u32 param_id);
 struct p4tc_act_param *
@@ -482,7 +489,10 @@ int p4tc_cmds_copy(struct list_head *new_cmd_operations,
 		   bool delete_old, struct netlink_ext_ack *extack);
 
 int p4tc_cmds_fillup(struct sk_buff *skb, struct list_head *meta_ops);
-void p4tc_cmds_release_ope_list(struct list_head *entries);
+void p4tc_cmds_release_ope_list(struct list_head *entries,
+				bool called_from_template);
+struct p4tc_cmd_operand;
+int p4tc_cmds_fill_operand(struct sk_buff *skb, struct p4tc_cmd_operand *kopnd);
 
 struct p4tc_cmd_operate {
 	struct list_head cmd_operations;
@@ -529,10 +539,10 @@ struct p4tc_cmd_s {
 	int cmdid;
 	u32 num_opnds;
 	int (*validate_operands)(struct net *net, struct p4tc_act *act,
-				 struct p4tc_cmd_operate *ope,
-				 u32 cmd_num_opns,
+				 struct p4tc_cmd_operate *ope, u32 cmd_num_opns,
 				 struct netlink_ext_ack *extack);
 	void (*free_operation)(struct p4tc_cmd_operate *op,
+			       bool called_for_instance,
 			       struct netlink_ext_ack *extack);
 	int (*run)(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		   struct tcf_p4act *cmd, struct tcf_result *res);

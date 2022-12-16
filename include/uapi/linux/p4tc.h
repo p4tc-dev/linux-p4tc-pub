@@ -267,6 +267,15 @@ enum {
 
 /* Action params attributes */
 enum {
+	P4TC_ACT_PARAMS_VALUE_UNSPEC,
+	P4TC_ACT_PARAMS_VALUE_RAW, /* binary */
+	P4TC_ACT_PARAMS_VALUE_OPND, /* struct p4tc_u_operand */
+	__P4TC_ACT_PARAMS_VALUE_MAX
+};
+#define P4TC_ACT_VALUE_PARAMS_MAX __P4TC_ACT_PARAMS_VALUE_MAX
+
+/* Action params attributes */
+enum {
 	P4TC_ACT_PARAMS_UNSPEC,
 	P4TC_ACT_PARAMS_NAME, /* string */
 	P4TC_ACT_PARAMS_ID, /* u32 */
@@ -455,5 +464,6 @@ struct p4tc_u_operand {
 				  */
 #define DATA_USES_ROOT_PIPE (BIT(3))
 #define DATA_HAS_TYPE_INFO (BIT(4))
+#define DATA_IS_READ_ONLY (BIT(5))
 
 #endif
