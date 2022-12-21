@@ -452,6 +452,7 @@ static int tcf_table_entry_get_table(struct p4tc_pipeline **pipeline,
 				     struct netlink_ext_ack *extack)
 {
 	u32 pipeid, tbl_id;
+	char *tblname;
 	int ret;
 
 	pipeid = ids[P4TC_PID_IDX];
@@ -470,9 +471,8 @@ static int tcf_table_entry_get_table(struct p4tc_pipeline **pipeline,
 
 	tbl_id = ids[P4TC_TBLID_IDX];
 
-	*table = tcf_table_find_byany(*pipeline,
-				      nla_data(tb[P4TC_ENTRY_TBLNAME]), tbl_id,
-				      extack);
+	tblname = tb[P4TC_ENTRY_TBLNAME] ? nla_data(tb[P4TC_ENTRY_TBLNAME]) : NULL;
+	*table = tcf_table_find_byany(*pipeline, tblname, tbl_id, extack);
 	if (IS_ERR(*table)) {
 		ret = PTR_ERR(*table);
 		goto dec_pipeline_refcount;

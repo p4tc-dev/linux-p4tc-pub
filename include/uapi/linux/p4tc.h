@@ -4,7 +4,6 @@
 
 #include <linux/types.h>
 #include <linux/pkt_sched.h>
-#include <linux/p4tc_entities.h>
 #include <linux/pkt_cls.h>
 
 /* pipeline header */
@@ -330,6 +329,13 @@ enum {
 	__P4TC_REGISTER_MAX
 };
 #define P4TC_REGISTER_MAX (__P4TC_REGISTER_MAX - 1)
+
+enum {
+	P4TC_ENTITY_UNSPEC,
+	P4TC_ENTITY_KERNEL,
+	P4TC_ENTITY_TC,
+	P4TC_ENTITY_MAX
+};
 
 #define P4TC_RTA(r)  ((struct rtattr *)(((char *)(r)) + NLMSG_ALIGN(sizeof(struct p4tcmsg))))
 

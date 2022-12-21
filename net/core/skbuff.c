@@ -6577,7 +6577,7 @@ static void skb_ext_put_mctp(struct mctp_flow *flow)
 }
 #endif
 
-#if CONFIG_NET_P4_TC
+#ifdef CONFIG_NET_P4_TC
 static void skb_ext_put_p4tc(struct p4tc_skb_ext *p4tc_skb_ext)
 {
 	kfree(p4tc_skb_ext->p4tc_ext);
