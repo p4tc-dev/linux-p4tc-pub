@@ -767,8 +767,7 @@ static int tcf_table_entry_gd(struct sk_buff *skb, struct nlmsghdr *n,
 	if (!ids[P4TC_PID_IDX])
 		ids[P4TC_PID_IDX] = pipeline->common.p_id;
 
-	if (!*p_name)
-		*p_name = pipeline->common.name;
+	strscpy(*p_name, pipeline->common.name, PIPELINENAMSIZ);
 
 	ret = 0;
 
@@ -884,8 +883,8 @@ walk_exit:
 
 	if (!ids[P4TC_PID_IDX])
 		ids[P4TC_PID_IDX] = pipeline->common.p_id;
-	if (!*p_name)
-		*p_name = pipeline->common.name;
+
+	strscpy(*p_name, pipeline->common.name, PIPELINENAMSIZ);
 
 	ret = 0;
 	goto table_put;
@@ -1320,8 +1319,7 @@ static int tcf_table_entry_cu(struct sk_buff *skb, struct net *net, u32 flags,
 	if (p4tca_table_get_entry_fill(skb, table, &entry, table->tbl_id) <= 0)
 		NL_SET_ERR_MSG(extack, "Unable to fill table entry attributes");
 
-	if (!*p_name)
-		*p_name = pipeline->common.name;
+	strscpy(*p_name, pipeline->common.name, PIPELINENAMSIZ);
 
 	if (!ids[P4TC_PID_IDX])
 		ids[P4TC_PID_IDX] = pipeline->common.p_id;
@@ -1455,13 +1453,13 @@ static int tc_ctl_p4_table_n(struct sk_buff *skb, struct nlmsghdr *n,
 	struct net *net = sock_net(skb->sk);
 	u32 portid = NETLINK_CB(skb).portid;
 	u32 ids[P4TC_PATH_MAX] = {0};
-	char *p_name_out = p_name;
 	int ret = 0, ret_send;
 	struct nlattr *p4tca[P4TC_MSGBATCH_SIZE + 1];
 	struct sk_buff *new_skb;
 	struct p4tcmsg *t_new;
 	struct nlmsghdr *nlh;
 	struct nlattr *root;
+	char *p_name_out;
 	unsigned char *b;
 	int i;
 
@@ -1490,6 +1488,22 @@ static int tc_ctl_p4_table_n(struct sk_buff *skb, struct nlmsghdr *n,
 	t_new->obj = t->obj;
 	ids[P4TC_PID_IDX] = t_new->pipeid;
 
+	/* If p_name is not given, reserve space for it.
+	* It will be either populated by the operation or force a failure as
+	* no pipeline could have the empty name.
+	*/
+	if (!p_name) {
+		struct nlattr *attr =
+			nla_reserve(new_skb, P4TC_ROOT_PNAME, PIPELINENAMSIZ);
+		if (!attr) {
+			ret = -ENOMEM;
+			goto out;
+		}
+		p_name_out = nla_data(attr);
+	} else {
+		p_name_out = p_name;
+	}
+
 	root = nla_nest_start(new_skb, P4TC_ROOT);
 	for (i = 1; i < P4TC_MSGBATCH_SIZE + 1 && p4tca[i]; i++) {
 		struct nlattr *nest = nla_nest_start(new_skb, i);
@@ -1516,8 +1530,12 @@ static int tc_ctl_p4_table_n(struct sk_buff *skb, struct nlmsghdr *n,
 	}
 	nla_nest_end(new_skb, root);
 
-	if (nla_put_string(new_skb, P4TC_ROOT_PNAME, p_name_out))
-		ret = ret ? ret : -ENOMEM;
+	if (p_name) {
+		if (nla_put_string(new_skb, P4TC_ROOT_PNAME, p_name_out)) {
+			ret = -ENOMEM;
+			goto out;
+		}
+	}
 
 	if (!t_new->pipeid)
 		t_new->pipeid = ids[P4TC_PID_IDX];
