@@ -151,6 +151,9 @@ static void *tcf_hdrfield_fetch(struct sk_buff *skb, void *hdr_value_ops)
 	}
 
 	hdr_offset_index = (hdrfield->hdr_field_id - 1) * hdr_offset_len;
+	if (hdrfield->flags & P4TC_HDRFIELD_IS_VALIDITY_BIT)
+		return &p4tc_skb_ext->p4tc_ext->hdrs[hdr_offset_index];
+
 	hdr_offset_bits = (u16 *)&p4tc_skb_ext->p4tc_ext->hdrs[hdr_offset_index];
 	hdr_offset = BITS_TO_BYTES(*hdr_offset_bits);
 
@@ -162,25 +165,27 @@ tcf_hdrfield_create(struct nlmsghdr *n, struct nlattr *nla,
 		    struct p4tc_pipeline *pipeline, u32 *ids,
 		    struct netlink_ext_ack *extack)
 {
-	u32 hdrfield_id = ids[P4TC_HDRFIELDID_IDX];
 	u32 parser_id = ids[P4TC_PARSEID_IDX];
 	char *hdrfield_name = NULL;
 	const char *parser_name = NULL;
+	u32 hdrfield_id = 0;
 	struct nlattr *tb[P4TC_HDRFIELD_MAX + 1];
 	struct p4tc_header_field_ty *hdr_arg;
 	struct p4tc_header_field *hdrfield;
 	struct p4tc_parser *parser;
+	char *s;
 	int ret;
-
-	if (!hdrfield_id) {
-		NL_SET_ERR_MSG(extack, "Must specify header instance id");
-		return ERR_PTR(-EINVAL);
-	}
 
 	ret = nla_parse_nested(tb, P4TC_HDRFIELD_MAX, nla, tc_hdrfield_policy,
 			       extack);
 	if (ret < 0)
 		return ERR_PTR(ret);
+
+	hdrfield_id = ids[P4TC_HDRFIELDID_IDX];
+	if (!hdrfield_id) {
+		NL_SET_ERR_MSG(extack, "Must specify header field id");
+		return ERR_PTR(-EINVAL);
+	}
 
 	if (!tb[P4TC_HDRFIELD_DATA]) {
 		NL_SET_ERR_MSG(extack, "Must supply header field data");
@@ -247,11 +252,31 @@ tcf_hdrfield_create(struct nlmsghdr *n, struct nlattr *nla,
 		goto refcount_dec_parser;
 	}
 
-	hdrfield->datatype = hdr_arg->datatype;
+	hdrfield->hdr_field_id = hdrfield_id;
+
+	s = strnchr(hdrfield_name, HDRFIELDNAMSIZ, '/');
+	if (s++ && strncmp(s, "isValid", HDRFIELDNAMSIZ) == 0) {
+		if (hdr_arg->datatype != P4T_U8 || hdr_arg->startbit != 0 ||
+		    hdr_arg->endbit != 0) {
+			NL_SET_ERR_MSG(extack,
+				       "isValid data type must be bit1");
+			ret = -EINVAL;
+			goto free_hdr;
+		}
+		hdrfield->datatype = hdr_arg->datatype;
+		hdrfield->flags = P4TC_HDRFIELD_IS_VALIDITY_BIT;
+	} else {
+		if (!p4type_find_byid(hdr_arg->datatype)) {
+			NL_SET_ERR_MSG(extack, "Invalid hdrfield data type");
+			ret = -EINVAL;
+			goto free_hdr;
+		}
+		hdrfield->datatype = hdr_arg->datatype;
+	}
+
 	hdrfield->startbit = hdr_arg->startbit;
 	hdrfield->endbit = hdr_arg->endbit;
 	hdrfield->parser_inst_id = parser->parser_inst_id;
-	hdrfield->hdr_field_id = hdrfield_id;
 
 	ret = tcf_parser_check_hdrfields(parser, hdrfield);
 	if (ret < 0)
@@ -338,6 +363,7 @@ static int _tcf_hdrfield_fill_nlmsg(struct sk_buff *skb,
 	hdr_arg.datatype = hdrfield->datatype;
 	hdr_arg.startbit = hdrfield->startbit;
 	hdr_arg.endbit = hdrfield->endbit;
+	hdr_arg.flags = hdrfield->flags;
 
 	if (hdrfield->common.name[0]) {
 		if (nla_put_string(skb, P4TC_HDRFIELD_NAME, hdrfield->common.name))
@@ -502,9 +528,9 @@ static int tcf_hdrfield_dump_1(struct sk_buff *skb,
 
 	path[0] = hdrfield->parser_inst_id;
 	path[1] = hdrfield->hdr_field_id;
-
 	if (nla_put(skb, P4TC_PATH, sizeof(path), path))
 		goto out_nlmsg_trim;
+
 
 	return 0;
 

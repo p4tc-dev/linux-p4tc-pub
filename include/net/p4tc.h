@@ -36,6 +36,8 @@
 #define P4TC_HDRFIELDID_IDX 2
 #define P4TC_REGID_IDX 1
 
+#define P4TC_HDRFIELD_IS_VALIDITY_BIT 0x1
+
 struct p4tc_dump_ctx {
 	u32 ids[P4TC_PATH_MAX];
 	struct rhashtable_iter *iter;
@@ -318,6 +320,7 @@ struct p4tc_header_field {
 	u16                         startbit;
 	u16                         endbit;
 	u8                          datatype; /* T_XXX */
+	u8                          flags;  /* P4TC_HDRFIELD_FLAGS_* */
 };
 
 extern const struct p4tc_template_ops p4tc_hdrfield_ops;
