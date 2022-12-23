@@ -2325,6 +2325,15 @@ static int p4tc_cmds_copy_opnd(struct p4tc_cmd_operand **new_kopnd,
 		       kopnd->path_or_value_extra_sz);
 	}
 
+	if (kopnd->print_prefix_sz) {
+		_new_kopnd->print_prefix = kzalloc(kopnd->print_prefix_sz,
+						   GFP_KERNEL);
+		if (!_new_kopnd->print_prefix)
+			return -ENOMEM;
+		memcpy(_new_kopnd->print_prefix, kopnd->print_prefix,
+		       kopnd->print_prefix_sz);
+	}
+
 	memcpy(_new_kopnd->immedv_large, kopnd->immedv_large,
 	       kopnd->immedv_large_sz);
 
@@ -2636,6 +2645,7 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 
 		val_t->ops->print(net, val_t, name, &readval);
 	} else if (A->oper_type == P4TC_OPER_HDRFIELD) {
+		char *path = (char *)A->print_prefix;
 		struct p4tc_header_field *hdrfield;
 		struct p4tc_pipeline *pipeline;
 		struct p4tc_parser *parser;
@@ -2644,9 +2654,14 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		parser = tcf_parser_find_byid(pipeline, A->immedv);
 		hdrfield = tcf_hdrfield_find_byid(parser, A->immedv2);
 
-		snprintf(name, TEMPLATENAMSZ * 4, "hdrfield.%s.%s.%s",
-			 pipeline->common.name, parser->parser_name,
-			 hdrfield->common.name);
+		if (path)
+			snprintf(name, TEMPLATENAMSZ * 4, "%s hdrfield.%s.%s.%s",
+				 path, pipeline->common.name, parser->parser_name,
+				 hdrfield->common.name);
+		else
+			snprintf(name, TEMPLATENAMSZ * 4, "hdrfield.%s.%s.%s",
+				 pipeline->common.name, parser->parser_name,
+				 hdrfield->common.name);
 
 		val_t->ops->print(net, val_t, name, &readval);
 	} else if (A->oper_type == P4TC_OPER_KEY) {
