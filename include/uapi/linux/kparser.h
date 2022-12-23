@@ -1,28 +1,7 @@
-/* SPDX-License-Identifier: BSD-2-Clause-FreeBSD */
+/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /* Copyright (c) 2022, SiPanda Inc.
  *
  * kparser.h - kParser global Linux header file
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
  *
  * Authors:     Tom Herbert <tom@sipanda.io>
  *              Pratyush Kumar Khan <pratyush@sipanda.io>
@@ -34,49 +13,32 @@
 #include <linux/string.h>
 #include <linux/types.h>
 
-#define BITS_IN_BYTE	8
-#define BITS_IN_U32	(sizeof(__u32) * BITS_IN_BYTE)
-
-#define kparsersetbit(A, k) (A[(k)/BITS_IN_U32] |= (1 << ((k) % BITS_IN_U32)))
-#define kparserclearbit(A, k) (A[(k)/BITS_IN_U32] &= ~(1 << ((k) % BITS_IN_U32)))
-#define kparsertestbit(A, k) (1 & (A[(k)/BITS_IN_U32] >> ((k) % BITS_IN_U32)))
-
 /* *********************** NETLINK_GENERIC *********************** */
 #define KPARSER_GENL_NAME		"kParser"
 #define KPARSER_GENL_VERSION		0x1
-
 
 /* *********************** NETLINK CLI *********************** */
 #define KPARSER_ERR_STR_MAX_LEN		256
 /* *********************** Namespaces/objects *********************** */
 enum kparser_global_namespace_ids {
 	KPARSER_NS_INVALID,
-
 	KPARSER_NS_CONDEXPRS,
 	KPARSER_NS_CONDEXPRS_TABLE,
 	KPARSER_NS_CONDEXPRS_TABLES,
-
 	KPARSER_NS_COUNTER,
 	KPARSER_NS_COUNTER_TABLE,
-
 	KPARSER_NS_METADATA,
 	KPARSER_NS_METALIST,
-
 	KPARSER_NS_NODE_PARSE,
 	KPARSER_NS_PROTO_TABLE,
-
 	KPARSER_NS_TLV_NODE_PARSE,
 	KPARSER_NS_TLV_PROTO_TABLE,
-
 	KPARSER_NS_FLAG_FIELD,
 	KPARSER_NS_FLAG_FIELD_TABLE,
 	KPARSER_NS_FLAG_FIELD_NODE_PARSE,
 	KPARSER_NS_FLAG_FIELD_PROTO_TABLE,
-
 	KPARSER_NS_PARSER,
-
 	KPARSER_NS_OP_PARSER_LOCK_UNLOCK,
-
 	KPARSER_NS_MAX
 };
 
@@ -91,32 +53,23 @@ enum kparser_global_namespace_ids {
 
 enum {
 	KPARSER_ATTR_UNSPEC,	/* Add more entries after this */
-
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_CONDEXPRS),
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_CONDEXPRS_TABLE),
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_CONDEXPRS_TABLES),
-
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_COUNTER),
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_COUNTER_TABLE),
-
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_METADATA),
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_METALIST),
-
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_NODE_PARSE),
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_PROTO_TABLE),
-
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_TLV_NODE_PARSE),
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_TLV_PROTO_TABLE),
-
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_FLAG_FIELD),
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_FLAG_FIELD_TABLE),
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_FLAG_FIELD_NODE_PARSE),
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_FLAG_FIELD_PROTO_TABLE),
-
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_PARSER),
-
 	KPARSER_DEFINE_ATTR_IDS(KPARSER_NS_OP_PARSER_LOCK_UNLOCK),
-
 	KPARSER_ATTR_MAX	/* Add more entries before this */
 };
 
@@ -213,6 +166,7 @@ struct kparser_conf_cntr {
 enum kparser_metadata_type {
 	KPARSER_METADATA_INVALID,
 	KPARSER_METADATA_HDRDATA,
+	KPARSER_METADATA_HDRDATA_NIBBS_EXTRACT,
 	KPARSER_METADATA_HDRLEN,
 	KPARSER_METADATA_CONSTANT_BYTE,
 	KPARSER_METADATA_CONSTANT_HALFWORD,
@@ -245,14 +199,13 @@ struct kparser_conf_metadata {
 	enum kparser_metadata_counter_op_type cntr_op; // 3 bit
 	bool frame;
 	bool e_bit;
-	__u8 cntr; // 3 bit
-	__u8 cntr_data; // 3 bit
 	__u8 constant_value;
 	size_t soff;
 	size_t doff;
 	size_t len;
 	size_t add_off;
 	struct kparser_hkey counterkey;
+	struct kparser_hkey counter_data_key;
 };
 
 /* *********************** metadata list/table *********************** */
@@ -263,7 +216,8 @@ struct kparser_conf_metadata_table {
 };
 
 /* *********************** parse nodes *********************** */
-/* kParser protocol node types */
+/* kParser protocol node types
+ */
 enum kparser_node_type {
 	/* Plain node, no super structure */
 	KPARSER_NODE_TYPE_PLAIN,
@@ -294,7 +248,6 @@ struct kparser_parameterized_next_proto {
 };
 
 struct kparser_conf_parse_ops {
-	// bool flag_fields_length; // TODO
 	bool len_parameterized;
 	struct kparser_parameterized_len pflen;
 	struct kparser_parameterized_next_proto pfnext_proto;
@@ -364,7 +317,7 @@ enum {
  * max_plen: Maximum consecutive padding bytes
  * max_c_pad: Maximum number of consecutive padding options
  * disp_limit_exceed: Disposition when a TLV parsing limit is exceeded. See
- *	KPARSER_LOOP_DISP_STOP_* in parser.h
+ * KPARSER_LOOP_DISP_STOP_* in parser.h
  * exceed_loop_cnt_is_err: True is exceeding maximum number of TLVS is an error
  */
 struct kparser_loop_node_config {
@@ -502,8 +455,8 @@ struct kparser_conf_table {
  * max_encaps: Maximum number of encapsulations to parse
  * max_frames: Maximum number of metadata frames
  * metameta_size: Size of metameta data. The metameta data is at the head
- *	of the user defined metadata structure. This also serves as the
- *	offset of the first metadata frame
+ * of the user defined metadata structure. This also serves as the
+ * offset of the first metadata frame
  * frame_size: Size of one metadata frame
  */
 struct kparser_config {
@@ -525,7 +478,15 @@ struct kparser_conf_parser {
 };
 
 /* *********************** CLI config interface *********************** */
-#define KPARSER_CONFIG_MAX_KEYS				128
+
+/* TODO: remove macros and comment and use the values directly */
+/* NOTE: we can't use BITS_PER_TYPE from kernel header here and had to redefine BITS_IN_U32
+ * since this is shared with user space code.
+ */
+#define BITS_IN_BYTE	8
+#define BITS_IN_U32	(sizeof(__u32) * BITS_IN_BYTE)
+
+#define KPARSER_CONFIG_MAX_KEYS			128
 #define KPARSER_CONFIG_MAX_KEYS_BV_LEN ((KPARSER_CONFIG_MAX_KEYS / BITS_IN_U32) + 1)
 struct kparser_config_set_keys_bv {
 	__u32 ns_keys_bvs[KPARSER_CONFIG_MAX_KEYS_BV_LEN];
@@ -713,6 +674,5 @@ static inline bool kparser_hkey_user_id_invalid(const struct kparser_hkey *key)
 	return ((key->id == KPARSER_INVALID_ID) ||
 			(key->id > KPARSER_USER_ID_MAX));
 }
-
 
 #endif /* _LINUX_KPARSER_H */

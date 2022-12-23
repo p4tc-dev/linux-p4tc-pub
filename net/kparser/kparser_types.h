@@ -1,28 +1,7 @@
-/* SPDX-License-Identifier: BSD-2-Clause-FreeBSD */
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* Copyright (c) 2022, SiPanda Inc.
  *
- * kparser_types.h - kParser data types header file
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
+ * kparser_types.h - kParser private data types header file
  *
  * Authors:     Tom Herbert <tom@sipanda.io>
  *              Pratyush Kumar Khan <pratyush@sipanda.io>
@@ -180,9 +159,8 @@ struct kparser_counters {
  * Value tuple (e.g. for handling TCP or IPv6 HBH options TLVs)
  */
 
-#if 0
 /* Descriptor for parsing operations of one type of TLV. Fields are:
- *
+ * For struct kparser_proto_tlvs_opts:
  * start_offset: Returns the offset of TLVs in a header
  * len: Return length of a TLV. Must be set. If the return value < 0 (a
  *	KPARSER_STOP_* return code value) this indicates an error and parsing
@@ -193,14 +171,6 @@ struct kparser_counters {
  * type: Return the type of the TLV. If the return value is less than zero
  *	(KPARSER_STOP_* value) then this indicates and error and parsing stops
  */
-struct kparser_proto_tlvs_opts {
-	struct kparser_parameterized_len pfstart_offset;
-	bool len_parameterized;
-	struct kparser_parameterized_len pflen;
-	bool type_parameterized;
-	struct kparser_parameterized_next_proto pftype;
-};
-#endif
 
 /* A protocol node for parsing proto with TLVs
  *
@@ -253,7 +223,7 @@ struct kparser_proto_tlvs_node {
 /* Descriptor for a protocol field with flag fields
  *
  * Defines the flags and their data fields for one instance a flag field in
- * in a protocol header (e.g. GRE v0 flags):
+ * a protocol header (e.g. GRE v0 flags):
  *
  * num_idx: Number of flag_field structures
  * fields: List of defined flag fields
@@ -263,9 +233,8 @@ struct kparser_flag_fields {
 	struct kparser_flag_field __rcu *fields;
 };
 
-#if 0
 /* Structure or parsing operations for flag-fields
- *
+ * For struct kparser_proto_flag_fields_ops
  * Operations can be specified either as a function or a parameterization
  * of a parameterized function
  *
@@ -273,15 +242,8 @@ struct kparser_flag_fields {
  * start_fields_offset: Return the offset in the header of the start of the
  *	flag fields data
  */
-struct kparser_proto_flag_fields_ops {
-	bool get_flags_parameterized;
-	struct kparser_parameterized_get_value pfget_flags;
-	bool start_fields_offset_parameterized;
-	struct kparser_parameterized_len pfstart_fields_offset;
-};
-#endif
 
-/* A flag-fields protocol node. Note this is a super structure for aKPARSER 
+/* A flag-fields protocol node. Note this is a super structure for aKPARSER
  * protocol node and type is KPARSER_NODE_TYPE_FLAG_FIELDS
  */
 struct kparser_proto_flag_fields_node {
@@ -490,7 +452,7 @@ struct kparser_parse_flag_fields_node {
 };
 
 static inline ssize_t __kparser_flag_fields_offset(__u32 targ_idx, __u32 flags,
-		const struct kparser_flag_fields *flag_fields)
+						   const struct kparser_flag_fields *flag_fields)
 {
 	ssize_t offset = 0;
 	__u32 mask, flag;
@@ -499,7 +461,7 @@ static inline ssize_t __kparser_flag_fields_offset(__u32 targ_idx, __u32 flags,
 	for (i = 0; i < targ_idx; i++) {
 		flag = flag_fields->fields[i].flag;
 		if (flag_fields->fields[i].endian)
-				flag = ntohs(flag);
+			flag = ntohs(flag);
 		mask = flag_fields->fields[i].mask ? : flag;
 		if ((flags & mask) == flag)
 			offset += flag_fields->fields[i].size;
@@ -510,13 +472,13 @@ static inline ssize_t __kparser_flag_fields_offset(__u32 targ_idx, __u32 flags,
 
 /* Determine offset of a field given a set of flags */
 static inline ssize_t kparser_flag_fields_offset(__u32 targ_idx, __u32 flags,
-		const struct kparser_flag_fields *flag_fields)
+						 const struct kparser_flag_fields *flag_fields)
 {
 	__u32 mask, flag;
 
 	flag = flag_fields->fields[targ_idx].flag;
 	if (flag_fields->fields[targ_idx].endian)
-			flag = ntohs(flag);
+		flag = ntohs(flag);
 	mask = flag_fields->fields[targ_idx].mask ? : flag;
 	if ((flags & mask) != flag) {
 		/* Flag not set */
@@ -534,9 +496,9 @@ static inline bool kparser_flag_fields_check_invalid(__u32 flags, __u32 mask)
 
 /* Retrieve a byte value from a flag field */
 static inline __u8 kparser_flag_fields_get8(const __u8 *fields, __u32 targ_idx,
-		__u32 flags,
-		const struct kparser_flag_fields
-		*flag_fields)
+					    __u32 flags,
+					    const struct kparser_flag_fields
+					    *flag_fields)
 {
 	ssize_t offset = kparser_flag_fields_offset(targ_idx, flags,
 			flag_fields);
@@ -549,7 +511,7 @@ static inline __u8 kparser_flag_fields_get8(const __u8 *fields, __u32 targ_idx,
 
 /* Retrieve a short value from a flag field */
 static inline __u16 kparser_flag_fields_get16(const __u8 *fields,
-		__u32 targ_idx,
+					      __u32 targ_idx,
 		__u32 flags,
 		const struct kparser_flag_fields
 		*flag_fields)
@@ -564,7 +526,7 @@ static inline __u16 kparser_flag_fields_get16(const __u8 *fields,
 
 /* Retrieve a 32 bit value from a flag field */
 static inline __u32 kparser_get_flag_field32(const __u8 *fields, __u32 targ_idx,
-		__u32 flags,
+					     __u32 flags,
 		const struct kparser_flag_fields
 		*flag_fields)
 {
@@ -578,7 +540,7 @@ static inline __u32 kparser_get_flag_field32(const __u8 *fields, __u32 targ_idx,
 
 /* Retrieve a 64 bit value from a flag field */
 static inline __u64 kparser_get_flag_field64(const __u8 *fields, __u32 targ_idx,
-		__u32 flags,
+					     __u32 flags,
 		const struct kparser_flag_fields
 		*flag_fields)
 {
