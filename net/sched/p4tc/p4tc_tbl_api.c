@@ -242,7 +242,7 @@ int p4tca_table_get_entry_fill(struct sk_buff *skb,
 	if (nla_put_u16(skb, P4TC_ENTRY_PERMISSIONS, entry->permissions))
 		goto out_nlmsg_trim;
 
-	tm = rcu_dereference_protected(entry->tm, 1);
+	tm = rtnl_dereference(entry->tm);
 	p4tc_table_entry_tm_dump(&dtm, tm);
 	if (nla_put_64bit(skb, P4TC_ENTRY_TM, sizeof(dtm), &dtm, P4TC_ENTRY_PAD))
 		goto out_nlmsg_trim;
@@ -483,8 +483,7 @@ static int tcf_table_entry_get_table(struct p4tc_pipeline **pipeline,
 		goto dec_pipeline_refcount;
 	}
 
-	ret = 0;
-	goto out;
+	return 0;
 
 /* If we are here, it means that this was just incremented, so it should be > 1 */
 dec_pipeline_refcount:
