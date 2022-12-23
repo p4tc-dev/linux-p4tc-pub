@@ -132,6 +132,7 @@ struct genl_family kparser_nl_family __ro_after_init = {
 	.module		= THIS_MODULE,
 	.ops		= kparser_nl_ops,
 	.n_ops		= ARRAY_SIZE(kparser_nl_ops),
+	.resv_start_op	= KPARSER_CMD_CONFIGURE + 1,
 };
 
 /* send response to netlink msg requests */
