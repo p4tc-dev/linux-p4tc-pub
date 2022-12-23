@@ -469,6 +469,7 @@ tcf_table_key_add_1(struct net *net,
 		    struct netlink_ext_ack *extack)
 {
 	int ret = 0;
+	struct nlattr *tb_local[P4TC_TKEY_MAX + 1];
 	struct p4tc_table_key *key;
 	struct nlattr **tb;
 	u32 *id;
@@ -488,8 +489,6 @@ tcf_table_key_add_1(struct net *net,
 	if (tb_args) {
 		tb = tb_args;
 	} else {
-		struct nlattr *tb_local[P4TC_TKEY_MAX + 1];
-
 		ret = nla_parse_nested(tb_local, P4TC_TKEY_MAX, nla,
 				       p4tc_table_key_policy, extack);
 		if (ret < 0)
