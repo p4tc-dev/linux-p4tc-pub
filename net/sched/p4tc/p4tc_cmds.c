@@ -2032,6 +2032,7 @@ static int p4tc_cmds_copy_opnd(struct p4tc_cmd_operand **new_kopnd,
 {
 	struct p4tc_type_mask_shift *mask_shift = NULL;
 	struct p4tc_cmd_operand *_new_kopnd;
+	int err = 0;
 
 	_new_kopnd = kzalloc(sizeof(*_new_kopnd), GFP_KERNEL);
 	if (!_new_kopnd)
@@ -2045,26 +2046,34 @@ static int p4tc_cmds_copy_opnd(struct p4tc_cmd_operand **new_kopnd,
 		mask_shift = create_constant_bitops(kopnd,
 						    kopnd->oper_datatype,
 						    extack);
-		if (IS_ERR(mask_shift))
-			return -EINVAL;
+		if (IS_ERR(mask_shift)) {
+			err = -EINVAL;
+			goto err;
+		}
 	} else if (kopnd->oper_type == P4TC_OPER_META &&
 		   kopnd->oper_datatype->ops->create_bitops) {
 		struct p4tc_pipeline *pipeline;
 		struct p4tc_metadata *meta;
 
 		pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
-		if (!pipeline)
-			return -EINVAL;
+		if (!pipeline) {
+			err = -EINVAL;
+			goto err;
+		}
 
 		meta = tcf_meta_find_byid(pipeline, kopnd->immedv);
-		if (!meta)
-			return -EINVAL;
+		if (!meta) {
+			err = -EINVAL;
+			goto err;
+		}
 
 		mask_shift = create_metadata_bitops(kopnd, meta,
 						    kopnd->oper_datatype,
 						    extack);
-		if (IS_ERR(mask_shift))
-			return -EINVAL;
+		if (IS_ERR(mask_shift)) {
+			err = -EINVAL;
+			goto err;
+		}
 	} else if (kopnd->oper_type == P4TC_OPER_HDRFIELD  ||
 		   kopnd->oper_type == P4TC_OPER_PARAM ||
 		   kopnd->oper_type == P4TC_OPER_REG) {
@@ -2075,8 +2084,10 @@ static int p4tc_cmds_copy_opnd(struct p4tc_cmd_operand **new_kopnd,
 							kopnd->oper_bitstart,
 							kopnd->oper_bitend,
 							extack);
-			if (IS_ERR(mask_shift))
-				return -EINVAL;
+			if (IS_ERR(mask_shift)) {
+				err = -EINVAL;
+				goto err;
+			}
 		}
 	}
 
@@ -2085,8 +2096,11 @@ static int p4tc_cmds_copy_opnd(struct p4tc_cmd_operand **new_kopnd,
 	if (kopnd->path_or_value_sz) {
 		_new_kopnd->path_or_value = kzalloc(kopnd->path_or_value_sz,
 						    GFP_KERNEL);
-		if (!_new_kopnd->path_or_value)
-			return -ENOMEM;
+		if (!_new_kopnd->path_or_value) {
+			err = -ENOMEM;
+			goto err;
+		}
+
 		memcpy(_new_kopnd->path_or_value, kopnd->path_or_value,
 		       kopnd->path_or_value_sz);
 	}
@@ -2094,8 +2108,11 @@ static int p4tc_cmds_copy_opnd(struct p4tc_cmd_operand **new_kopnd,
 	if (kopnd->path_or_value_extra_sz) {
 		_new_kopnd->path_or_value_extra = kzalloc(kopnd->path_or_value_extra_sz,
 							  GFP_KERNEL);
-		if (!_new_kopnd->path_or_value_extra)
-			return -ENOMEM;
+		if (!_new_kopnd->path_or_value_extra) {
+			err = -ENOMEM;
+			goto err;
+		}
+
 		memcpy(_new_kopnd->path_or_value_extra, kopnd->path_or_value_extra,
 		       kopnd->path_or_value_extra_sz);
 	}
@@ -2106,6 +2123,13 @@ static int p4tc_cmds_copy_opnd(struct p4tc_cmd_operand **new_kopnd,
 	*new_kopnd = _new_kopnd;
 
 	return 0;
+
+err:
+	kfree(_new_kopnd->path_or_value);
+	kfree(_new_kopnd->path_or_value_extra);
+	kfree(_new_kopnd);
+
+	return err;
 }
 
 static int p4tc_cmds_copy_ops(struct p4tc_cmd_operate **new_op_entry,
