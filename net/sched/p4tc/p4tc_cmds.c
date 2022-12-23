@@ -1600,8 +1600,8 @@ int validate_BRN(struct net *net, struct p4tc_act *act,
 		return -EINVAL;
 	}
 
-	if ((A && !p4tc_type_unsigned(A->oper_datatype->typeid)) ||
-	    (B && !p4tc_type_unsigned(B->oper_datatype->typeid))) {
+	if (!p4tc_type_unsigned(A->oper_datatype->typeid) ||
+	    !p4tc_type_unsigned(B->oper_datatype->typeid)) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "Operands A and B must be unsigned\n");
 		return -EINVAL;
