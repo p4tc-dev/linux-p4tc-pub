@@ -1628,12 +1628,10 @@ static int tcf_table_entry_dump(struct sk_buff *skb, struct nlattr *arg,
 		return ret;
 	}
 
-	rcu_read_lock();
 	if (!ctx->iter) {
-		ctx->iter = kzalloc(sizeof(*ctx->iter), GFP_ATOMIC);
+		ctx->iter = kzalloc(sizeof(*ctx->iter), GFP_KERNEL);
 		if (!ctx->iter) {
 			ret = -ENOMEM;
-			rcu_read_unlock();
 			goto table_put;
 		}
 
@@ -1655,7 +1653,7 @@ static int tcf_table_entry_dump(struct sk_buff *skb, struct nlattr *arg,
 
 			count = nla_nest_start(skb, i + 1);
 			if (!count)
-				goto out_nlmsg_trim;
+				goto walk_stop;
 			if (p4tca_table_get_entry_fill(skb, table, entry,
 						       table->tbl_id) <= 0) {
 				NL_SET_ERR_MSG(extack,
@@ -1670,7 +1668,6 @@ static int tcf_table_entry_dump(struct sk_buff *skb, struct nlattr *arg,
 
 	if (!i) {
 		rhashtable_walk_exit(ctx->iter);
-		rcu_read_unlock();
 
 		ret = 0;
 		kfree(ctx->iter);
@@ -1684,16 +1681,15 @@ static int tcf_table_entry_dump(struct sk_buff *skb, struct nlattr *arg,
 	if (!ids[P4TC_PID_IDX])
 		ids[P4TC_PID_IDX] = pipeline->common.p_id;
 
-	rcu_read_unlock();
-
 	ret = skb->len;
 
 	goto table_put;
 
-out_nlmsg_trim:
+walk_stop:
 	rhashtable_walk_stop(ctx->iter);
 	rhashtable_walk_exit(ctx->iter);
-	rcu_read_unlock();
+
+out_nlmsg_trim:
 	nlmsg_trim(skb, b);
 
 table_put:
