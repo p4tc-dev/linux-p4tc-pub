@@ -184,8 +184,8 @@ static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 
 		default_hitact = nla_nest_start(skb, P4TC_TABLE_DEFAULT_HIT);
 		rcu_read_lock();
-		hitact = rcu_dereference(table->tbl_default_hitact);
-		if (hitact && hitact->default_acts) {
+		hitact = rcu_dereference_rtnl(table->tbl_default_hitact);
+		if (hitact->default_acts) {
 			struct nlattr *nest;
 
 			nest = nla_nest_start(skb, P4TC_TABLE_DEFAULT_ACTION);
@@ -210,8 +210,8 @@ static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 
 		default_missact = nla_nest_start(skb, P4TC_TABLE_DEFAULT_MISS);
 		rcu_read_lock();
-		missact = rcu_dereference(table->tbl_default_missact);
-		if (missact && missact->default_acts) {
+		missact = rcu_dereference_rtnl(table->tbl_default_missact);
+		if (missact->default_acts) {
 			struct nlattr *nest;
 
 			nest = nla_nest_start(skb, P4TC_TABLE_DEFAULT_ACTION);
