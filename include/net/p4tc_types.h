@@ -36,8 +36,8 @@ struct p4tc_type_ops {
 			  struct p4tc_type_mask_shift *mask_shift,
 			  void *sval,
 			  void *dval);
-	void (*print)(struct p4tc_type *container, const char *prefix,
-		      void *val);
+	void (*print)(struct net *net, struct p4tc_type *container,
+		      const char *prefix, void *val);
 };
 
 #define P4T_MAX_STR_SZ 32

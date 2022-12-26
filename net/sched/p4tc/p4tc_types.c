@@ -200,8 +200,8 @@ static int p4t_u32_write(struct p4tc_type *container,
 	return 0;
 }
 
-static void p4t_u32_print(struct p4tc_type *container, const char *prefix,
-			  void *val)
+static void p4t_u32_print(struct net *net, struct p4tc_type *container,
+			  const char *prefix, void *val)
 {
 	u32 *v = val;
 
@@ -268,16 +268,16 @@ static int p4t_s32_write(struct p4tc_type *container,
 	return 0;
 }
 
-static void p4t_s32_print(struct p4tc_type *container, const char *prefix,
-			  void *val)
+static void p4t_s32_print(struct net *net, struct p4tc_type *container,
+			  const char *prefix, void *val)
 {
 	s32 *v = val;
 
 	pr_info("%s %x\n", prefix, *v);
 }
 
-static void p4t_s64_print(struct p4tc_type *container, const char *prefix,
-			  void *val)
+static void p4t_s64_print(struct net *net, struct p4tc_type *container,
+			  const char *prefix, void *val)
 {
 	s64 *v = val;
 
@@ -352,8 +352,8 @@ static int p4t_be32_write(struct p4tc_type *container,
 	return 0;
 }
 
-static void p4t_be32_print(struct p4tc_type *container, const char *prefix,
-			   void *val)
+static void p4t_be32_print(struct net *net, struct p4tc_type *container,
+			   const char *prefix, void *val)
 {
 	__be32 *v = val;
 
@@ -430,8 +430,8 @@ static int p4t_u16_write(struct p4tc_type *container,
 	return 0;
 }
 
-static void p4t_u16_print(struct p4tc_type *container, const char *prefix,
-			  void *val)
+static void p4t_u16_print(struct net *net, struct p4tc_type *container,
+			  const char *prefix, void *val)
 {
 	u16 *v = val;
 
@@ -498,8 +498,8 @@ static int p4t_s16_write(struct p4tc_type *container,
 	return 0;
 }
 
-static void p4t_s16_print(struct p4tc_type *container, const char *prefix,
-			  void *val)
+static void p4t_s16_print(struct net *net, struct p4tc_type *container,
+			  const char *prefix, void *val)
 {
 	s16 *v = val;
 
@@ -573,8 +573,8 @@ static int p4t_be16_write(struct p4tc_type *container,
 	return 0;
 }
 
-static void p4t_be16_print(struct p4tc_type *container, const char *prefix,
-			   void *val)
+static void p4t_be16_print(struct net *net, struct p4tc_type *container,
+			   const char *prefix, void *val)
 {
 	__be16 *v = val;
 
@@ -649,8 +649,8 @@ static int p4t_u8_write(struct p4tc_type *container,
 	return 0;
 }
 
-static void p4t_u8_print(struct p4tc_type *container, const char *prefix,
-			 void *val)
+static void p4t_u8_print(struct net *net, struct p4tc_type *container,
+			 const char *prefix, void *val)
 {
 	u8 *v = val;
 
@@ -704,8 +704,8 @@ static int p4t_s8_hread(struct p4tc_type *container,
 	return 0;
 }
 
-static void p4t_s8_print(struct p4tc_type *container, const char *prefix,
-			 void *val)
+static void p4t_s8_print(struct net *net, struct p4tc_type *container,
+			 const char *prefix, void *val)
 {
 	s8 *v = val;
 
@@ -780,8 +780,8 @@ static int p4t_u64_write(struct p4tc_type *container,
 	return 0;
 }
 
-static void p4t_u64_print(struct p4tc_type *container, const char *prefix,
-			  void *val)
+static void p4t_u64_print(struct net *net, struct p4tc_type *container,
+			  const char *prefix, void *val)
 {
 	u64 *v = val;
 
@@ -844,8 +844,8 @@ static int p4t_u128_write(struct p4tc_type *container,
 	return 0;
 }
 
-static void p4t_u128_print(struct p4tc_type *container, const char *prefix,
-			   void *val)
+static void p4t_u128_print(struct net *net, struct p4tc_type *container,
+			   const char *prefix, void *val)
 {
 	u64 *v = val;
 
@@ -865,8 +865,8 @@ static int p4t_ipv4_validate(struct p4tc_type *container, void *value, u16 bitst
 	return 0;
 }
 
-static void p4t_ipv4_print(struct p4tc_type *container, const char *prefix,
-			   void *val)
+static void p4t_ipv4_print(struct net *net, struct p4tc_type *container,
+			   const char *prefix, void *val)
 {
 	u8 *v = val;
 
@@ -884,8 +884,8 @@ static int p4t_mac_validate(struct p4tc_type *container, void *value, u16 bitsta
 	return 0;
 }
 
-static void p4t_mac_print(struct p4tc_type *container, const char *prefix,
-			  void *val)
+static void p4t_mac_print(struct net *net, struct p4tc_type *container,
+			  const char *prefix, void *val)
 {
 	u8 *v = val;
 
@@ -904,10 +904,35 @@ static int p4t_dev_validate(struct p4tc_type *container, void *value, u16 bitsta
 	return 0;
 }
 
-static void p4t_dev_print(struct p4tc_type *container, const char *prefix,
-			  void *val)
+static int p4t_dev_write(struct p4tc_type *container,
+			 struct p4tc_type_mask_shift *mask_shift,
+			 void *sval, void *dval)
 {
-	const struct net_device *dev = val;
+	u32 *src = sval;
+	u32 *dst = dval;
+
+	*dst = *src;
+
+	return 0;
+}
+
+static int p4t_dev_hread(struct p4tc_type *container,
+			 struct p4tc_type_mask_shift *mask_shift,
+			 void *sval, void *dval)
+{
+	u32 *src = sval;
+	u32 *dst = dval;
+
+	*dst = *src;
+
+	return 0;
+}
+
+static void p4t_dev_print(struct net *net, struct p4tc_type *container,
+			  const char *prefix, void *val)
+{
+	const u32 *ifindex = val;
+	struct net_device *dev = dev_get_by_index_rcu(net, *ifindex);
 
 	pr_info("%s %s\n", prefix, dev->name);
 }
@@ -930,7 +955,7 @@ static int p4t_key_write(struct p4tc_type *container,
 	return 0;
 }
 
-static void p4t_key_print(struct p4tc_type *container,
+static void p4t_key_print(struct net *net, struct p4tc_type *container,
 			  const char *prefix, void *val)
 {
 	u64 *v = val;
@@ -995,8 +1020,8 @@ static int p4t_bool_write(struct p4tc_type *container,
 	return 0;
 }
 
-static void p4t_bool_print(struct p4tc_type *container, const char *prefix,
-			   void *val)
+static void p4t_bool_print(struct net *net, struct p4tc_type *container,
+			   const char *prefix, void *val)
 {
 	bool *v = val;
 
@@ -1112,8 +1137,8 @@ static struct p4tc_type_ops bool_ops = {
 
 static struct p4tc_type_ops dev_ops = {
 	.validate_p4t = p4t_dev_validate,
-	.host_read = p4t_u32_hread,
-	.host_write = p4t_u32_write,
+	.host_read = p4t_dev_hread,
+	.host_write = p4t_dev_write,
 	.print = p4t_dev_print,
 };
 

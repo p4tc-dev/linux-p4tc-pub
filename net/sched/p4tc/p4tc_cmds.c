@@ -86,12 +86,13 @@ static int p4tc_cmd_BOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 static int p4tc_cmd_BXOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			 struct tcf_p4act *cmd, struct tcf_result *res);
 
-static void kfree_opentry(struct p4tc_cmd_operate *ope)
+static void kfree_opentry(struct p4tc_cmd_operate *ope,
+			  bool called_from_template)
 {
 	if (!ope)
 		return;
 
-	ope->cmd->free_operation(ope, NULL);
+	ope->cmd->free_operation(ope, called_from_template, NULL);
 }
 
 static void copy_k2u_operand(struct p4tc_cmd_operand *k,
@@ -134,43 +135,58 @@ static int copy_u2k_operand(struct p4tc_u_operand *uopnd,
 	return 0;
 }
 
+int p4tc_cmds_fill_operand(struct sk_buff *skb, struct p4tc_cmd_operand *kopnd)
+{
+	unsigned char *b = skb_tail_pointer(skb);
+	struct p4tc_u_operand oper = {0};
+	u32 plen;
+
+	copy_k2u_operand(kopnd, &oper);
+	if (nla_put(skb, P4TC_CMD_OPND_INFO,
+		    sizeof(struct p4tc_u_operand), &oper))
+		goto nla_put_failure;
+
+	if (kopnd->path_or_value &&
+	    nla_put_string(skb, P4TC_CMD_OPND_PATH, kopnd->path_or_value))
+		goto nla_put_failure;
+
+	if (kopnd->path_or_value_extra &&
+	    nla_put_string(skb, P4TC_CMD_OPND_PATH_EXTRA,
+			   kopnd->path_or_value_extra))
+		goto nla_put_failure;
+
+	if (kopnd->print_prefix &&
+	    nla_put_string(skb, P4TC_CMD_OPND_PREFIX,
+			   kopnd->print_prefix))
+		goto nla_put_failure;
+
+	plen = kopnd->immedv_large_sz;
+
+	if (plen && nla_put(skb, P4TC_CMD_OPND_LARGE_CONSTANT, plen,
+			    kopnd->immedv_large))
+		goto nla_put_failure;
+
+	return skb->len;
+
+nla_put_failure:
+	nlmsg_trim(skb, b);
+	return -1;
+}
+
 static int p4tc_cmds_fill_operands_list(struct sk_buff *skb,
 					struct list_head *operands_list)
 {
 	unsigned char *b = skb_tail_pointer(skb);
-	struct p4tc_u_operand oper = {0};
 	int i = 1;
 	struct p4tc_cmd_operand *cursor;
 	struct nlattr *nest_count;
-	u32 plen;
 
 	list_for_each_entry(cursor, operands_list, oper_list_node) {
 		nest_count = nla_nest_start(skb, i);
 
-		copy_k2u_operand(cursor, &oper);
-		if (nla_put(skb, P4TC_CMD_OPND_INFO,
-			    sizeof(struct p4tc_u_operand), &oper))
+		if (p4tc_cmds_fill_operand(skb, cursor) < 0)
 			goto nla_put_failure;
 
-		if (cursor->path_or_value &&
-		    nla_put_string(skb, P4TC_CMD_OPND_PATH, cursor->path_or_value))
-			goto nla_put_failure;
-
-		if (cursor->path_or_value_extra &&
-		    nla_put_string(skb, P4TC_CMD_OPND_PATH_EXTRA,
-				   cursor->path_or_value_extra))
-			goto nla_put_failure;
-
-		if (cursor->print_prefix &&
-		    nla_put_string(skb, P4TC_CMD_OPND_PREFIX,
-				   cursor->print_prefix))
-			goto nla_put_failure;
-
-		plen = cursor->immedv_large_sz;
-
-		if (plen && nla_put(skb, P4TC_CMD_OPND_LARGE_CONSTANT, plen,
-				    cursor->immedv_large))
-			goto nla_put_failure;
 		nla_nest_end(skb, nest_count);
 		i++;
 	}
@@ -223,13 +239,14 @@ nla_put_failure:
 	return -1;
 }
 
-void p4tc_cmds_release_ope_list(struct list_head *entries)
+void p4tc_cmds_release_ope_list(struct list_head *entries,
+				bool called_from_template)
 {
 	struct p4tc_cmd_operate *entry, *e;
 
 	list_for_each_entry_safe(entry, e, entries, cmd_operations) {
 		list_del(&entry->cmd_operations);
-		kfree_opentry(entry);
+		kfree_opentry(entry, called_from_template);
 	}
 }
 
@@ -243,7 +260,7 @@ static void kfree_tmp_oplist(struct p4tc_cmd_operate *oplist[])
 		if (!ope)
 			continue;
 
-		kfree_opentry(ope);
+		kfree_opentry(ope, false);
 	}
 }
 
@@ -500,6 +517,10 @@ static int validate_param_operand(struct p4tc_act *act,
 		kopnd->oper_bitend = t->bitsz - 1;
 		kopnd->oper_bitsize = t->bitsz;
 	}
+	kopnd->pipeid = act->pipeline->common.p_id;
+	kopnd->immedv = act->a_id;
+	kopnd->immedv2 = param->id;
+	kopnd->oper_flags |=  DATA_IS_READ_ONLY;
 
 	if (kopnd->oper_bitstart != 0) {
 		NL_SET_ERR_MSG_MOD(extack, "Param startbit must be zero");
@@ -533,6 +554,8 @@ static int validate_res_operand(struct p4tc_cmd_operand *kopnd,
 	if (kopnd->immedv == P4TC_CMDS_RESULTS_HIT ||
 	    kopnd->immedv == P4TC_CMDS_RESULTS_MISS)
 		return 0;
+
+	kopnd->oper_flags |= DATA_IS_READ_ONLY;
 
 	NL_SET_ERR_MSG_MOD(extack, "Invalid result field");
 	return -EINVAL;
@@ -685,6 +708,9 @@ static int __validate_metadata_operand(struct p4tc_act *act,
 	if (err < 0)
 		return err;
 
+	if (meta->m_read_only)
+		kopnd->oper_flags |= DATA_IS_READ_ONLY;
+
 	if (container_type->ops->create_bitops) {
 		struct p4tc_type_mask_shift *mask_shift;
 
@@ -772,6 +798,7 @@ static int validate_operand(struct net *net, struct p4tc_act *act,
 			err = validate_immediate_operand(kopnd, extack);
 		else
 			err = validate_large_operand(kopnd, extack);
+		kopnd->oper_flags |=  DATA_IS_READ_ONLY;
 		break;
 	case P4TC_OPER_META:
 		err = __validate_metadata_operand(act, kopnd, extack);
@@ -839,7 +866,14 @@ static void _free_operand(struct p4tc_cmd_operand *op)
 			if (reg && !refcount_dec_not_one(&reg->reg_ref))
 				noop;
 		}
+	} else if (op->oper_type == P4TC_OPER_DEV) {
+		struct net_device *dev;
+
+		dev = op->priv;
+		if (dev)
+			netdev_put(dev, NULL);
 	}
+
 	if (op->oper_mask_shift)
 		p4t_release(op->oper_mask_shift);
 	kfree(op->path_or_value);
@@ -866,7 +900,7 @@ static void _free_operation(struct p4tc_cmd_operate *ope,
 	kfree(ope);
 }
 
-static void free_op_SET(struct p4tc_cmd_operate *ope,
+static void free_op_SET(struct p4tc_cmd_operate *ope, bool called_from_template,
 			struct netlink_ext_ack *extack)
 {
 	return _free_operation(ope, extack);
@@ -908,7 +942,9 @@ static void _free_tcf(struct tc_action *p)
 	kfree(p);
 }
 
-static void free_op_ACT(struct p4tc_cmd_operate *ope,
+#define P4TC_CMD_OPER_ACT_RUNTIME (BIT(0))
+
+static void free_op_ACT(struct p4tc_cmd_operate *ope, bool dec_act_refs,
 			struct netlink_ext_ack *extack)
 {
 	struct p4tc_cmd_operand *A;
@@ -921,22 +957,29 @@ static void free_op_ACT(struct p4tc_cmd_operate *ope,
 	if (p) {
 		struct tcf_idrinfo *idrinfo = p->idrinfo;
 
-		if (refcount_dec_and_mutex_lock(&p->tcfa_refcnt,
-						&idrinfo->lock)) {
-			idr_remove(&idrinfo->action_idr, p->tcfa_index);
-			mutex_unlock(&idrinfo->lock);
+		if (dec_act_refs) {
+			atomic_dec(&p->tcfa_bindcnt);
 
-			if (p->ops->cleanup)
-				p->ops->cleanup(p);
+			if (refcount_dec_and_mutex_lock(&p->tcfa_refcnt,
+							&idrinfo->lock)) {
+				idr_remove(&idrinfo->action_idr, p->tcfa_index);
+				mutex_unlock(&idrinfo->lock);
 
-			gen_kill_estimator(&p->tcfa_rate_est);
-			_free_tcf(p);
+				if (p->ops->cleanup)
+					p->ops->cleanup(p);
+
+				gen_kill_estimator(&p->tcfa_rate_est);
+				_free_tcf(p);
+			}
 		}
-
-		atomic_dec(&p->tcfa_bindcnt);
 	}
 
 	return _free_operation(ope, extack);
+}
+
+static inline int opnd_is_assignable(struct p4tc_cmd_operand *kopnd)
+{
+	return !(kopnd->oper_flags & DATA_IS_READ_ONLY);
 }
 
 static int __validate_BINARITH(struct net *net, struct p4tc_act *act,
@@ -953,6 +996,12 @@ static int __validate_BINARITH(struct net *net, struct p4tc_act *act,
 	err = validate_operand(net, act, A, extack);
 	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
 		return err;
+
+	if (!opnd_is_assignable(A)) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Unable to store op result in read-only operand");
+		return -EPERM;
+	}
 
 	switch (A->oper_type) {
 	case P4TC_OPER_KEY:
@@ -1024,6 +1073,121 @@ static int validate_num_opnds(struct p4tc_cmd_operate *ope, u32 cmd_num_opnds)
 	return 0;
 }
 
+static struct p4tc_act_param *
+validate_act_param(struct p4tc_act *act, struct p4tc_cmd_operand *op,
+		   unsigned long *param_id, struct netlink_ext_ack *extack)
+{
+	struct p4tc_act_param *nparam;
+	struct p4tc_act_param *param;
+
+	param = idr_get_next_ul(&act->params_idr, param_id);
+	if (!param) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Act has less runtime parameters than passed in call");
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (op->oper_datatype->typeid != param->type) {
+		NL_SET_ERR_MSG_MOD(extack, "Operand type differs from params");
+		return ERR_PTR(-EINVAL);
+	}
+	nparam = kzalloc(sizeof(*nparam), GFP_KERNEL);
+	if (!nparam)
+		return ERR_PTR(-ENOMEM);
+	strscpy(nparam->name, param->name, ACTPARAMNAMSIZ);
+	nparam->id = *param_id;
+	nparam->value = op;
+	nparam->type = param->type;
+	nparam->flags |= P4TC_ACT_PARAM_FLAGS_ISDYN;
+
+	return nparam;
+}
+
+static int validate_act_params(struct net *net, struct p4tc_act *act,
+			       struct p4tc_cmd_operand *A,
+			       struct list_head *opnds_lst,
+			       struct list_head *params_lst,
+			       struct netlink_ext_ack *extack)
+{
+	struct p4tc_act_param *params[P4TC_MSGBATCH_SIZE] = {NULL};
+	unsigned long param_id = 0;
+	int i = 0;
+	struct p4tc_cmd_operand *kopnd;
+	int err;
+
+	kopnd = A;
+	list_for_each_entry_continue(kopnd, opnds_lst, oper_list_node) {
+		struct p4tc_act_param *nparam;
+
+		err = validate_operand(net, act, kopnd, extack);
+		if (err)
+			goto free_params;
+
+		nparam = validate_act_param(act, kopnd, &param_id, extack);
+		if (IS_ERR(nparam)) {
+			err = PTR_ERR(nparam);
+			goto free_params;
+		}
+
+		params[i] = nparam;
+		list_add_tail(&nparam->head, params_lst);
+		i++;
+		param_id++;
+	}
+
+	if (idr_get_next_ul(&act->params_idr, &param_id)) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Act has more runtime params than passed in call");
+		err = -EINVAL;
+		goto free_params;
+	}
+
+	return 0;
+
+free_params:
+	while (i--)
+		kfree(params[i]);
+
+	return err;
+}
+
+static void free_intermediate_params_list(struct list_head *params_list)
+{
+	struct p4tc_act_param *nparam, *p;
+
+	list_for_each_entry_safe(nparam, p, params_list, head)
+		kfree(nparam);
+}
+
+/* Actions with runtime parameters don't have instance ids (found in immedv2)
+ * because the action is not created apriori. Example:
+ * cmd act ptables.myact param1 param2 ... doesn't specify instance.
+ * As noted, it is equivalent to treating an action like a function call with
+ * action attributes derived at runtime.If these actions were already
+ * instantiated then immedv2 will have a non-zero value equal to the action index.
+ */
+static int check_runtime_params(struct p4tc_cmd_operate *ope,
+				struct p4tc_cmd_operand *A,
+				bool *is_runtime_act,
+				struct netlink_ext_ack *extack)
+{
+	if (A->immedv2 && ope->num_opnds > 1) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Can't specify runtime params together with instance id");
+		return -EINVAL;
+	}
+
+	if (A->oper_flags & DATA_USES_ROOT_PIPE && !A->immedv2) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Must specify instance id for kernel act calls");
+		return -EINVAL;
+	}
+
+	*is_runtime_act = !A->immedv2;
+
+	return 0;
+}
+
 /* Syntax: act ACTION_ID ACTION_INDEX
  * Operation: The tc action instance of kind ID ACTION_ID and index ACTION_INDEX
  * is executed.
@@ -1034,22 +1198,29 @@ int validate_ACT(struct net *net, struct p4tc_act *act,
 		 u32 cmd_num_opnds, struct netlink_ext_ack *extack)
 {
 	struct tc_action_ops *action_ops;
-	struct p4tc_cmd_operand *A;
+	struct list_head params_list;
+	struct p4tc_cmd_operand *A, *B;
 	struct tc_action *action;
+	bool is_runtime_act;
 	int err;
 
-	err = validate_num_opnds(ope, cmd_num_opnds);
-	if (err < 0) {
-		NL_SET_ERR_MSG_MOD(extack, "ACT must have only 1 operands");
-		return err;
-	}
+	INIT_LIST_HEAD(&params_list);
 
 	A = GET_OPA(&ope->operands_list);
+	err = validate_operand(net, act, A, extack);
+	if (err < 0)
+		return err;
+
 	if (A->oper_type != P4TC_OPER_ACTID) {
 		NL_SET_ERR_MSG_MOD(extack, "ACT: Operand type MUST be P4TC_OPER_ACTID\n");
 		return -EINVAL;
 	}
 
+	err = check_runtime_params(ope, A, &is_runtime_act, extack);
+	if (err < 0)
+		return err;
+
+	B = GET_OPB(&ope->operands_list);
 	A->oper_datatype = p4type_find_byid(P4T_U32);
 
 	if (A->oper_flags & DATA_USES_ROOT_PIPE) {
@@ -1064,25 +1235,52 @@ int validate_ACT(struct net *net, struct p4tc_act *act,
 		act = tcf_action_find_byany(act->pipeline,
 					    (const char*)A->path_or_value,
 					    A->immedv, extack);
-
 		if (IS_ERR(act))
 			return PTR_ERR(act);
 
 		A->pipeid = act->pipeline->common.p_id;
 		A->immedv = act->a_id;
+		if (is_runtime_act) {
+			u32 flags = TCA_ACT_FLAGS_BIND;
+			struct tc_act_dyna parm = {0};
+
+			err = validate_act_params(net, act, A, &ope->operands_list,
+						  &params_list, extack);
+			if (err < 0)
+				return err;
+
+			parm.action = TC_ACT_PIPE;
+			err = tcf_p4_dyna_template_init(net, &action, act,
+							&params_list, &parm,
+							flags, extack);
+			if (err < 0)
+				goto free_params_list;
+
+			ope->op_flags |= P4TC_CMD_OPER_ACT_RUNTIME;
+		}
 
 		action_ops = &act->ops;
 	}
 
-	if (__tcf_idr_search(net, action_ops, &action, A->immedv2) == false) {
-		NL_SET_ERR_MSG_MOD(extack, "ACT: unknown Action index\n");
-		module_put(action_ops->owner);
-		return -EINVAL;
+	if (!is_runtime_act) {
+		if (__tcf_idr_search(net, action_ops, &action, A->immedv2) == false) {
+			NL_SET_ERR_MSG_MOD(extack, "ACT: unknown Action index\n");
+			module_put(action_ops->owner);
+			err = -EINVAL;
+			goto free_params_list;
+		}
+
+		atomic_inc(&action->tcfa_bindcnt);
 	}
 
+	A->immedv2 = action->tcfa_index;
 	A->action = action;
-	atomic_inc(&action->tcfa_bindcnt);
+
 	return 0;
+
+free_params_list:
+	free_intermediate_params_list(&params_list);
+	return err;
 }
 
 /* Syntax: set A B
@@ -1109,21 +1307,13 @@ int validate_SET(struct net *net, struct p4tc_act *act,
 	}
 
 	A = GET_OPA(&ope->operands_list);
+	err = validate_operand(net, act, A, extack);
+	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
+		return err;
 
-	if (A->oper_type == P4TC_OPER_CONST) {
-		NL_SET_ERR_MSG_MOD(extack, "Operand A cannot be constant\n");
-		return -EINVAL;
-	}
-
-	if (A->oper_type == P4TC_OPER_RES) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Operand A cannot be a results field\n");
-		return -EINVAL;
-	}
-
-	if (A->oper_type == P4TC_OPER_PARAM) {
-		NL_SET_ERR_MSG_MOD(extack, "Operand A cannot be a param");
-		return -EINVAL;
+	if (!opnd_is_assignable(A)) {
+		NL_SET_ERR_MSG_MOD(extack, "Unable to set read-only operand");
+		return -EPERM;
 	}
 
 	B = GET_OPB(&ope->operands_list);
@@ -1132,16 +1322,18 @@ int validate_SET(struct net *net, struct p4tc_act *act,
 		return -EINVAL;
 	}
 
-	err = validate_operand(net, act, A, extack);
-	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
-		return err;
-
 	err = validate_operand(net, act, B, extack);
 	if (err)
 		return err;
 
 	Atype = A->oper_datatype;
 	Btype = B->oper_datatype;
+	if ((Atype->typeid == P4T_DEV && Btype->typeid != P4T_DEV) ||
+	    (Atype->typeid != P4T_DEV && Btype->typeid == P4T_DEV)) {
+		NL_SET_ERR_MSG_MOD(extack, "Can only set dev to other dev");
+		return -EINVAL;
+	}
+
 	if (!Atype->ops->host_read || !Btype->ops->host_read) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "Types of A and B must have host_read op");
@@ -1610,19 +1802,21 @@ int validate_BRN(struct net *net, struct p4tc_act *act,
 	return 0;
 }
 
-static void free_op_BRN(struct p4tc_cmd_operate *ope,
+static void free_op_BRN(struct p4tc_cmd_operate *ope, bool called_from_template,
 			struct netlink_ext_ack *extack)
 {
 	return _free_operation(ope, extack);
 }
 
 static void free_op_PRINT(struct p4tc_cmd_operate *ope,
+			  bool called_from_template,
 			  struct netlink_ext_ack *extack)
 {
 	return _free_operation(ope, extack);
 }
 
 static void free_op_TBLAPP(struct p4tc_cmd_operate *ope,
+			   bool called_from_template,
 			   struct netlink_ext_ack *extack)
 {
 
@@ -1630,20 +1824,14 @@ static void free_op_TBLAPP(struct p4tc_cmd_operate *ope,
 }
 
 static void free_op_SNDPORTEGR(struct p4tc_cmd_operate *ope,
+			       bool called_from_template,
 			       struct netlink_ext_ack *extack)
 {
-	struct p4tc_cmd_operand *A;
-	struct net_device *dev;
-
-	A = GET_OPA(&ope->operands_list);
-
-	dev = A->priv;
-	netdev_put(dev, NULL);
-
 	return _free_operation(ope, extack);
 }
 
 static void free_op_BINARITH(struct p4tc_cmd_operate *ope,
+			     bool called_from_template,
 			     struct netlink_ext_ack *extack)
 {
 	return _free_operation(ope, extack);
@@ -1945,7 +2133,8 @@ static int p4tc_cmd_process_ops(struct net *net, struct p4tc_act *act,
 		}
 	}
 
-	err = cmd_t->validate_operands(net, act, ope, cmd_t->num_opnds, extack);
+	err = cmd_t->validate_operands(net, act, ope, cmd_t->num_opnds,
+				       extack);
 	if (err) {
 		//XXX: think about getting rid of this P4TC_CMD_POLICY
 		err =  P4TC_CMD_POLICY;
@@ -2004,6 +2193,22 @@ static int cmd_brn_validate(struct p4tc_cmd_operate *oplist[], int cnt,
 	return 0;
 }
 
+static void p4tc_cmds_insert_acts(struct p4tc_cmd_operate *ope)
+{
+	struct tc_action *actions[TCA_ACT_MAX_PRIO] = {NULL};
+	int i = 0;
+	struct p4tc_cmd_operand *kopnd;
+
+	list_for_each_entry(kopnd, &ope->operands_list, oper_list_node) {
+		if (kopnd->oper_type == P4TC_OPER_ACTID) {
+			actions[i] = kopnd->action;
+			i++;
+		}
+	}
+
+	tcf_idr_insert_many(actions);
+}
+
 static void p4tc_cmds_ops_pass_to_list(struct p4tc_cmd_operate **oplist,
 				       struct list_head *cmd_operations)
 {
@@ -2011,6 +2216,9 @@ static void p4tc_cmds_ops_pass_to_list(struct p4tc_cmd_operate **oplist,
 
 	for (i = 0; i < P4TC_CMDS_LIST_MAX && oplist[i]; i++) {
 		struct p4tc_cmd_operate *ope = oplist[i];
+
+		if (ope->op_flags & P4TC_CMD_OPER_ACT_RUNTIME)
+			p4tc_cmds_insert_acts(ope);
 
 		list_add_tail(&ope->cmd_operations, cmd_operations);
 	}
@@ -2022,7 +2230,7 @@ static void p4tc_cmd_ops_del_list(struct list_head *cmd_operations)
 
 	list_for_each_entry_safe(ope, tmp, cmd_operations, cmd_operations) {
 		list_del(&ope->cmd_operations);
-		kfree_opentry(ope);
+		kfree_opentry(ope, false);
 	}
 }
 
@@ -2271,6 +2479,12 @@ static void *p4tc_fetch_param(struct sk_buff *skb, struct p4tc_cmd_operand *op,
 	params = rcu_dereference(cmd->params);
 	param = idr_find(&params->params_idr, op->immedv2);
 
+	if (param->flags & P4TC_ACT_PARAM_FLAGS_ISDYN) {
+		struct p4tc_cmd_operand *intern_op = param->value;
+
+		return intern_op->fetch(skb, intern_op, cmd, res);
+	}
+
 	return param->value;
 }
 
@@ -2360,6 +2574,7 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 {
 	struct p4tc_cmd_operand *A = GET_OPA(&op->operands_list);
 	u64 readval[BITS_TO_U64(P4T_MAX_BITSZ)] = {0};
+	struct net *net = dev_net(skb->dev);
 	char name[(TEMPLATENAMSZ * 4)];
 	struct p4tc_type *val_t;
 	void *val;
@@ -2386,7 +2601,7 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		pipeline = tcf_pipeline_find_byid(A->pipeid);
 		meta = tcf_meta_find_byid(pipeline, A->immedv);
 
-		if (A->path_or_value_sz)
+		if (path)
 			snprintf(name,
 				 (TEMPLATENAMSZ << 1) + P4TC_CMD_MAX_OPER_PATH_LEN,
 				 "%s %s.%s", path, pipeline->common.name,
@@ -2395,7 +2610,7 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			snprintf(name, TEMPLATENAMSZ << 1, "%s.%s",
 				 pipeline->common.name, meta->common.name);
 
-		val_t->ops->print(val_t, name, &readval);
+		val_t->ops->print(net, val_t, name, &readval);
 	} else if (A->oper_type == P4TC_OPER_HDRFIELD) {
 		struct p4tc_header_field *hdrfield;
 		struct p4tc_pipeline *pipeline;
@@ -2409,7 +2624,7 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			 pipeline->common.name, parser->parser_name,
 			 hdrfield->common.name);
 
-		val_t->ops->print(val_t, name, &readval);
+		val_t->ops->print(net, val_t, name, &readval);
 	} else if (A->oper_type == P4TC_OPER_KEY) {
 		struct p4tc_table *table;
 		struct p4tc_pipeline *pipeline;
@@ -2419,14 +2634,14 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		snprintf(name, TEMPLATENAMSZ * 3, "key.%s.%s.%u",
 			 pipeline->common.name, table->common.name,
 			 A->immedv2);
-		val_t->ops->print(val_t, name, &readval);
+		val_t->ops->print(net, val_t, name, &readval);
 	} else if (A->oper_type == P4TC_OPER_PARAM) {
-		val_t->ops->print(val_t, "param", &readval);
+		val_t->ops->print(net, val_t, "param", &readval);
 	} else if (A->oper_type == P4TC_OPER_RES) {
 		if (A->immedv == P4TC_CMDS_RESULTS_HIT)
-			val_t->ops->print(val_t, "res.hit", &readval);
+			val_t->ops->print(net, val_t, "res.hit", &readval);
 		else if (A->immedv == P4TC_CMDS_RESULTS_MISS)
-			val_t->ops->print(val_t, "res.miss", &readval);
+			val_t->ops->print(net, val_t, "res.miss", &readval);
 	} else if (A->oper_type == P4TC_OPER_REG) {
 		struct p4tc_pipeline *pipeline;
 		struct p4tc_register *reg;
@@ -2435,7 +2650,7 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		reg = tcf_register_find_byid(pipeline, A->immedv);
 		snprintf(name, TEMPLATENAMSZ * 2, "register.%s.%s[%u]",
 			 pipeline->common.name, reg->common.name, A->immedv2);
-		val_t->ops->print(val_t, name, &readval);
+		val_t->ops->print(net, val_t, name, &readval);
 	} else {
 		pr_info("Unsupported operand for print\n");
 	}
@@ -2456,12 +2671,13 @@ static int p4tc_cmd_SNDPORTEGR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	struct net_device *dev;
 	unsigned int rec_level;
 	bool expects_nh;
+	u32 *ifindex;
 	int mac_len;
 	bool at_nh;
 	int err;
 
 	A = GET_OPA(&op->operands_list);
-	dev = A->fetch(skb, A, cmd, res);
+	ifindex = A->fetch(skb, A, cmd, res);
 
 	rec_level = __this_cpu_inc_return(redirect_rec_level);
 	if (unlikely(rec_level > REDIRECT_RECURSION_LIMIT)) {
@@ -2471,6 +2687,7 @@ static int p4tc_cmd_SNDPORTEGR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		return TC_ACT_SHOT;
 	}
 
+	dev = dev_get_by_index_rcu(dev_net(skb->dev), *ifindex);
 	if (unlikely(!dev)) {
 		pr_notice_once("SNDPORTEGR: target device is gone\n");
 		__this_cpu_dec(redirect_rec_level);
@@ -2522,12 +2739,13 @@ static int p4tc_cmd_MIRPORTEGR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	struct net_device *dev;
 	unsigned int rec_level;
 	bool expects_nh;
+	u32 *ifindex;
 	int mac_len;
 	bool at_nh;
 	int err;
 
 	A = GET_OPA(&op->operands_list);
-	dev = A->fetch(skb, A, cmd, res);
+	ifindex = A->fetch(skb, A, cmd, res);
 
 	rec_level = __this_cpu_inc_return(redirect_rec_level);
 	if (unlikely(rec_level > REDIRECT_RECURSION_LIMIT)) {
@@ -2537,6 +2755,7 @@ static int p4tc_cmd_MIRPORTEGR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		return TC_ACT_SHOT;
 	}
 
+	dev = dev_get_by_index_rcu(dev_net(skb->dev), *ifindex);
 	if (unlikely(!dev)) {
 		pr_notice_once("MIRPORTEGR: target device is gone\n");
 		__this_cpu_dec(redirect_rec_level);
