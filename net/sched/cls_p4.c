@@ -18,6 +18,8 @@
 
 #include <net/p4tc.h>
 
+#include "p4tc/trace.h"
+
 struct cls_p4_head {
 	struct tcf_exts exts;
 	struct tcf_result res;
@@ -41,6 +43,7 @@ static int p4_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 	}
 
 	pipeline = head->pipeline;
+	trace_p4_classify(skb, pipeline);
 
 	p4tc_ext = skb_ext_find(skb, P4TC_SKB_EXT);
 	if (!p4tc_ext) {
