@@ -30,15 +30,17 @@ static int p4_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 		       struct tcf_result *res)
 {
 	struct cls_p4_head *head = rcu_dereference_bh(tp->root);
-	struct p4tc_pipeline *pipeline = head->pipeline;
 	struct tcf_result p4res = { };
 	int rc = 0;
+	struct p4tc_pipeline *pipeline;
 	struct p4tc_skb_ext *p4tc_ext;
 
 	if (unlikely(!head)) {
 		pr_err("P4 classifier not found\n");
 		return -1;
 	}
+
+	pipeline = head->pipeline;
 
 	p4tc_ext = skb_ext_find(skb, P4TC_SKB_EXT);
 	if (!p4tc_ext) {
