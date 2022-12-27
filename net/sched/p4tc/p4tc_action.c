@@ -1602,9 +1602,6 @@ tcf_act_update(struct net *net, struct nlattr **tb,
 	int ret = 0;
 	struct p4tc_act *act;
 
-	if (ret < 0)
-		goto out;
-
 	act = tcf_action_find_byanyattr(tb[P4TC_ACT_NAME], a_id, pipeline,
 					extack);
 	if (IS_ERR(act))

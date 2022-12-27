@@ -23,7 +23,7 @@
 #define P4TC_MAX_TIENTRIES 512
 #define P4TC_DEFAULT_TIENTRIES 128
 
-#define P4TC_MAX_PERMISSION ((1 << (P4TC_CONTROL_PERMISSIONS_C_BIT + 1)) - 1)
+#define P4TC_MAX_PERMISSION (GENMASK(P4TC_PERM_MAX_BIT, 0))
 
 #define P4TC_KERNEL_PIPEID 0
 
@@ -161,11 +161,11 @@ struct p4tc_table_key {
 #define P4TC_CONTROL_PERMISSIONS (GENMASK(9, 5))
 #define P4TC_DATA_PERMISSIONS (GENMASK(4, 0))
 
-#define P4TC_TABLE_PERMISSIONS \
-	((GENMASK(P4TC_CONTROL_PERMISSIONS_C_BIT, P4TC_CONTROL_PERMISSIONS_D_BIT)) | \
-	P4TC_DATA_PERMISSIONS_R | P4TC_DATA_PERMISSIONS_X)
+#define P4TC_TABLE_PERMISSIONS                                   \
+	((GENMASK(P4TC_CTRL_PERM_C_BIT, P4TC_CTRL_PERM_D_BIT)) | \
+	 P4TC_DATA_PERM_R | P4TC_DATA_PERM_X)
 
-#define P4TC_PERMISSIONS_UNINIT 0x400
+#define P4TC_PERMISSIONS_UNINIT (1 << P4TC_PERM_MAX_BIT)
 
 struct p4tc_table_defact {
 	struct tc_action **default_acts;
@@ -178,7 +178,7 @@ struct p4tc_table_defact {
 	struct rcu_head  rcu;
 };
 
-struct p4tc_table_permissions {
+struct p4tc_table_perm {
 	__u16           permissions;
 	struct rcu_head rcu;
 };
@@ -195,7 +195,7 @@ struct p4tc_table {
 	struct p4tc_table_entry             *tbl_const_entry;
 	struct p4tc_table_defact __rcu      *tbl_default_hitact;
 	struct p4tc_table_defact __rcu      *tbl_default_missact;
-	struct p4tc_table_permissions __rcu *tbl_permissions;
+	struct p4tc_table_perm __rcu        *tbl_permissions;
 	spinlock_t                          tbl_masks_idr_lock;
 	spinlock_t                          tbl_prio_idr_lock;
 	int                                 tbl_num_postacts;

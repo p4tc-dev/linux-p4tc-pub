@@ -165,6 +165,7 @@ tcf_hdrfield_create(struct nlmsghdr *n, struct nlattr *nla,
 	u32 hdrfield_id = ids[P4TC_HDRFIELDID_IDX];
 	u32 parser_id = ids[P4TC_PARSEID_IDX];
 	char *hdrfield_name = NULL;
+	const char *parser_name = NULL;
 	struct nlattr *tb[P4TC_HDRFIELD_MAX + 1];
 	struct p4tc_header_field_ty *hdr_arg;
 	struct p4tc_header_field *hdrfield;
@@ -190,25 +191,22 @@ tcf_hdrfield_create(struct nlmsghdr *n, struct nlattr *nla,
 	/* This is done with rtnl_lock, so p_ref should never be zero here */
 	WARN_ON(!refcount_inc_not_zero(&pipeline->p_ref));
 
-	rcu_read_lock();
-	parser = tcf_parser_find_byany(pipeline,
-				       nla_data(tb[P4TC_HDRFIELD_PARSER_NAME]),
-				       parser_id, NULL);
-	if (IS_ERR(parser)) {
-		char *parser_name;
+	if (tb[P4TC_HDRFIELD_PARSER_NAME])
+		parser_name = nla_data(tb[P4TC_HDRFIELD_PARSER_NAME]);
 
-		if (!tb[P4TC_HDRFIELD_PARSER_NAME]) {
+	rcu_read_lock();
+	parser = tcf_parser_find_byany(pipeline, parser_name, parser_id, NULL);
+	if (IS_ERR(parser)) {
+		rcu_read_unlock();
+		if (!parser_name) {
 			NL_SET_ERR_MSG(extack, "Must supply parser name");
 			ret = -EINVAL;
 			goto refcount_dec_pipeline;
 		}
 
-		rcu_read_unlock();
 		/* If the parser instance wasn't created, let's create it here */
-		parser_name = nla_data(tb[P4TC_HDRFIELD_PARSER_NAME]);
 		parser = tcf_parser_create(pipeline, parser_name, parser_id,
 					   extack);
-
 		if (IS_ERR(parser)) {
 			ret = PTR_ERR(parser);
 			goto refcount_dec_pipeline;

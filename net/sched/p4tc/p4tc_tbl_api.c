@@ -63,8 +63,8 @@ const struct rhashtable_params entry_hlt_params = {
 };
 
 static struct p4tc_table_entry *
-p4tc_entry_lookup(struct p4tc_table *table,
-		  struct p4tc_table_entry_key *key, u32 prio)
+p4tc_entry_lookup(struct p4tc_table *table, struct p4tc_table_entry_key *key,
+		  u32 prio) __must_hold(RCU)
 {
 	struct p4tc_table_entry *entry;
 	struct rhlist_head *tmp, *bucket_list;
@@ -82,8 +82,8 @@ p4tc_entry_lookup(struct p4tc_table *table,
 }
 
 static struct p4tc_table_entry *
-__p4tc_entry_lookup(struct p4tc_table *table,
-		    struct p4tc_table_entry_key *key)
+__p4tc_entry_lookup(struct p4tc_table *table, struct p4tc_table_entry_key *key)
+	__must_hold(RCU)
 {
 	struct p4tc_table_entry *entry = NULL;
 	u32 smallest_prio = U32_MAX;
@@ -242,7 +242,7 @@ int p4tca_table_get_entry_fill(struct sk_buff *skb,
 	if (nla_put_u16(skb, P4TC_ENTRY_PERMISSIONS, entry->permissions))
 		goto out_nlmsg_trim;
 
-	tm = rcu_dereference_protected(entry->tm, 1);
+	tm = rtnl_dereference(entry->tm);
 	p4tc_table_entry_tm_dump(&dtm, tm);
 	if (nla_put_64bit(skb, P4TC_ENTRY_TM, sizeof(dtm), &dtm, P4TC_ENTRY_PAD))
 		goto out_nlmsg_trim;
@@ -447,9 +447,9 @@ static void tcf_table_entry_put_table(struct p4tc_pipeline *pipeline,
 
 static int tcf_table_entry_get_table(struct p4tc_pipeline **pipeline,
 				     struct p4tc_table **table,
-				     struct nlattr **tb, u32 *ids,
-				     char *p_name,
+				     struct nlattr **tb, u32 *ids, char *p_name,
 				     struct netlink_ext_ack *extack)
+	__must_hold(RCU)
 {
 	u32 pipeid, tbl_id;
 	char *tblname;
@@ -483,8 +483,7 @@ static int tcf_table_entry_get_table(struct p4tc_pipeline **pipeline,
 		goto dec_pipeline_refcount;
 	}
 
-	ret = 0;
-	goto out;
+	return 0;
 
 /* If we are here, it means that this was just incremented, so it should be > 1 */
 dec_pipeline_refcount:
@@ -554,20 +553,20 @@ static void tcf_table_entry_build_key(struct p4tc_table_entry_key *key,
 		key->value[i] = key->unmasked_key[i] & mask->value[i];
 }
 
-/* Must be called with RCU read lock */
 static int ___tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 				  struct p4tc_table *table,
 				  struct p4tc_table_entry *entry,
 				  bool from_control,
 				  struct netlink_ext_ack *extack)
+   __must_hold(RCU)
 {
 	int ret = 0;
 
 	if (from_control) {
-		if (!(entry->permissions & P4TC_CONTROL_PERMISSIONS_D))
+		if (!p4tc_ctrl_delete_ok(entry->permissions))
 			return -EPERM;
 	} else {
-		if (!(entry->permissions & P4TC_DATA_PERMISSIONS_D))
+		if (!p4tc_data_delete_ok(entry->permissions))
 			return -EPERM;
 	}
 
@@ -743,7 +742,7 @@ static int tcf_table_entry_gd(struct sk_buff *skb, struct nlmsghdr *n,
 	}
 
 	if (n->nlmsg_type == RTM_GETP4TBENT) {
-		if (!(entry->permissions & P4TC_CONTROL_PERMISSIONS_R)) {
+		if (!p4tc_ctrl_read_ok(entry->permissions)) {
 			NL_SET_ERR_MSG(extack,
 				       "Permission denied: Unable to read table entry");
 			ret = -EINVAL;
@@ -834,7 +833,7 @@ static int tcf_table_entry_flush(struct sk_buff *skb, struct nlmsghdr *n,
 		rhashtable_walk_start(&iter);
 
 		while ((entry = rhashtable_walk_next(&iter)) && !IS_ERR(entry)) {
-			if (!(entry->permissions & P4TC_CONTROL_PERMISSIONS_D)) {
+			if (!p4tc_ctrl_delete_ok(entry->permissions)) {
 				ret = -EPERM;
 				continue;
 			}
@@ -904,10 +903,10 @@ static int __tcf_table_entry_create(struct p4tc_pipeline *pipeline,
 				    struct p4tc_table *table,
 				    struct p4tc_table_entry *entry,
 				    struct p4tc_table_entry_mask *mask,
-				    u16 whodunnit,
-				    bool from_control)
+				    u16 whodunnit, bool from_control)
+	__must_hold(RCU)
 {
-	struct p4tc_table_permissions *tbl_perm;
+	struct p4tc_table_perm *tbl_perm;
 	struct p4tc_table_entry_mask *mask_found;
 	struct p4tc_table_entry_tm *dtm;
 	u16 permissions;
@@ -918,18 +917,17 @@ static int __tcf_table_entry_create(struct p4tc_pipeline *pipeline,
 	tbl_perm = rcu_dereference(table->tbl_permissions);
 	permissions = tbl_perm->permissions;
 	if (from_control) {
-		if (!(permissions & P4TC_CONTROL_PERMISSIONS_C))
+		if (!p4tc_ctrl_create_ok(permissions))
 			return -EPERM;
 	} else {
-		if (!(permissions & P4TC_DATA_PERMISSIONS_C))
+		if (!p4tc_data_create_ok(permissions))
 			return -EPERM;
 	}
 
-	rcu_read_lock();
 	mask_found = tcf_table_entry_mask_add(table, entry, mask);
 	if (IS_ERR(mask_found)) {
 		ret = PTR_ERR(mask_found);
-		goto unlock;
+		goto out;
 	}
 
 	tcf_table_entry_build_key(&entry->key, mask_found);
@@ -968,8 +966,6 @@ static int __tcf_table_entry_create(struct p4tc_pipeline *pipeline,
 		goto free_tm;
 	}
 
-	rcu_read_unlock();
-
 	return 0;
 
 free_tm:
@@ -984,8 +980,7 @@ dec_p_ref:
 rm_masks_idr:
 	tcf_table_entry_mask_del(table, entry);
 
-unlock:
-	rcu_read_unlock();
+out:
 	return ret;
 }
 
@@ -994,8 +989,8 @@ static int __tcf_table_entry_update(struct p4tc_pipeline *pipeline,
 				    struct p4tc_table *table,
 				    struct p4tc_table_entry *entry,
 				    struct p4tc_table_entry_mask *mask,
-				    u16 whodunnit,
-				    bool from_control)
+				    u16 whodunnit, bool from_control)
+	__must_hold(RCU)
 {
 	struct p4tc_table_entry_mask *mask_found;
 	struct p4tc_table_entry *entry_old;
@@ -1005,11 +1000,10 @@ static int __tcf_table_entry_update(struct p4tc_pipeline *pipeline,
 
 	refcount_set(&entry->entries_ref, 1);
 
-	rcu_read_lock();
 	mask_found = tcf_table_entry_mask_add(table, entry, mask);
 	if (IS_ERR(mask_found)) {
 		ret = PTR_ERR(mask_found);
-		goto unlock;
+		goto out;
 	}
 
 	tcf_table_entry_build_key(&entry->key, mask_found);
@@ -1021,12 +1015,12 @@ static int __tcf_table_entry_update(struct p4tc_pipeline *pipeline,
 	}
 
 	if (from_control) {
-		if (!(entry_old->permissions & P4TC_CONTROL_PERMISSIONS_U)) {
+		if (!p4tc_ctrl_update_ok(entry_old->permissions)) {
 			ret = -EPERM;
 			goto rm_masks_idr;
 		}
 	} else {
-		if (!(entry_old->permissions & P4TC_DATA_PERMISSIONS_U)) {
+		if (!p4tc_data_update_ok(entry_old->permissions)) {
 			ret = -EPERM;
 			goto rm_masks_idr;
 		}
@@ -1066,10 +1060,8 @@ static int __tcf_table_entry_update(struct p4tc_pipeline *pipeline,
 	if (tcf_table_entry_destroy(table, entry_old) < 0) {
 		kfree(tm);
 		ret = -EBUSY;
-		goto unlock;
+		goto out;
 	}
-
-	rcu_read_unlock();
 
 	return 0;
 
@@ -1079,15 +1071,13 @@ free_tm:
 rm_masks_idr:
 	tcf_table_entry_mask_del(table, entry);
 
-unlock:
-	rcu_read_unlock();
+out:
 	return ret;
 }
 
-#define P4TC_DEFAULT_TENTRY_PERMISSIONS \
-	(P4TC_CONTROL_PERMISSIONS_R | P4TC_CONTROL_PERMISSIONS_U | \
-	 P4TC_CONTROL_PERMISSIONS_D | P4TC_DATA_PERMISSIONS_R | \
-	 P4TC_DATA_PERMISSIONS_X)
+#define P4TC_DEFAULT_TENTRY_PERMISSIONS                           \
+	(P4TC_CTRL_PERM_R | P4TC_CTRL_PERM_U | P4TC_CTRL_PERM_D | \
+	 P4TC_DATA_PERM_R | P4TC_DATA_PERM_X)
 
 static int __tcf_table_entry_cu(struct net *net, u32 flags, struct nlattr **tb,
 				struct p4tc_table_entry *entry_cpy,
@@ -1173,45 +1163,44 @@ static int __tcf_table_entry_cu(struct net *net, u32 flags, struct nlattr **tb,
 		goto free_key_unmasked;
 
 	if (tb[P4TC_ENTRY_PERMISSIONS]) {
-		const u16 tbl_permissions = table->tbl_permissions->permissions;
-		u16 ored_with_tab_permissions;
-		u16 *permissions_ptr;
+		const u16 tblperm =
+			rcu_dereference(table->tbl_permissions)->permissions;
+		u16 nlperm;
 
-		permissions_ptr = nla_data(tb[P4TC_ENTRY_PERMISSIONS]);
-		if (*permissions_ptr > (1 << 10) - 1) {
+		nlperm = *((u16 *)nla_data(tb[P4TC_ENTRY_PERMISSIONS]));
+		if (nlperm > P4TC_MAX_PERMISSION) {
 			NL_SET_ERR_MSG(extack,
 				       "Permission may only have 10 bits turned on");
 			ret = -EINVAL;
 			goto free_key_unmasked;
 		}
-		if (*permissions_ptr & P4TC_CONTROL_PERMISSIONS_C ||
-		    *permissions_ptr & P4TC_DATA_PERMISSIONS_C) {
+		if (p4tc_ctrl_create_ok(nlperm) ||
+		    p4tc_data_create_ok(nlperm)) {
 			NL_SET_ERR_MSG(extack,
 				       "Create permission for table entry doesn't make sense");
 			ret = -EINVAL;
 			goto free_key_unmasked;
 		}
-		if (!(*permissions_ptr & P4TC_DATA_PERMISSIONS_R)) {
+		if (!p4tc_data_read_ok(nlperm)) {
 			NL_SET_ERR_MSG(extack,
 				       "Data path read permission must be set");
 			ret = -EINVAL;
 			goto free_key_unmasked;
 		}
-		if (!(*permissions_ptr & P4TC_DATA_PERMISSIONS_X)) {
+		if (!p4tc_data_exec_ok(nlperm)) {
 			NL_SET_ERR_MSG(extack,
 				       "Data path execute permissions for entry must be set");
 			ret = -EINVAL;
 			goto free_key_unmasked;
 		}
 
-		ored_with_tab_permissions = tbl_permissions | *permissions_ptr;
-		if (ored_with_tab_permissions != tbl_permissions) {
+		if (~tblperm & nlperm) {
 			NL_SET_ERR_MSG(extack,
 				       "Trying to set permission bits which aren't allowed by table");
 			ret = -EINVAL;
 			goto free_key_unmasked;
 		}
-		entry->permissions = *permissions_ptr;
+		entry->permissions = nlperm;
 	} else {
 		if (flags & NLM_F_REPLACE)
 			entry->permissions = P4TC_PERMISSIONS_UNINIT;
@@ -1639,12 +1628,10 @@ static int tcf_table_entry_dump(struct sk_buff *skb, struct nlattr *arg,
 		return ret;
 	}
 
-	rcu_read_lock();
 	if (!ctx->iter) {
-		ctx->iter = kzalloc(sizeof(*ctx->iter), GFP_ATOMIC);
+		ctx->iter = kzalloc(sizeof(*ctx->iter), GFP_KERNEL);
 		if (!ctx->iter) {
 			ret = -ENOMEM;
-			rcu_read_unlock();
 			goto table_put;
 		}
 
@@ -1659,14 +1646,14 @@ static int tcf_table_entry_dump(struct sk_buff *skb, struct nlattr *arg,
 		     !IS_ERR(entry); i++) {
 			struct nlattr *count;
 
-			if (!(entry->permissions & P4TC_CONTROL_PERMISSIONS_R)) {
+			if (!p4tc_ctrl_read_ok(entry->permissions)) {
 				i--;
 				continue;
 			}
 
 			count = nla_nest_start(skb, i + 1);
 			if (!count)
-				goto out_nlmsg_trim;
+				goto walk_stop;
 			if (p4tca_table_get_entry_fill(skb, table, entry,
 						       table->tbl_id) <= 0) {
 				NL_SET_ERR_MSG(extack,
@@ -1681,7 +1668,6 @@ static int tcf_table_entry_dump(struct sk_buff *skb, struct nlattr *arg,
 
 	if (!i) {
 		rhashtable_walk_exit(ctx->iter);
-		rcu_read_unlock();
 
 		ret = 0;
 		kfree(ctx->iter);
@@ -1695,16 +1681,15 @@ static int tcf_table_entry_dump(struct sk_buff *skb, struct nlattr *arg,
 	if (!ids[P4TC_PID_IDX])
 		ids[P4TC_PID_IDX] = pipeline->common.p_id;
 
-	rcu_read_unlock();
-
 	ret = skb->len;
 
 	goto table_put;
 
-out_nlmsg_trim:
+walk_stop:
 	rhashtable_walk_stop(ctx->iter);
 	rhashtable_walk_exit(ctx->iter);
-	rcu_read_unlock();
+
+out_nlmsg_trim:
 	nlmsg_trim(skb, b);
 
 table_put:
