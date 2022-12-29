@@ -929,8 +929,9 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 		goto out;
 	}
 
-	if (tcf_table_find_byanyattr(pipeline, tb[P4TC_TABLE_NAME], tbl_id,
-				     extack)) {
+	table = tcf_table_find_byanyattr(pipeline, tb[P4TC_TABLE_NAME], tbl_id,
+					 NULL);
+	if (!IS_ERR(table)) {
 		NL_SET_ERR_MSG(extack, "Table already exists");
 		ret = -EEXIST;
 		goto out;
