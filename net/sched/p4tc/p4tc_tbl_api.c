@@ -204,7 +204,7 @@ int p4tca_table_get_entry_fill(struct sk_buff *skb,
 			       u32 tbl_id)
 {
 	unsigned char *b = skb_tail_pointer(skb);
-	int ret = -1;
+	int ret = -ENOMEM;
 	struct nlattr *nest, *nest_acts;
 	struct p4tc_table_entry_tm dtm, *tm;
 	u32 ids[P4TC_ENTRY_MAX_IDS];
@@ -1652,14 +1652,21 @@ static int tcf_table_entry_dump(struct sk_buff *skb, struct nlattr *arg,
 			}
 
 			count = nla_nest_start(skb, i + 1);
-			if (!count)
-				goto walk_stop;
-			if (p4tca_table_get_entry_fill(skb, table, entry,
-						       table->tbl_id) <= 0) {
+			if (!count) {
+				rhashtable_walk_stop(ctx->iter);
+				goto table_put;
+			}
+			ret = p4tca_table_get_entry_fill(skb, table, entry,
+							 table->tbl_id);
+			if (ret == 0) {
 				NL_SET_ERR_MSG(extack,
 					       "Failed to fill notification attributes for table entry");
-				kfree(ctx->iter);
-				goto out_nlmsg_trim;
+				goto walk_done;
+			} else if (ret == -ENOMEM) {
+				ret = 1;
+				nla_nest_cancel(skb, count);
+				rhashtable_walk_stop(ctx->iter);
+				goto table_put;
 			}
 			nla_nest_end(skb, count);
 		}
@@ -1685,11 +1692,11 @@ static int tcf_table_entry_dump(struct sk_buff *skb, struct nlattr *arg,
 
 	goto table_put;
 
-walk_stop:
+walk_done:
 	rhashtable_walk_stop(ctx->iter);
 	rhashtable_walk_exit(ctx->iter);
+	kfree(ctx->iter);
 
-out_nlmsg_trim:
 	nlmsg_trim(skb, b);
 
 table_put:

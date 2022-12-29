@@ -20,7 +20,7 @@
 #include <net/net_namespace.h>
 #include <net/pkt_cls.h>
 #include <net/p4tc.h>
-#include <net/kparser/kparser.h>
+#include <net/kparser.h>
 #include <net/netlink.h>
 
 static struct p4tc_parser *
@@ -115,7 +115,7 @@ static int __tcf_parser_fill(struct p4tc_parser *parser,
 	kparser_key.id = parser->parser_inst_id;
 	strscpy(kparser_key.name, parser->parser_name, KPARSER_MAX_NAME);
 
-	parser->kparser = kparser_get_parser(&kparser_key);
+	parser->kparser = kparser_get_parser(&kparser_key, false);
 	if (!parser->kparser) {
 		NL_SET_ERR_MSG(extack, "Unable to get kparser instance");
 		return -ENOENT;
@@ -126,7 +126,7 @@ static int __tcf_parser_fill(struct p4tc_parser *parser,
 
 void __tcf_parser_put(struct p4tc_parser *parser)
 {
-	kparser_put_parser(parser->kparser);
+	kparser_put_parser(parser->kparser, false);
 }
 
 bool tcf_parser_is_callable(struct p4tc_parser *parser)

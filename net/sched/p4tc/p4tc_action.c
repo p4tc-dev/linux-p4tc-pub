@@ -34,6 +34,46 @@ static LIST_HEAD(dynact_list);
 
 #define SEPARATOR "/"
 
+static u32 label_hash_fn(const void *data, u32 len, u32 seed)
+{
+	const struct p4tc_label_key *key = data;
+
+	return jhash(key->label, key->labelsz, seed);
+}
+
+static int label_hash_cmp(struct rhashtable_compare_arg *arg,
+				    const void *ptr)
+{
+	const struct p4tc_label_key *label_arg = arg->key;
+	const struct p4tc_label_node *node = ptr;
+
+	return strncmp(label_arg->label, node->key.label, node->key.labelsz);
+}
+
+static u32 label_obj_hash_fn(const void *data, u32 len, u32 seed)
+{
+	const struct p4tc_label_node *node = data;
+
+	return label_hash_fn(&node->key, 0, seed);
+}
+
+void p4tc_label_ht_destroy(void *ptr, void *arg)
+{
+	struct p4tc_label_node *node = ptr;
+
+	kfree(node->key.label);
+	kfree(node);
+}
+
+const struct rhashtable_params p4tc_label_ht_params = {
+	.obj_cmpfn = label_hash_cmp,
+	.obj_hashfn = label_obj_hash_fn,
+	.hashfn = label_hash_fn,
+	.head_offset = offsetof(struct p4tc_label_node, ht_node),
+	.key_offset = offsetof(struct p4tc_label_node, key),
+	.automatic_shrinking = true,
+};
+
 static int __tcf_p4_dyna_init(struct net *net, struct nlattr *est,
 			      struct p4tc_act *act, struct tc_act_dyna *parm,
 			      struct tc_action **a, struct tcf_proto *tp,
@@ -128,8 +168,7 @@ static int __tcf_p4_dyna_init_set(struct p4tc_act *act, struct tc_action **a,
 
 	goto_ch = tcf_action_set_ctrlact(*a, parm->action, goto_ch);
 
-	err = p4tc_cmds_copy(&p->cmd_operations, &act->cmd_operations, exists,
-			     extack);
+	err = p4tc_cmds_copy(act, &p->cmd_operations, exists, extack);
 	if (err < 0) {
 		if (exists)
 			spin_unlock_bh(&p->tcf_lock);
@@ -516,8 +555,11 @@ static int tcf_p4_dyna_act(struct sk_buff *skb, const struct tc_action *a,
 	 */
 	spin_lock(&dynact->tcf_lock);
 	list_for_each_entry(op, &dynact->cmd_operations, cmd_operations) {
-		if (jmp_cnt > 0) {
-			jmp_cnt--;
+		if (jmp_cnt-- > 0)
+			continue;
+
+		if (op->op_id == P4TC_CMD_OP_LABEL) {
+			ret = TC_ACT_PIPE;
 			continue;
 		}
 
@@ -584,7 +626,7 @@ static int tcf_p4_dyna_dump(struct sk_buff *skb, struct tc_action *a, int bind,
 	if (!nest_parms)
 		goto nla_put_failure;
 
-	params = rcu_dereference(dynact->params);
+	params = rcu_dereference_protected(dynact->params, 1);
 	if (params) {
 		idr_for_each_entry(&params->params_idr, parm, id) {
 			struct p4tc_act_param_ops *op;
@@ -1233,6 +1275,12 @@ static int __tcf_act_put(struct net *net, struct p4tc_pipeline *pipeline,
 		return ret;
 	}
 	rtnl_lock();
+
+	if (act->labels) {
+		rhashtable_free_and_destroy(act->labels, p4tc_label_ht_destroy,
+					    NULL);
+		kfree(act->labels);
+	}
 
 	idr_remove(&pipeline->p_act_idr, act->a_id);
 

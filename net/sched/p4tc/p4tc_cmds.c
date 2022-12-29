@@ -85,6 +85,8 @@ static int p4tc_cmd_BOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			struct tcf_p4act *cmd, struct tcf_result *res);
 static int p4tc_cmd_BXOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			 struct tcf_p4act *cmd, struct tcf_result *res);
+static int p4tc_cmd_JUMP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			 struct tcf_p4act *cmd, struct tcf_result *res);
 
 static void kfree_opentry(struct p4tc_cmd_operate *ope,
 			  bool called_from_template)
@@ -250,7 +252,8 @@ void p4tc_cmds_release_ope_list(struct list_head *entries,
 	}
 }
 
-static void kfree_tmp_oplist(struct p4tc_cmd_operate *oplist[])
+static void kfree_tmp_oplist(struct p4tc_cmd_operate *oplist[],
+			     bool called_from_template)
 {
 	int i = 0;
 	struct p4tc_cmd_operate *ope;
@@ -260,7 +263,7 @@ static void kfree_tmp_oplist(struct p4tc_cmd_operate *oplist[])
 		if (!ope)
 			continue;
 
-		kfree_opentry(ope, false);
+		kfree_opentry(ope, called_from_template);
 	}
 }
 
@@ -561,6 +564,77 @@ static int validate_res_operand(struct p4tc_cmd_operand *kopnd,
 	return -EINVAL;
 }
 
+static int register_label(struct p4tc_act *act, const char *label,
+			  int cmd_offset, struct netlink_ext_ack *extack)
+{
+	const size_t labelsz = strnlen(label, LABELNAMSIZ) + 1;
+	struct p4tc_label_node *node;
+	void *ptr;
+	int err;
+
+	node = kzalloc(sizeof(*node), GFP_KERNEL);
+	if (!node)
+		return -ENOMEM;
+
+	node->key.label = kzalloc(labelsz, GFP_KERNEL);
+	if (!(node->key.label)) {
+		err = -ENOMEM;
+		goto free_node;
+	}
+
+	strscpy(node->key.label, label, labelsz);
+	node->key.labelsz = labelsz;
+
+	node->cmd_offset = cmd_offset;
+
+	ptr = rhashtable_insert_slow(act->labels, &node->key, &node->ht_node);
+	if (IS_ERR(ptr)) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Unable to insert in labels hashtable");
+		err = PTR_ERR(ptr);
+		goto free_label;
+	}
+
+	return 0;
+
+free_label:
+	kfree(node->key.label);
+
+free_node:
+	kfree(node);
+
+	return err;
+}
+
+static int validate_label_operand(struct p4tc_act *act,
+				  struct p4tc_cmd_operate *ope,
+				  struct p4tc_cmd_operand *kopnd,
+				  struct netlink_ext_ack *extack)
+{
+	kopnd->oper_datatype = p4type_find_byid(P4T_U32);
+	return register_label(act, (const char *)kopnd->path_or_value,
+			      ope->cmd_offset, extack);
+}
+
+static int cmd_find_label_offset(struct p4tc_act *act, const char *label,
+				 struct netlink_ext_ack *extack)
+{
+	struct p4tc_label_node *node;
+	struct p4tc_label_key label_key;
+
+	label_key.label = (char *)label;
+	label_key.labelsz = strnlen(label, LABELNAMSIZ) + 1;
+
+	node = rhashtable_lookup(act->labels, &label_key,
+				 p4tc_label_ht_params);
+	if (!node) {
+		NL_SET_ERR_MSG_MOD(extack, "Unable to find label");
+		return -ENOENT;
+	}
+
+	return node->cmd_offset;
+}
+
 static int validate_reg_operand(struct p4tc_act *act,
 				struct p4tc_cmd_operand *kopnd,
 				struct netlink_ext_ack *extack)
@@ -784,6 +858,7 @@ static int validate_immediate_operand(struct p4tc_cmd_operand *kopnd,
 }
 
 static int validate_operand(struct net *net, struct p4tc_act *act,
+			    struct p4tc_cmd_operate *ope,
 			    struct p4tc_cmd_operand *kopnd,
 			    struct netlink_ext_ack *extack)
 {
@@ -826,6 +901,9 @@ static int validate_operand(struct net *net, struct p4tc_act *act,
 		break;
 	case P4TC_OPER_REG:
 		err = validate_reg_operand(act, kopnd, extack);
+		break;
+	case P4TC_OPER_LABEL:
+		err = validate_label_operand(act, ope, kopnd, extack);
 		break;
 	default:
 		NL_SET_ERR_MSG_MOD(extack, "Unknown operand type");
@@ -897,10 +975,13 @@ static void _free_operation(struct p4tc_cmd_operate *ope,
 {
 	_free_operand_list(&ope->operands_list);
 
+	kfree(ope->label1);
+	kfree(ope->label2);
 	kfree(ope);
 }
 
-static void free_op_SET(struct p4tc_cmd_operate *ope, bool called_from_template,
+static void free_op_SET(struct p4tc_cmd_operate *ope,
+			bool called_from_template,
 			struct netlink_ext_ack *extack)
 {
 	return _free_operation(ope, extack);
@@ -944,7 +1025,8 @@ static void _free_tcf(struct tc_action *p)
 
 #define P4TC_CMD_OPER_ACT_RUNTIME (BIT(0))
 
-static void free_op_ACT(struct p4tc_cmd_operate *ope, bool dec_act_refs,
+static void free_op_ACT(struct p4tc_cmd_operate *ope,
+			bool dec_act_refs,
 			struct netlink_ext_ack *extack)
 {
 	struct p4tc_cmd_operand *A;
@@ -983,7 +1065,7 @@ static inline int opnd_is_assignable(struct p4tc_cmd_operand *kopnd)
 }
 
 static int __validate_BINARITH(struct net *net, struct p4tc_act *act,
-			       struct list_head *operands_list,
+			       struct p4tc_cmd_operate *ope,
 			       const size_t max_operands,
 			       struct netlink_ext_ack *extack)
 {
@@ -992,8 +1074,8 @@ static int __validate_BINARITH(struct net *net, struct p4tc_act *act,
 	int err;
 	int i = 0;
 
-	A = GET_OPA(operands_list);
-	err = validate_operand(net, act, A, extack);
+	A = GET_OPA(&ope->operands_list);
+	err = validate_operand(net, act, ope, A, extack);
 	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
 		return err;
 
@@ -1015,7 +1097,7 @@ static int __validate_BINARITH(struct net *net, struct p4tc_act *act,
 	}
 
 	cursor = A;
-	list_for_each_entry_continue(cursor, operands_list, oper_list_node) {
+	list_for_each_entry_continue(cursor, &ope->operands_list, oper_list_node) {
 		struct p4tc_type *cursor_type;
 
 		if (i == max_operands - 1) {
@@ -1037,7 +1119,7 @@ static int __validate_BINARITH(struct net *net, struct p4tc_act *act,
 			return -EINVAL;
 		}
 
-		err = validate_operand(net, act, cursor, extack);
+		err = validate_operand(net, act, ope, cursor, extack);
 		if (err < 0)
 			return err;
 
@@ -1104,8 +1186,8 @@ validate_act_param(struct p4tc_act *act, struct p4tc_cmd_operand *op,
 }
 
 static int validate_act_params(struct net *net, struct p4tc_act *act,
+			       struct p4tc_cmd_operate *ope,
 			       struct p4tc_cmd_operand *A,
-			       struct list_head *opnds_lst,
 			       struct list_head *params_lst,
 			       struct netlink_ext_ack *extack)
 {
@@ -1116,10 +1198,10 @@ static int validate_act_params(struct net *net, struct p4tc_act *act,
 	int err;
 
 	kopnd = A;
-	list_for_each_entry_continue(kopnd, opnds_lst, oper_list_node) {
+	list_for_each_entry_continue(kopnd, &ope->operands_list, oper_list_node) {
 		struct p4tc_act_param *nparam;
 
-		err = validate_operand(net, act, kopnd, extack);
+		err = validate_operand(net, act, ope, kopnd, extack);
 		if (err)
 			goto free_params;
 
@@ -1207,7 +1289,7 @@ int validate_ACT(struct net *net, struct p4tc_act *act,
 	INIT_LIST_HEAD(&params_list);
 
 	A = GET_OPA(&ope->operands_list);
-	err = validate_operand(net, act, A, extack);
+	err = validate_operand(net, act, ope, A, extack);
 	if (err < 0)
 		return err;
 
@@ -1244,7 +1326,7 @@ int validate_ACT(struct net *net, struct p4tc_act *act,
 			u32 flags = TCA_ACT_FLAGS_BIND;
 			struct tc_act_dyna parm = {0};
 
-			err = validate_act_params(net, act, A, &ope->operands_list,
+			err = validate_act_params(net, act, ope, A,
 						  &params_list, extack);
 			if (err < 0)
 				return err;
@@ -1307,7 +1389,7 @@ int validate_SET(struct net *net, struct p4tc_act *act,
 	}
 
 	A = GET_OPA(&ope->operands_list);
-	err = validate_operand(net, act, A, extack);
+	err = validate_operand(net, act, ope, A, extack);
 	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
 		return err;
 
@@ -1322,7 +1404,7 @@ int validate_SET(struct net *net, struct p4tc_act *act,
 		return -EINVAL;
 	}
 
-	err = validate_operand(net, act, B, extack);
+	err = validate_operand(net, act, ope, B, extack);
 	if (err)
 		return err;
 
@@ -1400,7 +1482,7 @@ int validate_PRINT(struct net *net, struct p4tc_act *act,
 		return -EINVAL;
 	}
 
-	return validate_operand(net, act, A, extack);
+	return validate_operand(net, act, ope, A, extack);
 }
 
 int validate_TBLAPP(struct net *net, struct p4tc_act *act,
@@ -1422,7 +1504,7 @@ int validate_TBLAPP(struct net *net, struct p4tc_act *act,
 		return -EINVAL;
 	}
 
-	err = validate_operand(net, act, A, extack);
+	err = validate_operand(net, act, ope, A, extack);
 	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
 		return err;
 
@@ -1445,7 +1527,7 @@ int validate_SNDPORTEGR(struct net *net, struct p4tc_act *act,
 
 	A = GET_OPA(&ope->operands_list);
 
-	err = validate_operand(net, act, A, extack);
+	err = validate_operand(net, act, ope, A, extack);
 	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
 		return err;
 
@@ -1462,8 +1544,7 @@ int validate_BINARITH(struct net *net, struct p4tc_act *act,
 	struct p4tc_type *Ctype;
 	int err;
 
-	err = __validate_BINARITH(net, act, &ope->operands_list, cmd_num_opnds,
-				  extack);
+	err = __validate_BINARITH(net, act, ope, cmd_num_opnds, extack);
 	if (err)
 		return err;
 
@@ -1498,8 +1579,7 @@ int validate_CONCAT(struct net *net, struct p4tc_act *act,
 
 	A = GET_OPA(&ope->operands_list);
 
-	err = __validate_BINARITH(net, act, &ope->operands_list,
-				  cmd_num_opnds, extack);
+	err = __validate_BINARITH(net, act, ope, cmd_num_opnds, extack);
 	if (err)
 		return err;
 
@@ -1525,6 +1605,68 @@ int validate_CONCAT(struct net *net, struct p4tc_act *act,
 				   "Rvalue operands concatenated must fit inside operand A");
 		return -EINVAL;
 	}
+
+	return 0;
+}
+
+/* We'll validate jump to labels later once we have all labels processed */
+int validate_JUMP(struct net *net, struct p4tc_act *act,
+		  struct p4tc_cmd_operate *ope,
+		  u32 cmd_num_opnds, struct netlink_ext_ack *extack)
+{
+	struct p4tc_cmd_operand *A;
+	int err;
+
+	err = validate_num_opnds(ope, cmd_num_opnds);
+	if (err < 0) {
+		NL_SET_ERR_MSG_MOD(extack, "jump must have only 1 operands");
+		return err;
+	}
+
+	A = GET_OPA(&ope->operands_list);
+	if (A->oper_type != P4TC_OPER_LABEL) {
+		NL_SET_ERR_MSG_MOD(extack, "Operand A must be a label\n");
+		return -EINVAL;
+	}
+
+	if (A->immedv) {
+		int jmp_num;
+
+		jmp_num = A->immedv & TC_ACT_EXT_VAL_MASK;
+
+		if (jmp_num <= 0) {
+			NL_SET_ERR_MSG_MOD(extack, "Backward jumps are not allowed");
+			return -EINVAL;
+		}
+	}
+
+	A->oper_datatype = p4type_find_byid(P4T_U32);
+
+	return 0;
+}
+
+int validate_LABEL(struct net *net, struct p4tc_act *act,
+		  struct p4tc_cmd_operate *ope,
+		  u32 cmd_num_opnds, struct netlink_ext_ack *extack)
+{
+	struct p4tc_cmd_operand *A;
+	int err;
+
+	err = validate_num_opnds(ope, cmd_num_opnds);
+	if (err < 0) {
+		NL_SET_ERR_MSG_MOD(extack, "label must have only 1 operands");
+		return err;
+	}
+
+	A = GET_OPA(&ope->operands_list);
+	if (A->oper_type != P4TC_OPER_LABEL) {
+		NL_SET_ERR_MSG_MOD(extack, "Operand A must be a label\n");
+		return -EINVAL;
+	}
+
+	err = validate_operand(net, act, ope, A, extack);
+	if (err)
+		return err;
 
 	return 0;
 }
@@ -1778,11 +1920,11 @@ int validate_BRN(struct net *net, struct p4tc_act *act,
 	A = GET_OPA(&ope->operands_list);
 	B = GET_OPB(&ope->operands_list);
 
-	err = validate_operand(net, act, A, extack);
+	err = validate_operand(net, act, ope, A, extack);
 	if (err)
 		return err;
 
-	err = validate_operand(net, act, B, extack);
+	err = validate_operand(net, act, ope, B, extack);
 	if (err)
 		return err;
 
@@ -1837,6 +1979,19 @@ static void free_op_BINARITH(struct p4tc_cmd_operate *ope,
 	return _free_operation(ope, extack);
 }
 
+static void free_op_JUMP(struct p4tc_cmd_operate *ope,
+			 bool called_from_template,
+			 struct netlink_ext_ack *extack)
+{
+	return _free_operation(ope, extack);
+}
+
+static void free_op_LABEL(struct p4tc_cmd_operate *ope, bool from_template,
+			  struct netlink_ext_ack *extack)
+{
+	return _free_operation(ope, extack);
+}
+
 static struct p4tc_cmd_s cmds[] = {
 	{ P4TC_CMD_OP_SET, 2, validate_SET, free_op_SET, p4tc_cmd_SET },
 	{ P4TC_CMD_OP_ACT, 1, validate_ACT, free_op_ACT, p4tc_cmd_ACT },
@@ -1865,6 +2020,9 @@ static struct p4tc_cmd_s cmds[] = {
 		p4tc_cmd_BOR },
 	{ P4TC_CMD_OP_BXOR, 3, validate_BINARITH, free_op_BINARITH,
 		p4tc_cmd_BXOR },
+	{ P4TC_CMD_OP_JUMP, 1, validate_JUMP, free_op_JUMP,
+		p4tc_cmd_JUMP },
+	{ P4TC_CMD_OP_LABEL, 1, validate_LABEL, free_op_LABEL, NULL },
 };
 
 static struct p4tc_cmd_s *p4tc_get_cmd_byid(u16 cmdid)
@@ -1943,6 +2101,8 @@ static int p4tc_cmds_process_opnd(struct nlattr *nla,
 		kopnd->fetch = p4tc_fetch_dev;
 	} else if (uopnd->oper_type == P4TC_OPER_REG) {
 		kopnd->fetch = p4tc_fetch_reg;
+	} else if (uopnd->oper_type == P4TC_OPER_LABEL) {
+		kopnd->fetch = NULL;
 	} else {
 		NL_SET_ERR_MSG_MOD(extack, "Unknown operand type");
 		return -EINVAL;
@@ -2040,6 +2200,8 @@ static const struct nla_policy cmd_ops_policy[P4TC_CMD_OPER_MAX + 1] = {
 		.len = sizeof(struct p4tc_u_operate)
 	},
 	[P4TC_CMD_OPER_LIST] = { .type = NLA_NESTED },
+	[P4TC_CMD_OPER_LABEL1] = { .type = NLA_STRING, .len = LABELNAMSIZ },
+	[P4TC_CMD_OPER_LABEL2] = { .type = NLA_STRING, .len = LABELNAMSIZ },
 };
 
 static struct p4tc_cmd_operate *uope_to_kope(struct p4tc_u_operate *uope)
@@ -2099,7 +2261,7 @@ static int p4tc_cmd_process_operands_list(struct nlattr *nla,
 static int p4tc_cmd_process_ops(struct net *net, struct p4tc_act *act,
 				struct nlattr *nla,
 				struct p4tc_cmd_operate **op_entry,
-				struct netlink_ext_ack *extack)
+				int cmd_offset, struct netlink_ext_ack *extack)
 {
 	struct p4tc_cmd_operate *ope = NULL;
 	int err = 0;
@@ -2117,11 +2279,35 @@ static int p4tc_cmd_process_ops(struct net *net, struct p4tc_act *act,
 	if (!ope)
 		return -ENOMEM;
 
+	ope->cmd_offset = cmd_offset;
+
 	cmd_t = p4tc_get_cmd_byid(ope->op_id);
 	if (!cmd_t) {
 		NL_SET_ERR_MSG_MOD(extack, "Unknown operation ID\n");
 		kfree(ope);
 		return -EINVAL;
+	}
+
+	if (tb[P4TC_CMD_OPER_LABEL1]) {
+		const char *label1 = nla_data(tb[P4TC_CMD_OPER_LABEL1]);
+		const u32 label1_sz = nla_len(tb[P4TC_CMD_OPER_LABEL1]);
+
+		ope->label1 = kzalloc(label1_sz, GFP_KERNEL);
+		if (!ope->label1)
+			return P4TC_CMD_POLICY;
+
+		strscpy(ope->label1, label1, label1_sz);
+	}
+
+	if (tb[P4TC_CMD_OPER_LABEL2]) {
+		const char *label2 = nla_data(tb[P4TC_CMD_OPER_LABEL2]);
+		const u32 label2_sz = nla_len(tb[P4TC_CMD_OPER_LABEL2]);
+
+		ope->label2 = kzalloc(label2_sz, GFP_KERNEL);
+		if (!ope->label2)
+			return P4TC_CMD_POLICY;
+
+		strscpy(ope->label2, label2, label2_sz);
 	}
 
 	if (tb[P4TC_CMD_OPER_LIST]) {
@@ -2158,34 +2344,123 @@ static inline int cmd_is_branch(u32 cmdid)
 	return 0;
 }
 
-static int cmd_brn_validate(struct p4tc_cmd_operate *oplist[], int cnt,
+static int cmd_jump_operand_validate(struct p4tc_act *act,
+				     struct p4tc_cmd_operate *ope,
+				     struct p4tc_cmd_operand *kopnd,
+				     int cmdcnt,
+				     struct netlink_ext_ack *extack)
+{
+	int jmp_cnt, cmd_offset;
+
+	cmd_offset = cmd_find_label_offset(act,
+					   (const char *)kopnd->path_or_value,
+					   extack);
+	if (cmd_offset < 0)
+		return cmd_offset;
+
+	if (cmd_offset >= cmdcnt) {
+		NL_SET_ERR_MSG(extack, "Jump excessive branch");
+		return -EINVAL;
+	}
+
+	jmp_cnt = cmd_offset - ope->cmd_offset - 1;
+	if (jmp_cnt <= 0) {
+		NL_SET_ERR_MSG_MOD(extack, "Backward jumps are not allowed");
+		return -EINVAL;
+	}
+
+	kopnd->immedv = TC_ACT_JUMP | jmp_cnt;
+
+	return 0;
+}
+
+static int cmd_brn_validate(struct p4tc_act *act,
+			    struct p4tc_cmd_operate *oplist[], int cnt,
 			    struct netlink_ext_ack *extack)
 {
-	int inscnt = cnt - 1;
+	int cmdcnt = cnt - 1;
 	int i;
 
-	for (i = 1; i < inscnt; i++) {
+	for (i = 1; i < cmdcnt; i++) {
 		struct p4tc_cmd_operate *ope = oplist[i - 1];
-		u32 jmp_cnt = 0;
+		int jmp_cnt = 0;
+		struct p4tc_cmd_operand *kopnd;
+
+		if (ope->op_id == P4TC_CMD_OP_JUMP) {
+			list_for_each_entry(kopnd, &ope->operands_list, oper_list_node) {
+				int ret;
+
+				if (kopnd->immedv) {
+					jmp_cnt = kopnd->immedv & TC_ACT_EXT_VAL_MASK;
+					if (jmp_cnt + i >= cmdcnt) {
+						NL_SET_ERR_MSG(extack,
+							       "jump excessive branch");
+						return -EINVAL;
+					}
+				} else {
+					ret = cmd_jump_operand_validate(act, ope,
+									kopnd,
+									cmdcnt, extack);
+					if (ret < 0)
+						return ret;
+				}
+			}
+		}
 
 		if (!cmd_is_branch(ope->op_id))
 			continue;
 
 		if (TC_ACT_EXT_CMP(ope->ctl1, TC_ACT_JUMP)) {
-			jmp_cnt = ope->ctl1 & TC_ACT_EXT_VAL_MASK;
-			if (jmp_cnt + i >= inscnt) {
-				NL_SET_ERR_MSG(extack,
-					       "ctl1 excessive branch");
-				return -EINVAL;
+			if (ope->label1) {
+				int cmd_offset;
+
+				cmd_offset = cmd_find_label_offset(act,
+								   ope->label1,
+								   extack);
+				if (cmd_offset < 0)
+					return -EINVAL;
+				jmp_cnt = cmd_offset - ope->cmd_offset;
+
+				if (jmp_cnt <= 0) {
+					NL_SET_ERR_MSG_MOD(extack,
+							   "Backward jumps are not allowed");
+					return -EINVAL;
+				}
+				ope->ctl1 |= jmp_cnt;
+			} else {
+				jmp_cnt = ope->ctl1 & TC_ACT_EXT_VAL_MASK;
+				if (jmp_cnt + i >= cmdcnt) {
+					NL_SET_ERR_MSG(extack,
+						       "ctl1 excessive branch");
+					return -EINVAL;
+				}
 			}
 		}
 
 		if (TC_ACT_EXT_CMP(ope->ctl2, TC_ACT_JUMP)) {
-			jmp_cnt = ope->ctl2 & TC_ACT_EXT_VAL_MASK;
-			if (jmp_cnt + i >= inscnt) {
-				NL_SET_ERR_MSG(extack,
-					       "ctl2 excessive branch");
-				return -EINVAL;
+			if (ope->label2) {
+				int cmd_offset;
+
+				cmd_offset = cmd_find_label_offset(act,
+								   ope->label2,
+								   extack);
+				if (cmd_offset < 0)
+					return -EINVAL;
+				jmp_cnt = cmd_offset - ope->cmd_offset;
+
+				if (jmp_cnt <= 0) {
+					NL_SET_ERR_MSG_MOD(extack,
+							   "Backward jumps are not allowed");
+					return -EINVAL;
+				}
+				ope->ctl2 |= jmp_cnt;
+			} else {
+				jmp_cnt = ope->ctl2 & TC_ACT_EXT_VAL_MASK;
+				if (jmp_cnt + i >= cmdcnt) {
+					NL_SET_ERR_MSG(extack,
+						       "ctl2 excessive branch");
+					return -EINVAL;
+				}
 			}
 		}
 	}
@@ -2380,6 +2655,7 @@ static int p4tc_cmds_copy_ops(struct p4tc_cmd_operate **new_op_entry,
 	_new_op_entry->op_id = op_entry->op_id;
 	_new_op_entry->op_flags = op_entry->op_flags;
 	_new_op_entry->op_cnt = op_entry->op_cnt;
+	_new_op_entry->cmd_offset = op_entry->cmd_offset;
 
 	_new_op_entry->ctl1 = op_entry->ctl1;
 	_new_op_entry->ctl2 = op_entry->ctl2;
@@ -2391,8 +2667,7 @@ set_results:
 	return err;
 }
 
-int p4tc_cmds_copy(struct list_head *new_cmd_operations,
-		   struct list_head *cmd_operations,
+int p4tc_cmds_copy(struct p4tc_act *act, struct list_head *new_cmd_operations,
 		   bool delete_old, struct netlink_ext_ack *extack)
 {
 	struct p4tc_cmd_operate *oplist[P4TC_CMDS_LIST_MAX] = {NULL};
@@ -2403,7 +2678,7 @@ int p4tc_cmds_copy(struct list_head *new_cmd_operations,
 	if (delete_old)
 		p4tc_cmd_ops_del_list(new_cmd_operations);
 
-	list_for_each_entry(op, cmd_operations, cmd_operations) {
+	list_for_each_entry(op, &act->cmd_operations, cmd_operations) {
 		err = p4tc_cmds_copy_ops(&oplist[i], op, extack);
 		if (err < 0)
 			goto free_oplist;
@@ -2416,7 +2691,7 @@ int p4tc_cmds_copy(struct list_head *new_cmd_operations,
 	return 0;
 
 free_oplist:
-	kfree_tmp_oplist(oplist);
+	kfree_tmp_oplist(oplist, false);
 	return err;
 }
 
@@ -2432,6 +2707,7 @@ int p4tc_cmds_parse(struct net *net,
 	 */
 	struct p4tc_cmd_operate *oplist[P4TC_CMDS_LIST_MAX] = {NULL};
 	struct nlattr *oplist_attr[P4TC_CMDS_LIST_MAX + 1];
+	struct rhashtable *labels = act->labels;
 	int err;
 	int i;
 
@@ -2440,35 +2716,64 @@ int p4tc_cmds_parse(struct net *net,
 	if (err < 0)
 		return err;
 
+	act->labels = kzalloc(sizeof(*labels), GFP_KERNEL);
+	if (!act->labels)
+		return -ENOMEM;
+
+	err = rhashtable_init(act->labels, &p4tc_label_ht_params);
+	if (err < 0) {
+		kfree(act->labels);
+		act->labels = labels;
+		return err;
+	}
+
 	for (i = 1; i < P4TC_CMDS_LIST_MAX + 1 && oplist_attr[i]; i++) {
 		if (!oplist_attr[i])
 			break;
 		err =
 		    p4tc_cmd_process_ops(net, act, oplist_attr[i],
-					 &oplist[i - 1], extack);
+					 &oplist[i - 1], i - 1, extack);
 		if (err) {
-			kfree_tmp_oplist(oplist);
+			kfree_tmp_oplist(oplist, true);
 
-			if (err == P4TC_CMD_POLICY)
+			if (err == P4TC_CMD_POLICY) {
 				err = -EINVAL;
+				goto free_labels;
+			}
 
 			return err;
 		}
 	}
 
-	err = cmd_brn_validate(oplist, i, extack);
+	err = cmd_brn_validate(act, oplist, i, extack);
 	if (err < 0) {
-		kfree_tmp_oplist(oplist);
-		return err;
+		kfree_tmp_oplist(oplist, true);
+		goto free_labels;
 	}
 
-	if (ovr)
+	if (ovr) {
 		p4tc_cmd_ops_del_list(&act->cmd_operations);
+		if (labels) {
+			rhashtable_free_and_destroy(labels, p4tc_label_ht_destroy,
+						    NULL);
+			kfree(labels);
+		}
+	}
 
 	/*XXX: At this point we have all the cmds and they are valid */
 	p4tc_cmds_ops_pass_to_list(oplist, &act->cmd_operations);
 
 	return 0;
+
+free_labels:
+	rhashtable_destroy(act->labels);
+	kfree(act->labels);
+	if (ovr)
+		act->labels = labels;
+	else
+		act->labels = NULL;
+
+	return err;
 }
 
 static void *p4tc_fetch_constant(struct sk_buff *skb,
@@ -2536,7 +2841,7 @@ static void *p4tc_fetch_key(struct sk_buff *skb, struct p4tc_cmd_operand *op,
 static void *p4tc_fetch_dev(struct sk_buff *skb, struct p4tc_cmd_operand *op,
 			    struct tcf_p4act *cmd, struct tcf_result *res)
 {
-	return op->priv;
+	return &op->immedv;
 }
 
 static void *p4tc_fetch_metadata(struct sk_buff *skb,
@@ -3053,4 +3358,15 @@ static int p4tc_cmd_CONCAT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	dst_ops->host_write(A->oper_datatype, A->oper_mask_shift, RvalAcc, dst);
 
 	return op->ctl1;
+}
+
+static int p4tc_cmd_JUMP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			   struct tcf_p4act *cmd, struct tcf_result *res)
+{
+
+	struct p4tc_cmd_operand *A;
+
+	A = GET_OPA(&op->operands_list);
+
+	return A->immedv;
 }

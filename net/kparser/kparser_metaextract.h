@@ -1,28 +1,7 @@
-/* SPDX-License-Identifier: BSD-2-Clause-FreeBSD */
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* Copyright (c) 2022, SiPanda Inc.
  *
  * kparser_metaextract.h - kParser metadata helper and structures header file
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
  *
  * Authors:     Tom Herbert <tom@sipanda.io>
  *              Pratyush Kumar Khan <pratyush@sipanda.io>
@@ -31,20 +10,23 @@
 #ifndef __KPARSER_METAEXTRACT_H__
 #define __KPARSER_METAEXTRACT_H__
 
-/* Metadata extraction parameterizations */
+#include "kparser_types.h"
 
-#include <net/kparser/kparser_types.h>
+#include "linux/byteorder/little_endian.h"
+#define __BYTE_ORDER __LITTLE_ENDIAN
 
-#include <asm/byteorder.h>
+#define __BIG_ENDIAN 0
 
-#ifdef __LITTLE_ENDIAN
-#define kparser_htonll(x)						\
-	(((__u64)htonl((x) & 0xFFFFFFFF) << 32) | htonl((x) >> 32))
-#define kparser_ntohll(x)						\
-	(((__u64)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
-#else
+#if __BYTE_ORDER == __BIG_ENDIAN
 #define kparser_htonll(x) (x)
 #define kparser_ntohll(x) (x)
+#elif __BYTE_ORDER == __LITTLE_ENDIAN
+#define kparser_htonll(x)						\
+	(((__u64)htonl((x) & 0xffffffff) << 32) | htonl((x) >> 32))
+#define kparser_ntohll(x)						\
+	(((__u64)ntohl((x) & 0xffffffff) << 32) | ntohl((x) >> 32))
+#else
+#error "Cannot determine endianness"
 #endif
 
 /* Metadata extraction pseudo instructions
@@ -115,40 +97,40 @@
  *	    Write the length of the current header to metadata. The length is
  *	    written in two bytes. A counter operation may be specified as
  *	    described below
-*    - KPARSER_METADATA_CTRL_NUM_NODES: control field
-*	    Write the current number of parse nodes that have been visited to
-*	    metadata. The number of nodes is written in two bytes. A counter
-*	    operation may be specified as described below
-*    - KPARSER_METADATA_CTRL_NUM_ENCAPS: control field
-*	    Write the current number of encapsulation levels to metadata. The
-*	    number of nodes is written in two bytes. A counter operation may be
-*	    specified as described below
-*    - KPARSER_METADATA_CTRL_TIMESTAMP: control field
-*	    Write the receive timestamp of a packet to metadata. The timestamp
-*	    number of nodes is written in eight bytes. A counter operation may
-*	    be specified as described below
-*    - KPARSER_METADATA_CTRL_COUNTER: control_counter field
-*	    Write the current value of a counter to metadata. The counter is
-*	    specified in counter_for_data. The counter is written in two bytes.
-*	    A counter operation may be specified as described below
-*    - KPARSER_METADATA_CTRL_NOOP: control_noop field
-*	    "No operation". This pseudo instruction does not write any data.
-*	    It's primary purpose is to allow counter operations after performing
-*	    non-control pseudo instructions (note that the non-control variants
-		*	    don't have a cntr_op field)
-*
-* There are two operations that may be performed on a counter and that are
-* expressed in control type pseudo instructions: increment and reset. A
-* counter operation is set in the cntr_op field of control pseudo instructions.
-* The defined counter operations are:
-*    - KPARSER_METADATA_CNTROP_NULL: No counter operation
-*    - KPARSER_METADATA_CNTROP_INCREMENT: Increment the counter specified
-*	    in cntr by one. The configuration for the counter is check and
-*	    if the limit for the counter is exceeded the appropriate behavior
-*	    is done
-*    - KPARSER_METADATA_CNTROP_RESET: Reset the counter specified
-*          in cntr to zero
-*/
+ *    - KPARSER_METADATA_CTRL_NUM_NODES: control field
+ *	    Write the current number of parse nodes that have been visited to
+ *	    metadata. The number of nodes is written in two bytes. A counter
+ *	    operation may be specified as described below
+ *    - KPARSER_METADATA_CTRL_NUM_ENCAPS: control field
+ *	    Write the current number of encapsulation levels to metadata. The
+ *	    number of nodes is written in two bytes. A counter operation may be
+ *	    specified as described below
+ *    - KPARSER_METADATA_CTRL_TIMESTAMP: control field
+ *	    Write the receive timestamp of a packet to metadata. The timestamp
+ *	    number of nodes is written in eight bytes. A counter operation may
+ *	    be specified as described below
+ *    - KPARSER_METADATA_CTRL_COUNTER: control_counter field
+ *	    Write the current value of a counter to metadata. The counter is
+ *	    specified in counter_for_data. The counter is written in two bytes.
+ *	    A counter operation may be specified as described below
+ *    - KPARSER_METADATA_CTRL_NOOP: control_noop field
+ *	    "No operation". This pseudo instruction does not write any data.
+ *	    It's primary purpose is to allow counter operations after performing
+ *	    non-control pseudo instructions (note that the non-control variants
+ *	    don't have a cntr_op field)
+ *
+ * There are two operations that may be performed on a counter and that are
+ * expressed in control type pseudo instructions: increment and reset. A
+ * counter operation is set in the cntr_op field of control pseudo instructions.
+ * The defined counter operations are:
+ *    - KPARSER_METADATA_CNTROP_NULL: No counter operation
+ *    - KPARSER_METADATA_CNTROP_INCREMENT: Increment the counter specified
+ *	    in cntr by one. The configuration for the counter is check and
+ *	    if the limit for the counter is exceeded the appropriate behavior
+ *	    is done
+ *    - KPARSER_METADATA_CNTROP_RESET: Reset the counter specified
+ *          in cntr to zero
+ */
 
 /* Metatdata extract codes */
 #define KPARSER_METADATA_BYTES_EXTRACT		0 /* Var bytes */
@@ -168,7 +150,10 @@
 #define KPARSER_METADATA_CNTROP_INCREMENT	1
 #define KPARSER_METADATA_CNTROP_RESET		2
 
-/* Metadata extraction pseudo instructions */
+/* Metadata extraction pseudo instructions
+ * This emulates the custom SiPANDA riscv instructions for metadata extractions,
+ * hence these are called pseudo instructions
+ */
 struct kparser_metadata_extract {
 	union {
 		struct {
@@ -242,163 +227,157 @@ struct kparser_metadata_extract {
 
 /* Helper macros to make various pseudo instructions */
 
-#define __KPARSER_METADATA_MAKE_BYTES_EXTRACT(FRAME, SRC_OFF,		\
-		DST_OFF, LEN, E_BIT, CNTR)				\
-{									\
-	.bytes.code = KPARSER_METADATA_BYTES_EXTRACT,			\
-	.bytes.frame = FRAME,						\
-	.bytes.src_off = SRC_OFF,					\
-	.bytes.dst_off = DST_OFF,					\
-	.bytes.length = LEN - 1, /* Minimum one byte */			\
-	.bytes.e_bit = E_BIT,						\
-	.bytes.cntr = CNTR,						\
+#define __KPARSER_METADATA_MAKE_BYTES_EXTRACT(FRAME, SRC_OFF, DST_OFF, LEN, E_BIT, CNTR)	\
+{												\
+	.bytes.code = KPARSER_METADATA_BYTES_EXTRACT,						\
+	.bytes.frame = FRAME,									\
+	.bytes.src_off = SRC_OFF,								\
+	.bytes.dst_off = DST_OFF,								\
+	.bytes.length = LEN - 1, /* Minimum one byte */						\
+	.bytes.e_bit = E_BIT,									\
+	.bytes.cntr = CNTR,									\
 }
 
 static inline struct kparser_metadata_extract
 __kparser_metadata_make_bytes_extract(bool frame, size_t src_off,
-		size_t dst_off, size_t len,
-		bool e_bit,
-		unsigned int cntr)
+				      size_t dst_off, size_t len,
+				      bool e_bit,
+				      unsigned int cntr)
 {
 	const struct kparser_metadata_extract mde =
 		__KPARSER_METADATA_MAKE_BYTES_EXTRACT(frame, src_off,
-				dst_off, len,
-				e_bit, cntr);
+						      dst_off, len,
+						      e_bit, cntr);
 	return mde;
 }
 
-#define __KPARSER_METADATA_MAKE_NIBBS_EXTRACT(FRAME, NIBB_SRC_OFF,	\
-		DST_OFF, NIBB_LEN, E_BIT, CNTR)				\
-{									\
-	.nibbs.code = KPARSER_METADATA_NIBBS_EXTRACT,			\
-	.nibbs.frame = FRAME,						\
-	.nibbs.src_off = NIBB_SRC_OFF,					\
-	.nibbs.dst_off = DST_OFF,					\
-	.nibbs.length = NIBB_LEN - 1, /* Minimum one nibble */		\
-	.nibbs.e_bit = E_BIT,						\
-	.nibbs.cntr = CNTR,						\
+#define __KPARSER_METADATA_MAKE_NIBBS_EXTRACT(FRAME, NIBB_SRC_OFF,				\
+		DST_OFF, NIBB_LEN, E_BIT, CNTR)							\
+{												\
+	.nibbs.code = KPARSER_METADATA_NIBBS_EXTRACT,						\
+	.nibbs.frame = FRAME,									\
+	.nibbs.src_off = NIBB_SRC_OFF,								\
+	.nibbs.dst_off = DST_OFF,								\
+	.nibbs.length = NIBB_LEN - 1, /* Minimum one nibble */					\
+	.nibbs.e_bit = E_BIT,									\
+	.nibbs.cntr = CNTR,									\
 }
 
 static inline struct kparser_metadata_extract
 __kparser_make_make_nibbs_extract(bool frame, size_t nibb_src_off,
-		size_t dst_off, size_t nibb_len,
-		bool e_bit, unsigned int cntr)
+				  size_t dst_off, size_t nibb_len,
+				  bool e_bit, unsigned int cntr)
 {
 	const struct kparser_metadata_extract mde =
 		__KPARSER_METADATA_MAKE_NIBBS_EXTRACT(frame, nibb_src_off,
-				dst_off, nibb_len,
-				e_bit, cntr);
+						      dst_off, nibb_len,
+						      e_bit, cntr);
 
 	return mde;
 }
 
-#define __KPARSER_METADATA_MAKE_SET_CONST_BYTE(FRAME, DST_OFF,		\
-		DATA, CNTR)						\
-{									\
-	.constant_byte.code = KPARSER_METADATA_CONSTANT_BYTE_SET,	\
-	.constant_byte.frame = FRAME,					\
-	.constant_byte.dst_off = DST_OFF,				\
-	.constant_byte.data = DATA,					\
-	.constant_byte.cntr = CNTR,					\
+#define __KPARSER_METADATA_MAKE_SET_CONST_BYTE(FRAME, DST_OFF, DATA, CNTR)			\
+{												\
+	.constant_byte.code = KPARSER_METADATA_CONSTANT_BYTE_SET,				\
+	.constant_byte.frame = FRAME,								\
+	.constant_byte.dst_off = DST_OFF,							\
+	.constant_byte.data = DATA,								\
+	.constant_byte.cntr = CNTR,								\
 }
 
 static inline struct kparser_metadata_extract
 __kparser_metadata_set_const_byte(bool frame, size_t dst_off,
-		__u8 data, unsigned int cntr)
+				  __u8 data, unsigned int cntr)
 {
 	const struct kparser_metadata_extract mde =
 		__KPARSER_METADATA_MAKE_SET_CONST_BYTE(frame, dst_off,
-				data, cntr);
+						       data, cntr);
 
 	return mde;
 }
 
-#define __KPARSER_METADATA_MAKE_SET_CONST_HALFWORD(FRAME, DST_OFF,	\
-		DATA, CNTR)						\
-{									\
-	.constant_hword.code =						\
-	KPARSER_METADATA_CONSTANT_HWORD_SET,				\
-	.constant_hword.frame = FRAME,					\
-	.constant_hword.dst_off = DST_OFF,				\
-	.constant_hword.data = DATA,					\
-	.constant_hword.cntr = CNTR,					\
+#define __KPARSER_METADATA_MAKE_SET_CONST_HALFWORD(FRAME, DST_OFF, DATA, CNTR)			\
+{												\
+	.constant_hword.code =									\
+	KPARSER_METADATA_CONSTANT_HWORD_SET,							\
+	.constant_hword.frame = FRAME,								\
+	.constant_hword.dst_off = DST_OFF,							\
+	.constant_hword.data = DATA,								\
+	.constant_hword.cntr = CNTR,								\
 }
 
 static inline struct kparser_metadata_extract
 __kparser_metadata_set_const_halfword(bool frame, size_t dst_off,
-		__u16 data,
-		unsigned int cntr)
+				      __u16 data,
+				      unsigned int cntr)
 {
 	const struct kparser_metadata_extract mde =
 		__KPARSER_METADATA_MAKE_SET_CONST_HALFWORD(frame, dst_off,
-				data, cntr);
+							   data, cntr);
 
 	return mde;
 }
 
-#define __KPARSER_METADATA_MAKE_OFFSET_SET(FRAME, DST_OFF, BIT_OFFSET,	\
-		ADD_OFF, CNTR)						\
-{									\
-	.offset.code = KPARSER_METADATA_OFFSET_SET,			\
-	.offset.frame = FRAME,						\
-	.offset.dst_off = DST_OFF,					\
-	.offset.bit_offset = BIT_OFFSET,				\
-	.offset.add_off = ADD_OFF,					\
-	.offset.cntr = CNTR,						\
+#define __KPARSER_METADATA_MAKE_OFFSET_SET(FRAME, DST_OFF, BIT_OFFSET, ADD_OFF, CNTR)		\
+{												\
+	.offset.code = KPARSER_METADATA_OFFSET_SET,						\
+	.offset.frame = FRAME,									\
+	.offset.dst_off = DST_OFF,								\
+	.offset.bit_offset = BIT_OFFSET,							\
+	.offset.add_off = ADD_OFF,								\
+	.offset.cntr = CNTR,									\
 }
 
 static inline struct kparser_metadata_extract
 __kparser_metadata_offset_set(bool frame, size_t dst_off,
-		bool bit_offset, size_t add_off, unsigned int cntr)
+			      bool bit_offset, size_t add_off, unsigned int cntr)
 {
 	const struct kparser_metadata_extract mde =
 		__KPARSER_METADATA_MAKE_OFFSET_SET(frame, dst_off,
-				bit_offset, add_off, cntr);
+						   bit_offset, add_off, cntr);
 	return mde;
 }
 
-#define __KPARSER_METADATA_MAKE_SET_CONTROL_COUNTER(FRAME,		\
-		DST_OFF, CNTR_DATA, CNTR, CNTR_OP)			\
-{									\
-	.control.code = KPARSER_METADATA_CTRL_COUNTER,			\
-	.control.frame = FRAME,						\
-	.control.dst_off = DST_OFF,					\
-	.control.cntr = CNTR,						\
-	.control.cntr_op = CNTR_OP,					\
-	.control.cntr_for_data = CNTR_DATA,				\
+#define __KPARSER_METADATA_MAKE_SET_CONTROL_COUNTER(FRAME, DST_OFF, CNTR_DATA, CNTR, CNTR_OP)	\
+{												\
+	.control.code = KPARSER_METADATA_CTRL_COUNTER,						\
+	.control.frame = FRAME,									\
+	.control.dst_off = DST_OFF,								\
+	.control.cntr = CNTR,									\
+	.control.cntr_op = CNTR_OP,								\
+	.control.cntr_for_data = CNTR_DATA,							\
 }
 
 static inline struct kparser_metadata_extract
 __kparser_metadata_set_control_counter(bool frame, size_t dst_off,
-		unsigned int cntr_data,
+				       unsigned int cntr_data,
 		unsigned int cntr,
 		unsigned int cntr_op)
 {
 	const struct kparser_metadata_extract mde =
 		__KPARSER_METADATA_MAKE_SET_CONTROL_COUNTER(frame,
-				dst_off, cntr_data, cntr,
-				cntr_op);
+							    dst_off, cntr_data, cntr,
+							    cntr_op);
 	return mde;
 }
 
-#define __KPARSER_METADATA_MAKE_SET_CONTROL(FRAME, CODE, DST_OFF,	\
-		CNTR, CNTR_OP)		\
-{									\
-	.control.code = CODE,						\
-	.control.frame = FRAME,						\
-	.control.dst_off = DST_OFF,					\
-	.control.cntr = CNTR,						\
-	.control.cntr_op = CNTR_OP,					\
+#define __KPARSER_METADATA_MAKE_SET_CONTROL(FRAME, CODE, DST_OFF, CNTR, CNTR_OP)		\
+{												\
+	.control.code = CODE,									\
+	.control.frame = FRAME,									\
+	.control.dst_off = DST_OFF,								\
+	.control.cntr = CNTR,									\
+	.control.cntr_op = CNTR_OP,								\
 }
 
 static inline struct kparser_metadata_extract
 __kparser_metadata_set_control(bool frame, unsigned int code,
-		size_t dst_off, unsigned int cntr,
-		unsigned int cntr_op)
+			       size_t dst_off, unsigned int cntr,
+			       unsigned int cntr_op)
 {
 	const struct kparser_metadata_extract mde =
 		__KPARSER_METADATA_MAKE_SET_CONTROL(frame, code, dst_off,
-				cntr, cntr_op);
+						    cntr, cntr_op);
 	return mde;
 }
 
@@ -407,43 +386,41 @@ struct kparser_metadata_table {
 	struct kparser_metadata_extract *entries;
 };
 
-
 /* Extract functions */
 static inline int __kparser_metadata_bytes_extract(const __u8 *sptr,
-		__u8 *dptr, size_t length, bool e_bit)
+						   __u8 *dptr, size_t length, bool e_bit)
 {
 	__u16 v16;
 	__u32 v32;
 	__u64 v64;
+	int i;
 
 	if (!dptr)
 		return KPARSER_OKAY;
 
 	switch (length) {
-		case sizeof(__u8):
-			*dptr = *sptr;
-			break;
-		case sizeof(__u16):
-			v16 = *(__u16 *)sptr;
-			*((__u16 *)dptr) = e_bit ? ntohs(v16) : v16;
-			break;
-		case sizeof(__u32):
-			v32 = *(__u32 *)sptr;
-			*((__u32 *)dptr) = e_bit ? ntohl(v32) : v32;
-			break;
-		case sizeof(__u64):
-			v64 = *(__u64 *)sptr;
-			*((__u64 *)dptr) = e_bit ? kparser_ntohll(v64) : v64;
-			break;
-		default:
-			if (e_bit) {
-				int i;
-
-				for (i = 0; i < length; i++)
-					dptr[i] = sptr[length - 1 - i];
-			} else {
-				memcpy(dptr, sptr, length);
-			}
+	case sizeof(__u8):
+		*dptr = *sptr;
+		break;
+	case sizeof(__u16):
+		v16 = *(__u16 *)sptr;
+		*((__u16 *)dptr) = e_bit ? ntohs(v16) : v16;
+		break;
+	case sizeof(__u32):
+		v32 = *(__u32 *)sptr;
+		*((__u32 *)dptr) = e_bit ? ntohl(v32) : v32;
+		break;
+	case sizeof(__u64):
+		v64 = *(__u64 *)sptr;
+		*((__u64 *)dptr) = e_bit ? kparser_ntohll(v64) : v64;
+		break;
+	default:
+		if (e_bit) {
+			for (i = 0; i < length; i++)
+				dptr[i] = sptr[length - 1 - i];
+		} else {
+			memcpy(dptr, sptr, length);
+		}
 	}
 
 	return KPARSER_OKAY;
@@ -454,24 +431,22 @@ static inline void *metadata_get_dst(size_t dst_off, void *mdata)
 	return &((__u8 *)mdata)[dst_off];
 }
 
-static bool __metatdata_validate_counter(const struct kparser_parser *parser,
-		unsigned int cntr)
+static inline bool __metatdata_validate_counter(const struct kparser_parser *parser,
+						unsigned int cntr)
 {
 	if (!parser) {
-		pr_warn("Metadata counter is set for extraction but no "
-				"parser is set");
+		pr_warn("Metadata counter is set for extraction but no parser is set");
 		return false;
 	}
 
 	if (!parser->cntrs) {
-		pr_warn("Metadata counter is set but no counters are "
-				"configured for parser");
+		pr_warn("Metadata counter is set but no counters are configured for parser");
 		return false;
 	}
 
 	if (cntr >= KPARSER_CNTR_NUM_CNTRS) {
 		pr_warn("Metadata counter %u is greater than maximum %u",
-				cntr, KPARSER_CNTR_NUM_CNTRS);
+			cntr, KPARSER_CNTR_NUM_CNTRS);
 		return false;
 	}
 
@@ -479,17 +454,15 @@ static bool __metatdata_validate_counter(const struct kparser_parser *parser,
 }
 
 static inline void *metadata_get_dst_cntr(const struct kparser_parser *parser,
-		size_t dst_off, void *mdata,
+					  size_t dst_off, void *mdata,
 		unsigned int cntr, int code)
 {
 	const struct kparser_cntr_conf *cntr_conf;
 	__u8 *dptr = &((__u8 *)mdata)[dst_off];
 	size_t step;
 
-	if (!cntr) {
-		// TODO: check why?
+	if (!cntr)
 		return dptr;
-	}
 
 	cntr--; // Make zero based to access array
 
@@ -501,80 +474,76 @@ static inline void *metadata_get_dst_cntr(const struct kparser_parser *parser,
 	if (code != KPARSER_METADATA_CTRL_COUNTER) {
 		if (parser->cntrs->cntr[cntr] >= cntr_conf->array_limit) {
 			if (!cntr_conf->array_limit ||
-					!cntr_conf->overwrite_last)
+			    !cntr_conf->overwrite_last)
 				return NULL;
 			step = cntr_conf->array_limit - 1;
 		} else {
 			step = parser->cntrs->cntr[cntr];
 		}
 
-		/* TODO: Check if array elem offset is missing ? */
 		dptr += cntr_conf->el_size * step;
 	}
 
 	return dptr;
 }
 
-static inline int __metadata_cntr_operation(
-		const struct kparser_parser *parser,
-		unsigned int operation, unsigned int cntr)
+static inline int __metadata_cntr_operation(const struct kparser_parser *parser,
+					    unsigned int operation, unsigned int cntr)
 {
+	/* cntr 0 means no counter attached, the index starts from 1 in this case
+	 */
 	if (!cntr)
 		return KPARSER_OKAY;
 
-	cntr--; // Make zero based to access array
+	cntr--; /* Make zero based to access array */
 
 	if (!__metatdata_validate_counter(parser, cntr))
 		return KPARSER_STOP_BAD_CNTR;
 
 	switch (operation) {
-		default:
-		case KPARSER_METADATA_CNTROP_NULL:
-			break;
-		case KPARSER_METADATA_CNTROP_INCREMENT:
-			/* Note: parser is const but
-			 * parser->cntrs->cntr is writable
-			 */
-			if (parser->cntrs->cntr[cntr] <
-					parser->cntrs_conf.
-					cntrs[cntr].max_value)
-				parser->cntrs->cntr[cntr]++;
-			else if (parser->cntrs_conf.cntrs[cntr].
-					error_on_exceeded)
-				return KPARSER_STOP_CNTR1 - cntr;
-			break;
-		case KPARSER_METADATA_CNTROP_RESET:
-			parser->cntrs->cntr[cntr] = 0;
-			break;
+	default:
+	case KPARSER_METADATA_CNTROP_NULL:
+		break;
+	case KPARSER_METADATA_CNTROP_INCREMENT:
+		/* Note: parser is const but
+		 * parser->cntrs->cntr is writable
+		 */
+		if (parser->cntrs->cntr[cntr] <
+		    parser->cntrs_conf.cntrs[cntr].max_value)
+			parser->cntrs->cntr[cntr]++;
+		else if (parser->cntrs_conf.cntrs[cntr].error_on_exceeded)
+			return KPARSER_STOP_CNTR1 - cntr;
+		break;
+	case KPARSER_METADATA_CNTROP_RESET:
+		parser->cntrs->cntr[cntr] = 0;
+		break;
 	}
 
 	return KPARSER_OKAY;
 }
 
-static inline int kparser_metadata_bytes_extract(
-		const struct kparser_parser *parser,
-		struct kparser_metadata_extract mde,
-		const void *hdr, void *mdata)
+static inline int kparser_metadata_bytes_extract(const struct kparser_parser *parser,
+						 struct kparser_metadata_extract mde,
+						 const void *hdr, void *mdata)
 {
 	__u8 *dptr = metadata_get_dst_cntr(parser, mde.bytes.dst_off, mdata,
-			mde.bytes.cntr, 0);
+					   mde.bytes.cntr, 0);
 	const __u8 *sptr = &((__u8 *)hdr)[mde.bytes.src_off];
 
 	if (!dptr)
 		return KPARSER_OKAY;
 
 	return __kparser_metadata_bytes_extract(sptr, dptr,
-			mde.bytes.length + 1,
-			mde.bytes.e_bit);
+						mde.bytes.length + 1,
+						mde.bytes.e_bit);
 }
 
-static inline int kparser_metadata_nibbs_extract(
-		const struct kparser_parser *parser,
-		struct kparser_metadata_extract mde,
-		const void *hdr, void *mdata)
+static inline int kparser_metadata_nibbs_extract(const struct kparser_parser *parser,
+						 struct kparser_metadata_extract mde,
+						 const void *hdr, void *mdata)
 {
 	__u8 *dptr = metadata_get_dst_cntr(parser, mde.nibbs.dst_off, mdata,
-			mde.nibbs.cntr, 0);
+					   mde.nibbs.cntr, 0);
 	const __u8 *sptr = &((__u8 *)hdr)[mde.nibbs.src_off / 2];
 	size_t nibb_len = mde.nibbs.length + 1;
 	__u8 data;
@@ -587,15 +556,14 @@ static inline int kparser_metadata_nibbs_extract(
 		/* This is effectively a byte transfer case */
 
 		return __kparser_metadata_bytes_extract(sptr, dptr,
-				mde.nibbs.length / 2,
-				mde.nibbs.e_bit);
+							mde.nibbs.length / 2,
+							mde.nibbs.e_bit);
 	}
 
 	if (mde.nibbs.e_bit) {
 		/* Endianness bit is set. dlen is the number of bytes
 		 * set for output
 		 */
-
 		size_t dlen = (nibb_len + 1) / 2;
 
 		if (mde.nibbs.src_off % 2) {
@@ -629,8 +597,7 @@ static inline int kparser_metadata_nibbs_extract(
 					 * byte. The result is set in the
 					 * reversed position in the output
 					 */
-					dptr[i] = data |
-						sptr[dlen - 1 - i] << 4;
+					dptr[i] = data | sptr[dlen - 1 - i] << 4;
 
 					/* Get the next data value */
 					data = sptr[dlen - 1 - i] >> 4;
@@ -702,13 +669,12 @@ static inline int kparser_metadata_nibbs_extract(
 	return KPARSER_OKAY;
 }
 
-static inline int kparser_metadata_const_set_byte(
-		const struct kparser_parser *parser,
-		struct kparser_metadata_extract mde,
-		void *mdata)
+static inline int kparser_metadata_const_set_byte(const struct kparser_parser *parser,
+						  struct kparser_metadata_extract mde,
+						  void *mdata)
 {
-	__u16 *dptr = metadata_get_dst_cntr(parser, mde.constant_byte.dst_off,
-			mdata, mde.constant_byte.cntr, 0);
+	__u8 *dptr = metadata_get_dst_cntr(parser, mde.constant_byte.dst_off,
+					   mdata, mde.constant_byte.cntr, 0);
 
 	if (dptr)
 		*dptr = mde.constant_byte.data;
@@ -716,13 +682,12 @@ static inline int kparser_metadata_const_set_byte(
 	return KPARSER_OKAY;
 }
 
-static inline int kparser_metadata_const_set_hword(
-		const struct kparser_parser *parser,
-		struct kparser_metadata_extract mde,
-		void *mdata)
+static inline int kparser_metadata_const_set_hword(const struct kparser_parser *parser,
+						   struct kparser_metadata_extract mde,
+						   void *mdata)
 {
 	__u16 *dptr = metadata_get_dst_cntr(parser, mde.constant_hword.dst_off,
-			mdata, mde.constant_hword.cntr, 0);
+					    mdata, mde.constant_hword.cntr, 0);
 
 	if (dptr)
 		*dptr = mde.constant_hword.data;
@@ -730,13 +695,12 @@ static inline int kparser_metadata_const_set_hword(
 	return KPARSER_OKAY;
 }
 
-static inline int kparser_metadata_set_offset(
-		const struct kparser_parser *parser,
-		struct kparser_metadata_extract mde,
-		void *mdata, size_t hdr_offset)
+static inline int kparser_metadata_set_offset(const struct kparser_parser *parser,
+					      struct kparser_metadata_extract mde,
+					      void *mdata, size_t hdr_offset)
 {
 	__u16 *dptr = metadata_get_dst_cntr(parser, mde.offset.dst_off, mdata,
-			mde.offset.cntr, 0);
+					    mde.offset.cntr, 0);
 
 	if (dptr) {
 		*dptr = mde.offset.bit_offset ?
@@ -747,181 +711,183 @@ static inline int kparser_metadata_set_offset(
 	return KPARSER_OKAY;
 }
 
-static inline int __kparser_metadata_control_extract(
-		const struct kparser_parser *parser,
-		const struct kparser_metadata_extract mde,
-		const void *_hdr, size_t hdr_len,
-		size_t hdr_offset, void *mdata,
-		const struct kparser_ctrl_data *ctrl)
+static inline int __kparser_metadata_control_extract(const struct kparser_parser *parser,
+						     const struct kparser_metadata_extract mde,
+						     const void *_hdr, size_t hdr_len,
+						     size_t hdr_offset, void *mdata,
+						     const struct kparser_ctrl_data *ctrl)
 {
 	__u16 *dptr = metadata_get_dst_cntr(parser, mde.control.dst_off, mdata,
-			mde.control.cntr, mde.control.code);
+					    mde.control.cntr, mde.control.code);
 
 	switch (mde.control.code) {
-		case KPARSER_METADATA_CTRL_HDR_LENGTH:
-			if (dptr)
-				*((__u16 *)dptr) = hdr_len;
-			break;
-		case KPARSER_METADATA_CTRL_NUM_NODES:
-			if (dptr)
-				*((__u16 *)dptr) = ctrl->node_cnt;
-			break;
-		case KPARSER_METADATA_CTRL_NUM_ENCAPS:
-			if (dptr)
-				*((__u16 *)dptr) = ctrl->encap_levels;
-			break;
-		case KPARSER_METADATA_CTRL_TIMESTAMP:
-			/* TODO */
-			break;
-		case KPARSER_METADATA_CTRL_COUNTER:
-			if (!__metatdata_validate_counter(parser,
-						mde.control.cntr_for_data))
-				return KPARSER_STOP_BAD_CNTR;
-			if (dptr)
-				*(__u16 *)dptr = parser->cntrs->cntr[
-					mde.control.cntr_for_data - 1];
-			break;
-		case KPARSER_METADATA_CTRL_RET_CODE:
-			if (dptr)
-				*((int *)dptr) = ctrl->ret;
-			break;
-		case KPARSER_METADATA_CTRL_NOOP:
-			break;
-		default:
-			pr_debug("Unknown extract\n");
-			return KPARSER_STOP_BAD_EXTRACT;
+	case KPARSER_METADATA_CTRL_HDR_LENGTH:
+		if (dptr)
+			*((__u16 *)dptr) = hdr_len;
+		break;
+	case KPARSER_METADATA_CTRL_NUM_NODES:
+		if (dptr)
+			*((__u16 *)dptr) = ctrl->node_cnt;
+		break;
+	case KPARSER_METADATA_CTRL_NUM_ENCAPS:
+		if (dptr)
+			*((__u16 *)dptr) = ctrl->encap_levels;
+		break;
+	case KPARSER_METADATA_CTRL_TIMESTAMP:
+		/* TODO */
+		break;
+	case KPARSER_METADATA_CTRL_COUNTER:
+		if (!__metatdata_validate_counter(parser,
+						  mde.control.cntr_for_data))
+			return KPARSER_STOP_BAD_CNTR;
+		if (dptr)
+			*(__u16 *)dptr = parser->cntrs->cntr[mde.control.cntr_for_data - 1];
+		break;
+	case KPARSER_METADATA_CTRL_RET_CODE:
+		if (dptr)
+			*((int *)dptr) = ctrl->ret;
+		break;
+	case KPARSER_METADATA_CTRL_NOOP:
+		break;
+	default:
+		pr_debug("Unknown extract\n");
+		return KPARSER_STOP_BAD_EXTRACT;
 	}
 
-	return __metadata_cntr_operation(parser, mde.control.cntr_op,
-			mde.control.cntr);
+	return __metadata_cntr_operation(parser, mde.control.cntr_op, mde.control.cntr);
 }
 
 /* Front end functions to process one metadata extraction pseudo instruction
  * in the context of parsing a packet
  */
-static inline int kparser_metadata_extract(
-		const struct kparser_parser *parser,
-		const struct kparser_metadata_extract mde,
-		const void *_hdr, size_t hdr_len,
-		size_t hdr_offset, void *_metadata,
-		void *_frame,
-		const struct kparser_ctrl_data *ctrl)
+static inline int kparser_metadata_extract(const struct kparser_parser *parser,
+					   const struct kparser_metadata_extract mde,
+					   const void *_hdr, size_t hdr_len,
+					   size_t hdr_offset, void *_metadata,
+					   void *_frame,
+					   const struct kparser_ctrl_data *ctrl)
 {
 	void *mdata = mde.gen.frame ? _frame : _metadata;
 	int ret;
 
 	switch (mde.gen.code) {
-		case KPARSER_METADATA_BYTES_EXTRACT:
-			ret = kparser_metadata_bytes_extract(parser, mde,
-					_hdr, mdata);
-			break;
-		case KPARSER_METADATA_NIBBS_EXTRACT:
-			ret = kparser_metadata_nibbs_extract(parser, mde,
-					_hdr, mdata);
-			break;
-		case KPARSER_METADATA_CONSTANT_BYTE_SET:
-			ret = kparser_metadata_const_set_byte(parser, mde,
-					mdata);
-			break;
-		case KPARSER_METADATA_CONSTANT_HWORD_SET:
-			ret = kparser_metadata_const_set_hword(parser, mde,
-					mdata);
-			break;
-		case KPARSER_METADATA_OFFSET_SET:
-			ret = kparser_metadata_set_offset(parser, mde, mdata,
-					hdr_offset);
-			break;
-		default: /* Should be a control metadata extraction */
-			ret = __kparser_metadata_control_extract(parser, mde,
-					_hdr,
-					hdr_len,
-					hdr_offset,
-					mdata, ctrl);
+	case KPARSER_METADATA_BYTES_EXTRACT:
+		ret = kparser_metadata_bytes_extract(parser, mde,
+						     _hdr, mdata);
+		break;
+	case KPARSER_METADATA_NIBBS_EXTRACT:
+		ret = kparser_metadata_nibbs_extract(parser, mde,
+						     _hdr, mdata);
+		break;
+	case KPARSER_METADATA_CONSTANT_BYTE_SET:
+		ret = kparser_metadata_const_set_byte(parser, mde,
+						      mdata);
+		break;
+	case KPARSER_METADATA_CONSTANT_HWORD_SET:
+		ret = kparser_metadata_const_set_hword(parser, mde,
+						       mdata);
+		break;
+	case KPARSER_METADATA_OFFSET_SET:
+		ret = kparser_metadata_set_offset(parser, mde, mdata,
+						  hdr_offset);
+		break;
+	default: /* Should be a control metadata extraction */
+		ret = __kparser_metadata_control_extract(parser, mde,
+							 _hdr,
+							 hdr_len,
+							 hdr_offset,
+							 mdata, ctrl);
 	}
 
 	return ret;
 }
 
-static inline bool kparser_metadata_convert(
-		const struct kparser_conf_metadata *conf,
-		struct kparser_metadata_extract *mde, int cntridx)
+static inline bool kparser_metadata_convert(const struct kparser_conf_metadata *conf,
+					    struct kparser_metadata_extract *mde,
+					    int cntridx, int cntr_arr_idx)
 {
 	__u32 encoding_type;
 
-	switch(conf->type) {
-		case KPARSER_METADATA_HDRDATA:
-			*mde = __kparser_metadata_make_bytes_extract(
-					conf->frame,
-					conf->soff, conf->doff, conf->len,
-					conf->e_bit, cntridx);
-			return true;
+	switch (conf->type) {
+	case KPARSER_METADATA_HDRDATA:
+		*mde = __kparser_metadata_make_bytes_extract(conf->frame,
+							     conf->soff, conf->doff, conf->len,
+							     conf->e_bit, cntridx);
+		return true;
 
-		case KPARSER_METADATA_BIT_OFFSET: 
-			*mde = 	__kparser_metadata_offset_set(conf->frame,
-					conf->doff,
-					true,
-					conf->add_off,
-					cntridx);
-			return true;
+	case KPARSER_METADATA_HDRDATA_NIBBS_EXTRACT:
+		*mde = __kparser_make_make_nibbs_extract(conf->frame,
+							 conf->soff,
+							 conf->doff,
+							 conf->len,
+							 conf->e_bit,
+							 cntridx);
+		return true;
 
-		case KPARSER_METADATA_OFFSET: 
-			*mde = 	__kparser_metadata_offset_set(conf->frame,
-					conf->doff,
-					false,
-					conf->add_off,
-					cntridx);
-			return true;
+	case KPARSER_METADATA_BIT_OFFSET:
+		*mde =	__kparser_metadata_offset_set(conf->frame,
+						      conf->doff,
+						      true,
+						      conf->add_off,
+						      cntridx);
+		return true;
 
-		case KPARSER_METADATA_CONSTANT_BYTE:
-			*mde = 	__kparser_metadata_set_const_byte(conf->frame,
-					conf->doff, conf->constant_value,
-					cntridx);
-			return true;
+	case KPARSER_METADATA_OFFSET:
+		*mde =	__kparser_metadata_offset_set(conf->frame,
+						      conf->doff,
+						      false,
+						      conf->add_off,
+						      cntridx);
+		return true;
 
-		case KPARSER_METADATA_CONSTANT_HALFWORD:
-			*mde = 	__kparser_metadata_set_const_halfword(
-					conf->frame,
-					conf->doff, conf->constant_value,
-					cntridx);
-			return true;
+	case KPARSER_METADATA_CONSTANT_BYTE:
+		*mde =	__kparser_metadata_set_const_byte(conf->frame,
+							  conf->doff, conf->constant_value,
+				cntridx);
+		return true;
 
-		case KPARSER_METADATA_COUNTER:
-			*mde = __kparser_metadata_set_control_counter(
-					conf->frame, conf->doff,
-					cntridx, cntridx,
-					conf->cntr_op);
-			return true;
+	case KPARSER_METADATA_CONSTANT_HALFWORD:
+		*mde =	__kparser_metadata_set_const_halfword(conf->frame,
+							      conf->doff, conf->constant_value,
+				cntridx);
+		return true;
 
-		case KPARSER_METADATA_HDRLEN:
-			encoding_type = KPARSER_METADATA_CTRL_HDR_LENGTH;
-			break;
+	case KPARSER_METADATA_COUNTER:
+		*mde = __kparser_metadata_set_control_counter(conf->frame, conf->doff,
+							      cntridx, cntr_arr_idx,
+							      conf->cntr_op);
+		return true;
 
-		case KPARSER_METADATA_NUMENCAPS:
-			encoding_type = KPARSER_METADATA_CTRL_NUM_ENCAPS;
-			break;
+	case KPARSER_METADATA_HDRLEN:
+		encoding_type = KPARSER_METADATA_CTRL_HDR_LENGTH;
+		break;
 
-		case KPARSER_METADATA_NUMNODES:
-			encoding_type = KPARSER_METADATA_CTRL_NUM_NODES;
-			break;
+	case KPARSER_METADATA_NUMENCAPS:
+		encoding_type = KPARSER_METADATA_CTRL_NUM_ENCAPS;
+		break;
 
-		case KPARSER_METADATA_TIMESTAMP:
-			encoding_type = KPARSER_METADATA_CTRL_TIMESTAMP;
-			break;
+	case KPARSER_METADATA_NUMNODES:
+		encoding_type = KPARSER_METADATA_CTRL_NUM_NODES;
+		break;
 
-		case KPARSER_METADATA_RETURN_CODE:
-			encoding_type = KPARSER_METADATA_CTRL_RET_CODE;
-			break;
+	case KPARSER_METADATA_TIMESTAMP:
+		encoding_type = KPARSER_METADATA_CTRL_TIMESTAMP;
+		break;
 
-		case KPARSER_METADATA_COUNTEROP_NOOP:
-			encoding_type = KPARSER_METADATA_CTRL_NOOP;
-			break;
+	case KPARSER_METADATA_RETURN_CODE:
+		encoding_type = KPARSER_METADATA_CTRL_RET_CODE;
+		break;
 
-		default:
-			return false;
+	case KPARSER_METADATA_COUNTEROP_NOOP:
+		encoding_type = KPARSER_METADATA_CTRL_NOOP;
+		break;
+
+	default:
+		return false;
 	}
 
-	*mde = __kparser_metadata_set_control(conf->frame,
-			encoding_type, conf->doff, conf->cntr, conf->cntr_op);
+	*mde = __kparser_metadata_set_control(conf->frame, encoding_type, conf->doff,
+					      cntridx, conf->cntr_op);
 
 	return true;
 }

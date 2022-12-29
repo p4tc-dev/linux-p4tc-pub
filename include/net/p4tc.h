@@ -247,9 +247,21 @@ struct p4tc_act_param_ops {
 	u32 alloc_len;
 };
 
+struct p4tc_label_key {
+	char *label;
+	u32 labelsz;
+};
+
+struct p4tc_label_node {
+	struct rhash_head ht_node;
+	struct p4tc_label_key key;
+	int cmd_offset;
+};
+
 struct p4tc_act {
 	struct p4tc_template_common common;
 	struct tc_action_ops        ops;
+	struct rhashtable           *labels;
 	struct list_head            cmd_operations;
 	struct pernet_operations    *p4_net_ops;
 	struct p4tc_pipeline        *pipeline;
@@ -260,7 +272,9 @@ struct p4tc_act {
 	bool                        active;
 };
 extern const struct p4tc_template_ops p4tc_act_ops;
+extern const struct rhashtable_params p4tc_label_ht_params;
 extern const struct rhashtable_params acts_params;
+void p4tc_label_ht_destroy(void *ptr, void *arg);
 
 extern const struct rhashtable_params entry_hlt_params;
 
@@ -487,8 +501,7 @@ void tcf_register_put_rcu(struct rcu_head *head);
 int p4tc_cmds_parse(struct net *net, struct p4tc_act *act,
 		    struct nlattr *nla, bool ovr,
 		    struct netlink_ext_ack *extack);
-int p4tc_cmds_copy(struct list_head *new_cmd_operations,
-		   struct list_head *cmd_operations,
+int p4tc_cmds_copy(struct p4tc_act *act, struct list_head *new_cmd_operations,
 		   bool delete_old, struct netlink_ext_ack *extack);
 
 int p4tc_cmds_fillup(struct sk_buff *skb, struct list_head *meta_ops);
@@ -501,10 +514,13 @@ struct p4tc_cmd_operate {
 	struct list_head cmd_operations;
 	struct list_head operands_list;
 	struct p4tc_cmd_s *cmd;
+	char *label1;
+	char *label2;
 	u32 num_opnds;
 	u32 ctl1;
 	u32 ctl2;
 	u16 op_id;		/* P4TC_CMD_OP_XXX */
+	u32 cmd_offset;
 	u8 op_flags;
 	u8 op_cnt;
 };
