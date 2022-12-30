@@ -750,6 +750,14 @@ config NET_EMATCH_IPT
 	  To compile this code as a module, choose M here: the
 	  module will be called em_ipt.
 
+config NET_P4_TC
+	bool "P4 support"
+	select NET_CLS_ACT
+	help
+	  Say Y here if you want to use P4 features.
+	  The concept of Pipelines, Tables, metadata will be enabled
+          with this option.
+
 config NET_CLS_ACT
 	bool "Actions"
 	select NET_CLS
