@@ -1,0 +1,40 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
+#ifndef __LINUX_P4TC_H
+#define __LINUX_P4TC_H
+
+#define P4TC_MAX_KEYSZ 512
+
+enum {
+	P4T_UNSPEC,
+	P4T_U8 = 1, /* NLA_U8 */
+	P4T_U16 = 2, /* NLA_U16 */
+	P4T_U32 = 3, /* NLA_U32 */
+	P4T_U64 = 4, /* NLA_U64 */
+	P4T_STRING = 5, /* NLA_STRING */
+	P4T_FLAG = 6, /* NLA_FLAG */
+	P4T_MSECS = 7, /* NLA_MSECS */
+	P4T_NESTED = 8, /* NLA_NESTED */
+	P4T_NESTED_ARRAY = 9, /* NLA_NESTED_ARRAY */
+	P4T_NUL_STRING = 10, /* NLA_NUL_STRING */
+	P4T_BINARY = 11, /* NLA_BINARY */
+	P4T_S8 = 12, /* NLA_S8 */
+	P4T_S16 = 13, /* NLA_S16 */
+	P4T_S32 = 14, /* NLA_S32 */
+	P4T_S64 = 15, /* NLA_S64 */
+	P4T_BITFIELD32 = 16, /* NLA_BITFIELD32 */
+	P4T_MACADDR = 17, /* NLA_REJECT */
+	P4T_IPV4ADDR,
+	P4T_BE16,
+	P4T_BE32,
+	P4T_BE64,
+	P4T_U128,
+	P4T_S128,
+	P4T_PATH,
+	P4T_BOOL,
+	P4T_DEV,
+	P4T_KEY,
+	__P4T_MAX,
+};
+#define P4T_MAX (__P4T_MAX - 1)
+
+#endif
