@@ -1049,39 +1049,18 @@ static inline int opnd_is_assignable(struct p4tc_cmd_operand *kopnd)
 	return !(kopnd->oper_flags & DATA_IS_READ_ONLY);
 }
 
-static int __validate_BINARITH(struct net *net, struct p4tc_act *act,
-			       struct p4tc_cmd_operate *ope,
-			       const size_t max_operands,
-			       struct netlink_ext_ack *extack)
+static int validate_multiple_rvals(struct net *net, struct p4tc_act *act,
+				   struct p4tc_cmd_operate *ope,
+				   const size_t max_operands,
+				   const size_t max_size,
+				   struct netlink_ext_ack *extack)
 {
-	struct p4tc_cmd_operand *A, *cursor;
-	struct p4tc_type *Atype;
-	int err;
+	struct p4tc_cmd_operand *cursor;
+	int rvalue_tot_sz = 0;
 	int i = 0;
+	int err;
 
-	A = GET_OPA(&ope->operands_list);
-	err = validate_operand(net, act, ope, A, extack);
-	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
-		return err;
-
-	if (!opnd_is_assignable(A)) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Unable to store op result in read-only operand");
-		return -EPERM;
-	}
-
-	switch (A->oper_type) {
-	case P4TC_OPER_KEY:
-	case P4TC_OPER_META:
-	case P4TC_OPER_HDRFIELD:
-		break;
-	default:
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Operand A must be key, metadata or hdrfield");
-		return -EINVAL;
-	}
-
-	cursor = A;
+	cursor = GET_OPA(&ope->operands_list);
 	list_for_each_entry_continue(cursor, &ope->operands_list, oper_list_node) {
 		struct p4tc_type *cursor_type;
 
@@ -1114,12 +1093,87 @@ static int __validate_BINARITH(struct net *net, struct p4tc_act *act,
 					   "Rvalue operand's types must have host_read op");
 			return -EINVAL;
 		}
+
+		if (cursor_type->container_bitsz > max_size) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "Rvalue operand's types must be <= 64 bits");
+			return -EINVAL;
+		}
 		if (cursor->oper_bitsize % 8 != 0) {
 			NL_SET_ERR_MSG_MOD(extack,
 					   "All Rvalues must have bitsize multiple of 8");
 			return -EINVAL;
 		}
+		rvalue_tot_sz += cursor->oper_bitsize;
 		i++;
+	}
+
+	if (i < 2) {
+		NL_SET_ERR_MSG_MOD(extack, "Operation must have at least two operands");
+		return -EINVAL;
+	}
+
+	return rvalue_tot_sz;
+}
+
+static int __validate_CONCAT(struct net *net, struct p4tc_act *act,
+			     struct p4tc_cmd_operate *ope,
+			     const size_t max_operands,
+			     struct netlink_ext_ack *extack)
+{
+	struct p4tc_cmd_operand *A;
+	int err;
+
+	A = GET_OPA(&ope->operands_list);
+	err = validate_operand(net, act, ope, A, extack);
+	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
+		return err;
+
+	if (!opnd_is_assignable(A)) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Unable to store op result in read-only operand");
+		return -EPERM;
+	}
+
+	return validate_multiple_rvals(net, act, ope, max_operands,
+				       P4T_MAX_BITSZ, extack);
+}
+
+static int __validate_BINARITH(struct net *net, struct p4tc_act *act,
+			       struct p4tc_cmd_operate *ope,
+			       const size_t max_operands,
+			       struct netlink_ext_ack *extack)
+{
+	struct p4tc_cmd_operand *A;
+	struct p4tc_type *Atype;
+	int err;
+
+	A = GET_OPA(&ope->operands_list);
+	err = validate_operand(net, act, ope, A, extack);
+	if (err)		/*a better NL_SET_ERR_MSG_MOD done by validate_operand() */
+		return err > 0 ? -err : err;
+
+	if (!opnd_is_assignable(A)) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Unable to store op result in read-only operand");
+		return -EPERM;
+	}
+
+	if (A->oper_type == P4TC_OPER_KEY) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Operand A of arithmetic operation can't be a key");
+		return -EINVAL;
+	}
+
+	switch (A->oper_type) {
+	case P4TC_OPER_KEY:
+	case P4TC_OPER_META:
+	case P4TC_OPER_HDRFIELD:
+		break;
+	default:
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Operand A must be key, metadata or hdrfield");
+		return -EINVAL;
 	}
 
 	Atype = A->oper_datatype;
@@ -1129,7 +1183,14 @@ static int __validate_BINARITH(struct net *net, struct p4tc_act *act,
 		return -EINVAL;
 	}
 
-	return 0;
+	if (Atype->container_bitsz > 64) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Operand A's container type must be <= 64 bits");
+		return -EINVAL;
+	}
+
+	return validate_multiple_rvals(net, act, ope, max_operands, 64,
+				       extack);
 }
 
 static int validate_num_opnds(struct p4tc_cmd_operate *ope, u32 cmd_num_opnds)
@@ -1530,7 +1591,7 @@ int validate_BINARITH(struct net *net, struct p4tc_act *act,
 	int err;
 
 	err = __validate_BINARITH(net, act, ope, cmd_num_opnds, extack);
-	if (err)
+	if (err < 0)
 		return err;
 
 	A = GET_OPA(&ope->operands_list);
@@ -1557,33 +1618,14 @@ int validate_CONCAT(struct net *net, struct p4tc_act *act,
 		    struct p4tc_cmd_operate *ope,
 		    u32 cmd_num_opnds, struct netlink_ext_ack *extack)
 {
-	struct p4tc_cmd_operand *cursor, *A;
-	size_t rvalue_tot_sz = 0;
-	int err;
-	int i = 0;
+	struct p4tc_cmd_operand *A;
+	int rvalue_tot_sz;
 
 	A = GET_OPA(&ope->operands_list);
 
-	err = __validate_BINARITH(net, act, ope, cmd_num_opnds, extack);
-	if (err)
-		return err;
-
-	cursor = A;
-	list_for_each_entry_continue(cursor, &ope->operands_list, oper_list_node) {
-		if (cursor->oper_bitsize % 8 != 0) {
-			NL_SET_ERR_MSG_MOD(extack,
-					   "All Rvalues must have bitsize multiple of 8");
-			return -EINVAL;
-		}
-		rvalue_tot_sz += cursor->oper_bitsize;
-		i++;
-	}
-
-	if (i < 2) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Concat must have at least 3 operands");
-		return -EINVAL;
-	}
+	rvalue_tot_sz = __validate_CONCAT(net, act, ope, cmd_num_opnds, extack);
+	if (rvalue_tot_sz < 0)
+		return rvalue_tot_sz;
 
 	if (A->oper_bitsize < rvalue_tot_sz) {
 		NL_SET_ERR_MSG_MOD(extack,
@@ -3157,11 +3199,11 @@ static int p4tc_cmd_TBLAPP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 
 static int p4tc_cmd_BINARITH(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			     struct tcf_p4act *cmd, struct tcf_result *res,
-			     void (*p4tc_arith_op)(u64 *res, u64 *opB, u64 *opC))
+			     void (*p4tc_arith_op)(u64 *res, u64 opB, u64 opC))
 {
-	u64 result[BITS_TO_U64(P4T_MAX_BITSZ)] = {0};
-	u64 Bval[BITS_TO_U64(P4T_MAX_BITSZ)] = {0};
-	u64 Cval[BITS_TO_U64(P4T_MAX_BITSZ)] = {0};
+	u64 result = 0;
+	u64 Bval = 0;
+	u64 Cval = 0;
 	struct p4tc_cmd_operand *A, *B, *C;
 	struct p4tc_type_ops *srcC_ops;
 	struct p4tc_type_ops *srcB_ops;
@@ -3187,25 +3229,22 @@ static int p4tc_cmd_BINARITH(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 
 	p4tc_reg_lock(A, B, C);
 
-	srcB_ops->host_read(B->oper_datatype, B->oper_mask_shift, srcB, Bval);
-	srcC_ops->host_read(C->oper_datatype, C->oper_mask_shift, srcC, Cval);
+	srcB_ops->host_read(B->oper_datatype, B->oper_mask_shift, srcB, &Bval);
+	srcC_ops->host_read(C->oper_datatype, C->oper_mask_shift, srcC, &Cval);
 
-	p4tc_arith_op(result, Bval, Cval);
+	p4tc_arith_op(&result, Bval, Cval);
 
-	dst_ops->host_write(A->oper_datatype, A->oper_mask_shift, result, dst);
+	dst_ops->host_write(A->oper_datatype, A->oper_mask_shift, &result, dst);
 
 	p4tc_reg_unlock(A, B, C);
 
 	return op->ctl1;
 }
 
-/* For this first implementation we are not handling overflows yet */
-static void plus_op(u64 *res, u64 *opB, u64 *opC)
+/* Overflow semantic is the same as C's for u64 */
+static void plus_op(u64 *res, u64 opB, u64 opC)
 {
-	int i;
-
-	for (i = 0; i < BITS_TO_U64(P4T_MAX_BITSZ); i++)
-		res[i] = opB[i] + opC[i];
+	*res = opB + opC;
 }
 
 static int p4tc_cmd_PLUS(struct sk_buff *skb, struct p4tc_cmd_operate *op,
@@ -3214,13 +3253,10 @@ static int p4tc_cmd_PLUS(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	return p4tc_cmd_BINARITH(skb, op, cmd, res, plus_op);
 }
 
-/* For this first implementation we are not handling overflows yet */
-static void sub_op(u64 *res, u64 *opB, u64 *opC)
+/* Underflow semantic is the same as C's for u64 */
+static void sub_op(u64 *res, u64 opB, u64 opC)
 {
-	int i;
-
-	for (i = 0; i < BITS_TO_U64(P4T_MAX_BITSZ); i++)
-		res[i] = opB[i] - opC[i];
+	*res = opB - opC;
 }
 
 static int p4tc_cmd_SUB(struct sk_buff *skb, struct p4tc_cmd_operate *op,
@@ -3229,12 +3265,9 @@ static int p4tc_cmd_SUB(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	return p4tc_cmd_BINARITH(skb, op, cmd, res, sub_op);
 }
 
-static void band_op(u64 *res, u64 *opB, u64 *opC)
+static void band_op(u64 *res, u64 opB, u64 opC)
 {
-	int i;
-
-	for (i = 0; i < BITS_TO_U64(P4T_MAX_BITSZ); i++)
-		res[i] = opB[i] & opC[i];
+	*res = opB & opC;
 }
 
 static int p4tc_cmd_BAND(struct sk_buff *skb, struct p4tc_cmd_operate *op,
@@ -3243,12 +3276,9 @@ static int p4tc_cmd_BAND(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	return p4tc_cmd_BINARITH(skb, op, cmd, res, band_op);
 }
 
-static void bor_op(u64 *res, u64 *opB, u64 *opC)
+static void bor_op(u64 *res, u64 opB, u64 opC)
 {
-	int i;
-
-	for (i = 0; i < BITS_TO_U64(P4T_MAX_BITSZ); i++)
-		res[i] = opB[i] | opC[i];
+	*res = opB | opC;
 }
 
 static int p4tc_cmd_BOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
@@ -3257,12 +3287,9 @@ static int p4tc_cmd_BOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	return p4tc_cmd_BINARITH(skb, op, cmd, res, bor_op);
 }
 
-static void bxor_op(u64 *res, u64 *opB, u64 *opC)
+static void bxor_op(u64 *res, u64 opB, u64 opC)
 {
-	int i;
-
-	for (i = 0; i < BITS_TO_U64(P4T_MAX_BITSZ); i++)
-		res[i] = opB[i] ^ opC[i];
+	*res = opB ^ opC;
 }
 
 static int p4tc_cmd_BXOR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
