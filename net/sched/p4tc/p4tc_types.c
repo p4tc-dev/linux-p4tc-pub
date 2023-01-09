@@ -812,8 +812,11 @@ static int p4t_u64_hread(struct p4tc_type *container,
 static int p4t_u128_validate(struct p4tc_type *container, void *value, u16 bitstart,
 			     u16 bitend, struct netlink_ext_ack *extack)
 {
-	if (bitstart != 0 || bitend != 127)
+	if (bitstart != 0 || bitend != 127) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Only valid bit type larger than bit64 is bit128");
 		return -EINVAL;
+	}
 
 	return 0;
 }
