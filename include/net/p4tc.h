@@ -110,20 +110,26 @@ struct p4tc_pipeline {
 	refcount_t                  p_hdrs_used;
 };
 
+struct p4tc_pipeline_net {
+	struct idr pipeline_idr;
+};
+
 int tcf_p4_tmpl_generic_dump(struct sk_buff *skb,
 			     struct p4tc_dump_ctx *ctx,
 			     struct idr *idr, int idx,
 			     struct netlink_ext_ack *extack);
 
 struct p4tc_pipeline *
-tcf_pipeline_find_byany(const char *p_name, const u32 pipeid,
-	      struct netlink_ext_ack *extack);
-struct p4tc_pipeline *tcf_pipeline_find_byid(const u32 pipeid);
-struct p4tc_pipeline *tcf_pipeline_get(const char *p_name, const u32 pipeid,
+tcf_pipeline_find_byany(struct net *net, const char *p_name, const u32 pipeid,
+			struct netlink_ext_ack *extack);
+struct p4tc_pipeline *tcf_pipeline_find_byid(struct net *net, const u32 pipeid);
+struct p4tc_pipeline *tcf_pipeline_get(struct net *net, const char *p_name,
+				       const u32 pipeid,
 				       struct netlink_ext_ack *extack);
 void __tcf_pipeline_put(struct p4tc_pipeline *pipeline);
 struct p4tc_pipeline *
-tcf_pipeline_find_byany_unsealed(const char *p_name, const u32 pipeid,
+tcf_pipeline_find_byany_unsealed(struct net *net, const char *p_name,
+				 const u32 pipeid,
 				 struct netlink_ext_ack *extack);
 
 static inline bool pipeline_sealed(struct p4tc_pipeline *pipeline)

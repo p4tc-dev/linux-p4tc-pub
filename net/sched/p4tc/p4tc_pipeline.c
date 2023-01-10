@@ -28,7 +28,50 @@
 #include <net/flow_offload.h>
 #include <net/p4tc_types.h>
 
-static DEFINE_IDR(pipeline_idr);
+static unsigned int pipeline_net_id;
+static struct p4tc_pipeline *root_pipeline;
+
+static __net_init int pipeline_init_net(struct net *net)
+{
+	struct p4tc_pipeline_net *pipe_net = net_generic(net, pipeline_net_id);
+
+	idr_init(&pipe_net->pipeline_idr);
+
+	return 0;
+}
+
+static int tcf_pipeline_put(struct net *net,
+			    struct p4tc_template_common *template,
+			    bool unconditional_purgeline,
+			    struct netlink_ext_ack *extack);
+
+static void __net_exit pipeline_exit_net(struct list_head *net_list)
+{
+	struct net *net;
+
+	rtnl_lock();
+	list_for_each_entry(net, net_list, exit_list) {
+		struct p4tc_pipeline_net *pipe_net;
+		struct p4tc_pipeline *pipeline;
+		unsigned long pipeid, tmp;
+
+		pipe_net = net_generic(net, pipeline_net_id);
+		idr_for_each_entry_ul(&pipe_net->pipeline_idr, pipeline, tmp,
+				      pipeid) {
+			tcf_pipeline_put(net, &pipeline->common, true, NULL);
+		}
+		idr_destroy(&pipe_net->pipeline_idr);
+	}
+
+	rtnl_unlock();
+}
+
+static struct pernet_operations pipeline_net_ops = {
+	.init = pipeline_init_net,
+	.exit_batch = pipeline_exit_net,
+	.id   = &pipeline_net_id,
+	.size = sizeof(struct p4tc_pipeline_net),
+};
 
 static const struct nla_policy tc_pipeline_policy[P4TC_PIPELINE_MAX + 1] = {
 	[P4TC_PIPELINE_MAXRULES] =
@@ -59,6 +102,7 @@ static int tcf_pipeline_put(struct net *net,
 			    struct p4tc_template_common *template,
 			    struct netlink_ext_ack *extack)
 {
+	struct p4tc_pipeline_net *pipe_net = net_generic(net, pipeline_net_id);
 	struct p4tc_pipeline *pipeline = to_pipeline(template);
 	unsigned long reg_id, tbl_id, act_id, m_id, tmp;
 	struct p4tc_table *table;
@@ -94,7 +138,7 @@ static int tcf_pipeline_put(struct net *net,
 	idr_for_each_entry_ul(&pipeline->p_reg_idr, reg, tmp, reg_id)
 		reg->common.ops->put(net, &reg->common, extack);
 
-	idr_remove(&pipeline_idr, pipeline->common.p_id);
+	idr_remove(&pipe_net->pipeline_idr, pipeline->common.p_id);
 
 	/* XXX: The action fields are only accessed in the control path
 	 * since they will be copied to the filter, where the data path
@@ -146,17 +190,26 @@ static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 	return true;
 }
 
-struct p4tc_pipeline *tcf_pipeline_find_byid(const u32 pipeid)
+struct p4tc_pipeline *tcf_pipeline_find_byid(struct net *net, const u32 pipeid)
 {
-	return idr_find(&pipeline_idr, pipeid);
+	struct p4tc_pipeline_net *pipe_net;
+
+	if (pipeid == P4TC_KERNEL_PIPEID)
+		return root_pipeline;
+
+	pipe_net = net_generic(net, pipeline_net_id);
+
+	return idr_find(&pipe_net->pipeline_idr, pipeid);
 }
 
-static struct p4tc_pipeline *tcf_pipeline_find_byname(const char *name)
+static struct p4tc_pipeline *tcf_pipeline_find_byname(struct net *net,
+						      const char *name)
 {
+	struct p4tc_pipeline_net *pipe_net = net_generic(net, pipeline_net_id);
 	struct p4tc_pipeline *pipeline;
 	unsigned long tmp, id;
 
-	idr_for_each_entry_ul(&pipeline_idr, pipeline, tmp, id) {
+	idr_for_each_entry_ul(&pipe_net->pipeline_idr, pipeline, tmp, id) {
 		/* Don't show kernel pipeline */
 		if (id == P4TC_KERNEL_PIPEID)
 			continue;
@@ -173,6 +226,7 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		    struct nlattr *nla, const char *p_name,
 		    u32 pipeid, struct netlink_ext_ack *extack)
 {
+	struct p4tc_pipeline_net *pipe_net = net_generic(net, pipeline_net_id);
 	int ret = 0;
 	struct nlattr *tb[P4TC_PIPELINE_MAX + 1];
 	struct p4tc_pipeline *pipeline;
@@ -193,13 +247,13 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		goto err;
 	}
 
-	if (pipeid != P4TC_KERNEL_PIPEID && tcf_pipeline_find_byid(pipeid)) {
+	if (pipeid != P4TC_KERNEL_PIPEID && tcf_pipeline_find_byid(net, pipeid)) {
 		NL_SET_ERR_MSG(extack, "Pipeline was already created");
 		ret = -EEXIST;
 		goto err;
 	}
 
-	if (tcf_pipeline_find_byname(p_name)) {
+	if (tcf_pipeline_find_byname(net, p_name)) {
 		NL_SET_ERR_MSG(extack, "Pipeline was already created");
 		ret = -EEXIST;
 		goto err;
@@ -208,12 +262,12 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 	strscpy(pipeline->common.name, p_name, PIPELINENAMSIZ);
 
 	if (pipeid) {
-		ret = idr_alloc_u32(&pipeline_idr, pipeline, &pipeid, pipeid,
-				    GFP_KERNEL);
+		ret = idr_alloc_u32(&pipe_net->pipeline_idr, pipeline, &pipeid,
+				    pipeid, GFP_KERNEL);
 	} else {
 		pipeid = 1;
-		ret = idr_alloc_u32(&pipeline_idr, pipeline, &pipeid, UINT_MAX,
-				    GFP_KERNEL);
+		ret = idr_alloc_u32(&pipe_net->pipeline_idr, pipeline, &pipeid,
+				    UINT_MAX,GFP_KERNEL);
 	}
 
 	if (ret < 0) {
@@ -306,7 +360,7 @@ preactions_destroy:
 	}
 
 idr_rm:
-	idr_remove(&pipeline_idr, pipeid);
+	idr_remove(&pipe_net->pipeline_idr, pipeid);
 
 err:
 	kfree(pipeline);
@@ -314,14 +368,14 @@ err:
 }
 
 static struct p4tc_pipeline *
-__tcf_pipeline_find_byany(const char *p_name, const u32 pipeid,
+__tcf_pipeline_find_byany(struct net *net, const char *p_name, const u32 pipeid,
 			  struct netlink_ext_ack *extack)
 {
 	struct p4tc_pipeline *pipeline = NULL;
 	int err;
 
 	if (pipeid) {
-		pipeline = tcf_pipeline_find_byid(pipeid);
+		pipeline = tcf_pipeline_find_byid(net, pipeid);
 		if (!pipeline) {
 			NL_SET_ERR_MSG(extack, "Unable to find pipeline by id");
 			err = -EINVAL;
@@ -329,7 +383,7 @@ __tcf_pipeline_find_byany(const char *p_name, const u32 pipeid,
 		}
 	} else {
 		if (p_name) {
-			pipeline = tcf_pipeline_find_byname(p_name);
+			pipeline = tcf_pipeline_find_byname(net, p_name);
 			if (!pipeline) {
 				NL_SET_ERR_MSG(extack, "Pipeline name not found");
 				err = -EINVAL;
@@ -345,11 +399,11 @@ out:
 }
 
 struct p4tc_pipeline *
-tcf_pipeline_find_byany(const char *p_name, const u32 pipeid,
-	      struct netlink_ext_ack *extack)
+tcf_pipeline_find_byany(struct net *net, const char *p_name, const u32 pipeid,
+			struct netlink_ext_ack *extack)
 {
 	struct p4tc_pipeline *pipeline =
-		__tcf_pipeline_find_byany(p_name, pipeid, extack);
+		__tcf_pipeline_find_byany(net, p_name, pipeid, extack);
 	if (!pipeline) {
 		NL_SET_ERR_MSG(extack, "Must specify pipeline name or id");
 		return ERR_PTR(-EINVAL);
@@ -359,10 +413,10 @@ tcf_pipeline_find_byany(const char *p_name, const u32 pipeid,
 }
 
 struct p4tc_pipeline *
-tcf_pipeline_get(const char *p_name, const u32 pipeid,
+tcf_pipeline_get(struct net *net, const char *p_name, const u32 pipeid,
 		 struct netlink_ext_ack *extack)
 {
-	struct p4tc_pipeline *pipeline = __tcf_pipeline_find_byany(p_name,
+	struct p4tc_pipeline *pipeline = __tcf_pipeline_find_byany(net, p_name,
 								   pipeid, extack);
 	if (!pipeline) {
 		NL_SET_ERR_MSG(extack, "Must specify pipeline name or id");
@@ -382,11 +436,12 @@ void __tcf_pipeline_put(struct p4tc_pipeline *pipeline)
 }
 
 struct p4tc_pipeline *
-tcf_pipeline_find_byany_unsealed(const char *p_name, const u32 pipeid,
+tcf_pipeline_find_byany_unsealed(struct net *net, const char *p_name,
+				 const u32 pipeid,
 				 struct netlink_ext_ack *extack)
 {
-	struct p4tc_pipeline *pipeline = tcf_pipeline_find_byany(p_name, pipeid,
-								 extack);
+	struct p4tc_pipeline *pipeline = tcf_pipeline_find_byany(net, p_name,
+								 pipeid, extack);
 	if (IS_ERR(pipeline))
 		return pipeline;
 
@@ -418,7 +473,8 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 	if (ret < 0)
 		goto out;
 
-	pipeline = tcf_pipeline_find_byany_unsealed(p_name, pipeid, extack);
+	pipeline = tcf_pipeline_find_byany_unsealed(net, p_name, pipeid,
+						    extack);
 	if (IS_ERR(pipeline))
 		return pipeline;
 
@@ -615,7 +671,7 @@ static int tcf_pipeline_gd(struct net *net, struct sk_buff *skb,
 		return -EOPNOTSUPP;
 	}
 
-	pipeline = tcf_pipeline_find_byany(*p_name, pipeid, extack);
+	pipeline = tcf_pipeline_find_byany(net, *p_name, pipeid, extack);
 	if (IS_ERR(pipeline))
 		return PTR_ERR(pipeline);
 
@@ -649,7 +705,10 @@ static int tcf_pipeline_dump(struct sk_buff *skb,
 			     char **p_name, u32 *ids,
 			     struct netlink_ext_ack *extack)
 {
-	return tcf_p4_tmpl_generic_dump(skb, ctx, &pipeline_idr,
+	struct net *net = sock_net(skb->sk);
+	struct p4tc_pipeline_net *pipe_net = net_generic(net, pipeline_net_id);
+
+	return tcf_p4_tmpl_generic_dump(skb, ctx, &pipe_net->pipeline_idr,
 					P4TC_PID_IDX, extack);
 }
 
@@ -679,40 +738,41 @@ out_nlmsg_trim:
 	return -ENOMEM;
 }
 
-static void tcf_pipeline_init(void)
+
+static int register_pipeline_pernet(void)
+{
+	return register_pernet_subsys(&pipeline_net_ops);
+}
+
+static void __tcf_pipeline_init(void)
 {
 	int pipeid = P4TC_KERNEL_PIPEID;
-	struct p4tc_pipeline *pipeline;
-	int ret;
 
-	pipeline = kzalloc(sizeof(*pipeline), GFP_ATOMIC);
-	if (!pipeline) {
+	root_pipeline = kzalloc(sizeof(*root_pipeline), GFP_ATOMIC);
+	if (!root_pipeline) {
 		pr_err("Unable to register kernel pipeline\n");
 		return;
 	}
 
-	strscpy(pipeline->common.name, "kernel", PIPELINENAMSIZ);
+	strscpy(root_pipeline->common.name, "kernel", PIPELINENAMSIZ);
 
-	idr_init(&pipeline->p_meta_idr);
+	root_pipeline->common.ops = (struct p4tc_template_ops *)&p4tc_pipeline_ops;
 
-	pipeline->common.ops = (struct p4tc_template_ops *)&p4tc_pipeline_ops;
+	root_pipeline->common.p_id = pipeid;
 
-	ret = idr_alloc_u32(&pipeline_idr, pipeline, &pipeid, pipeid,
-			    GFP_ATOMIC);
-	if (ret < 0) {
-		idr_destroy(&pipeline->p_meta_idr);
-		kfree(pipeline);
-		pr_err("Unable to register kernel pipeline in IDR\n");
-		return;
-	}
-	pipeline->common.p_id = pipeid;
+	root_pipeline->p_state = P4TC_STATE_READY;
 
-	pipeline->p_state = P4TC_STATE_READY;
+	return 0;
+}
 
-	if (p4tc_register_types() < 0) {
+static void tcf_pipeline_init(void) {
+	if (register_pipeline_pernet() < 0)
+		pr_err("Failed to register per net pipeline IDR");
+
+	if (p4tc_register_types() < 0)
 		pr_err("Failed to register P4 types");
-		return;
-	}
+
+	__tcf_pipeline_init();
 }
 
 const struct p4tc_template_ops p4tc_pipeline_ops = {
