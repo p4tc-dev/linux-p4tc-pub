@@ -212,7 +212,8 @@ static int _tcf_register_put(struct p4tc_pipeline *pipeline,
 static int tcf_register_put(struct net *net, struct p4tc_template_common *tmpl,
 			    struct netlink_ext_ack *extack)
 {
-	struct p4tc_pipeline *pipeline = tcf_pipeline_find_byid(tmpl->p_id);
+	struct p4tc_pipeline *pipeline = tcf_pipeline_find_byid(net,
+								tmpl->p_id);
 	struct p4tc_register *reg = to_register(tmpl);
 	int ret;
 
@@ -514,7 +515,8 @@ tcf_register_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	struct p4tc_pipeline *pipeline;
 	struct p4tc_register *reg;
 
-	pipeline = tcf_pipeline_find_byany_unsealed(*p_name, pipeid, extack);
+	pipeline = tcf_pipeline_find_byany_unsealed(net, *p_name, pipeid,
+						    extack);
 	if (IS_ERR(pipeline))
 		return (void *)pipeline;
 
@@ -589,7 +591,7 @@ static int tcf_register_gd(struct net *net, struct sk_buff *skb,
 			   struct netlink_ext_ack *extack)
 {
 	u32 pipeid = ids[P4TC_PID_IDX], reg_id = ids[P4TC_REGID_IDX];
-	struct nlattr *tb[P4TC_TABLE_MAX + 1] = {};
+	struct nlattr *tb[P4TC_REGISTER_MAX + 1] = {};
 	unsigned char *b = skb_tail_pointer(skb);
 	struct p4tc_u_register *parm_arg = NULL;
 	int ret = 0;
@@ -598,15 +600,17 @@ static int tcf_register_gd(struct net *net, struct sk_buff *skb,
 	struct nlattr *attr_info;
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE)
-		pipeline = tcf_pipeline_find_byany_unsealed(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany_unsealed(net, *p_name,
+							    pipeid, extack);
 	else
-		pipeline = tcf_pipeline_find_byany(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany(net, *p_name, pipeid,
+						   extack);
 
 	if (IS_ERR(pipeline))
 		return PTR_ERR(pipeline);
 
 	if (nla) {
-		ret = nla_parse_nested(tb, P4TC_TABLE_MAX, nla,
+		ret = nla_parse_nested(tb, P4TC_REGISTER_MAX, nla,
 				       p4tc_register_policy, extack);
 
 		if (ret < 0)
@@ -674,16 +678,17 @@ static int tcf_register_dump(struct sk_buff *skb,
 			     char **p_name, u32 *ids,
 			     struct netlink_ext_ack *extack)
 {
+	struct net *net = sock_net(skb->sk);
 	struct p4tc_pipeline *pipeline;
 
 	if (!ctx->ids[P4TC_PID_IDX]) {
-		pipeline = tcf_pipeline_find_byany(*p_name, ids[P4TC_PID_IDX],
-						   extack);
+		pipeline = tcf_pipeline_find_byany(net, *p_name,
+						   ids[P4TC_PID_IDX], extack);
 		if (IS_ERR(pipeline))
 			return PTR_ERR(pipeline);
 		ctx->ids[P4TC_PID_IDX] = pipeline->common.p_id;
 	} else {
-		pipeline = tcf_pipeline_find_byid(ctx->ids[P4TC_PID_IDX]);
+		pipeline = tcf_pipeline_find_byid(net, ctx->ids[P4TC_PID_IDX]);
 	}
 
 	if (!ids[P4TC_PID_IDX])
