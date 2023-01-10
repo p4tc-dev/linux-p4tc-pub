@@ -183,7 +183,7 @@ static int p4_change(struct net *net, struct sk_buff *in_skb,
 		pname = nla_data(tb[TCA_P4_PNAME]);
 
 	if (pname) {
-		pipeline = tcf_pipeline_get(pname, 0, extack);
+		pipeline = tcf_pipeline_get(net, pname, 0, extack);
 		if (IS_ERR(pipeline))
 			return PTR_ERR(pipeline);
 	} else {
