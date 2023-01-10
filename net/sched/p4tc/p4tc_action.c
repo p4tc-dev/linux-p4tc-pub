@@ -544,6 +544,7 @@ static int tcf_p4_dyna_act(struct sk_buff *skb, const struct tc_action *a,
 	 * operation in the data path. If we had this structure as per-cpu, we'd
 	 * possibly be able to get rid of this lock.
 	 */
+	lockdep_off();
 	spin_lock(&dynact->tcf_lock);
 	list_for_each_entry(op, &dynact->cmd_operations, cmd_operations) {
 		if (jmp_cnt-- > 0)
@@ -563,6 +564,7 @@ static int tcf_p4_dyna_act(struct sk_buff *skb, const struct tc_action *a,
 		}
 	}
 	spin_unlock(&dynact->tcf_lock);
+	lockdep_on();
 
 	if (ret == TC_ACT_SHOT)
 		tcf_action_inc_drop_qstats(&dynact->common);
