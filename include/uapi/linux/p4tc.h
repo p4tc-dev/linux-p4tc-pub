@@ -84,7 +84,6 @@ struct p4tc_table_parm {
 	__u32 tbl_keysz;
 	__u32 tbl_max_entries;
 	__u32 tbl_max_masks;
-	__u32 tbl_default_key;
 	__u32 tbl_flags;
 	__u32 tbl_num_entries;
 	__u16 tbl_permissions;
@@ -224,7 +223,6 @@ enum {
 /* Table key attributes */
 enum {
 	P4TC_KEY_UNSPEC,
-	P4TC_KEY_ID, /* u32 */
 	P4TC_KEY_ACT, /* nested key actions */
 	__P4TC_TKEY_MAX
 };
@@ -244,7 +242,7 @@ enum {
 	P4TC_TABLE_NAME, /* string */
 	P4TC_TABLE_INFO, /* struct tc_p4_table_type_parm */
 	P4TC_TABLE_PREACTIONS, /* nested table preactions */
-	P4TC_TABLE_KEYS, /* nested table keys */
+	P4TC_TABLE_KEY, /* nested table key */
 	P4TC_TABLE_POSTACTIONS, /* nested table postactions */
 	P4TC_TABLE_DEFAULT_HIT, /* nested default hit action attributes */
 	P4TC_TABLE_DEFAULT_MISS, /* nested default miss action attributes */

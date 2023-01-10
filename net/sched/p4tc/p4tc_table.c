@@ -35,7 +35,7 @@ static int tcf_key_try_set_state_ready(struct p4tc_table_key *key,
 {
 	if (!key->key_acts) {
 		NL_SET_ERR_MSG(extack,
-			       "All table keys must have actions before sealing pipelline");
+			       "Table key must have actions before sealing pipelline");
 		return -EINVAL;
 	}
 
@@ -45,23 +45,19 @@ static int tcf_key_try_set_state_ready(struct p4tc_table_key *key,
 static int __tcf_table_try_set_state_ready(struct p4tc_table *table,
 					   struct netlink_ext_ack *extack)
 {
-	struct p4tc_table_key *key;
-	unsigned long tmp, id;
-	int ret;
-
 	if (!table->tbl_postacts) {
 		NL_SET_ERR_MSG(extack,
 			       "All tables must have postactions before sealing pipelline");
 		return -EINVAL;
 	}
 
-	idr_for_each_entry_ul(&table->tbl_keys_idr, key, tmp, id) {
-		ret = tcf_key_try_set_state_ready(key, extack);
-		if (ret < 0)
-			return ret;
+	if (!table->tbl_key) {
+		NL_SET_ERR_MSG(extack,
+			       "Table must have key before sealing pipeline");
+		return -EINVAL;
 	}
 
-	return 0;
+	return tcf_key_try_set_state_ready(table->tbl_key, extack);
 }
 
 int tcf_table_try_set_state_ready(struct p4tc_pipeline *pipeline,
@@ -85,7 +81,7 @@ static const struct nla_policy p4tc_table_policy[P4TC_TABLE_MAX + 1] = {
 	[P4TC_TABLE_INFO] = { .type = NLA_BINARY,
 			       .len = sizeof(struct p4tc_table_parm) },
 	[P4TC_TABLE_PREACTIONS] = { .type = NLA_NESTED },
-	[P4TC_TABLE_KEYS] = { .type = NLA_NESTED },
+	[P4TC_TABLE_KEY] = { .type = NLA_NESTED },
 	[P4TC_TABLE_POSTACTIONS] = { .type = NLA_NESTED },
 	[P4TC_TABLE_DEFAULT_HIT] = { .type = NLA_NESTED },
 	[P4TC_TABLE_DEFAULT_MISS] = { .type = NLA_NESTED },
@@ -93,19 +89,14 @@ static const struct nla_policy p4tc_table_policy[P4TC_TABLE_MAX + 1] = {
 };
 
 static const struct nla_policy p4tc_table_key_policy[P4TC_MAXPARSE_KEYS + 1] = {
-	[P4TC_KEY_ID] = { .type = NLA_U32 },
 	[P4TC_KEY_ACT] = { .type = NLA_NESTED },
 };
 
 static int tcf_table_key_fill_nlmsg(struct sk_buff *skb,
-				    struct p4tc_table_key *key, int key_num)
+				    struct p4tc_table_key *key)
 {
 	int ret = 0;
-	struct nlattr *nest_keys = nla_nest_start(skb, key_num);
 	struct nlattr *nest_action;
-
-	if (nla_put_u32(skb, P4TC_KEY_ID, key->key_id))
-		return -1;
 
 	if (key->key_acts) {
 		nest_action = nla_nest_start(skb, P4TC_KEY_ACT);
@@ -115,21 +106,16 @@ static int tcf_table_key_fill_nlmsg(struct sk_buff *skb,
 		nla_nest_end(skb, nest_action);
 	}
 
-	nla_nest_end(skb, nest_keys);
-
 	return ret;
 }
 
 static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 {
 	unsigned char *b = skb_tail_pointer(skb);
-	int i = 1;
 	struct p4tc_table_perm *tbl_perm;
 	struct nlattr *default_missact;
 	struct nlattr *default_hitact;
-	unsigned long tbl_id, tmp;
 	struct p4tc_table_parm parm;
-	struct p4tc_table_key *key;
 	struct nlattr *nest_key;
 	struct nlattr *nest;
 	struct nlattr *preacts;
@@ -149,21 +135,18 @@ static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 	parm.tbl_keysz = table->tbl_keysz;
 	parm.tbl_max_entries = table->tbl_max_entries;
 	parm.tbl_max_masks = table->tbl_max_masks;
-	parm.tbl_default_key = table->tbl_default_key;
 	parm.tbl_num_entries = refcount_read(&table->tbl_entries_ref) - 1;
 
 	tbl_perm = rcu_dereference_rtnl(table->tbl_permissions);
 	parm.tbl_permissions = tbl_perm->permissions;
 
-	nest_key = nla_nest_start(skb, P4TC_TABLE_KEYS);
-	idr_for_each_entry_ul(&table->tbl_keys_idr, key, tmp, tbl_id) {
-		err = tcf_table_key_fill_nlmsg(skb, key, i);
+	if (table->tbl_key) {
+		nest_key = nla_nest_start(skb, P4TC_TABLE_KEY);
+		err = tcf_table_key_fill_nlmsg(skb, table->tbl_key);
 		if (err < 0)
 			goto out_nlmsg_trim;
-
-		i++;
+		nla_nest_end(skb, nest_key);
 	}
-	nla_nest_end(skb, nest_key);
 
 	if (table->tbl_preacts) {
 		preacts = nla_nest_start(skb, P4TC_TABLE_PREACTIONS);
@@ -278,39 +261,6 @@ static inline void tcf_table_key_put(struct p4tc_table_key *key)
 	kfree(key);
 }
 
-static inline void tcf_table_key_put_many(struct p4tc_table_key **keys,
-					  struct p4tc_table *table,
-					  int *cu_res,
-					  int total_keys)
-{
-	int i;
-
-	for (i = 0; i < total_keys; i++) {
-		if (cu_res[i] == P4TC_P_CREATED) {
-			idr_remove(&table->tbl_keys_idr, keys[i]->key_id);
-			table->tbl_keys_count--;
-		}
-		tcf_table_key_put(keys[i]);
-	}
-}
-
-static inline void tcf_table_key_replace_many(struct p4tc_table_key **keys,
-					      struct p4tc_table *table,
-					      int *cu_res,
-					      int total_keys)
-{
-	int i;
-
-	for (i = 0; i < total_keys; i++) {
-		struct p4tc_table_key *key;
-
-		key = idr_replace(&table->tbl_keys_idr, keys[i],
-				  keys[i]->key_id);
-		if (cu_res[i] != P4TC_P_CREATED)
-			tcf_table_key_put(key);
-	}
-}
-
 static void tcf_table_put_defaultact(struct p4tc_table_defact *defact)
 {
 	if (defact->default_acts) {
@@ -328,8 +278,6 @@ static inline int _tcf_table_put(struct net *net,
 {
 	bool default_act_del = false;
 	struct p4tc_table_perm *perm;
-	unsigned long tmp, tbl_id;
-	struct p4tc_table_key *key;
 
 	if (tb)
 		default_act_del = tb[P4TC_TABLE_DEFAULT_HIT] || tb[P4TC_TABLE_DEFAULT_MISS];
@@ -404,10 +352,8 @@ static inline int _tcf_table_put(struct net *net,
 	if (default_act_del)
 		return 0;
 
-	idr_for_each_entry_ul(&table->tbl_keys_idr, key, tmp, tbl_id) {
-		tcf_table_key_put(key);
-		idr_remove(&table->tbl_keys_idr, tbl_id);
-	}
+	if (table->tbl_key)
+		tcf_table_key_put(table->tbl_key);
 
 	if (table->tbl_preacts) {
 		tcf_action_destroy(table->tbl_preacts, TCA_ACT_UNBIND);
@@ -422,7 +368,6 @@ static inline int _tcf_table_put(struct net *net,
 				  tcf_table_entry_destroy_hash,
 				  table);
 
-	idr_destroy(&table->tbl_keys_idr);
 	idr_destroy(&table->tbl_masks_idr);
 	idr_destroy(&table->tbl_prio_idr);
 
@@ -446,76 +391,25 @@ static int tcf_table_put(struct net *net, struct p4tc_template_common *tmpl,
 	return _tcf_table_put(net, NULL, pipeline, table, extack);
 }
 
-struct p4tc_table_key *
-tcf_table_key_find(struct p4tc_table *table, const u32 key_id)
-{
-	return idr_find(&table->tbl_keys_idr, key_id);
-}
-
 static inline struct p4tc_table_key *
-tcf_table_key_add_1(struct net *net,
-		    struct p4tc_table *table,
-		    struct nlattr *nla,
-		    struct nlattr **tb_args,
-		    struct netlink_ext_ack *extack)
+tcf_table_key_add(struct net *net, struct p4tc_table *table, struct nlattr *nla,
+		  struct netlink_ext_ack *extack)
 {
 	int ret = 0;
-	struct nlattr *tb_local[P4TC_TKEY_MAX + 1];
+	struct nlattr *tb[P4TC_TKEY_MAX + 1];
 	struct p4tc_table_key *key;
-	struct nlattr **tb;
-	u32 *id;
 
-	if (table->tbl_keys_count == P4TC_MAXPARSE_KEYS) {
-		NL_SET_ERR_MSG(extack,
-			       "Exceeded max keys limit for table");
-		ret = -EINVAL;
+	ret = nla_parse_nested(tb, P4TC_TKEY_MAX, nla,
+			       p4tc_table_key_policy, extack);
+	if (ret < 0)
 		goto out;
-	}
 
-	/* tb_args implies this call is being made during an update and not a
-	 * create. It also means the key specified in the keyid here was not
-	 * created in the original table create; also note that even in
-	 * this case the key/id may still be missing.
-	 */
-	if (tb_args) {
-		tb = tb_args;
-	} else {
-		ret = nla_parse_nested(tb_local, P4TC_TKEY_MAX, nla,
-				       p4tc_table_key_policy, extack);
-		if (ret < 0)
-			goto out;
-
-		tb = tb_local;
-	}
-
-	if (tb[P4TC_KEY_ID]) {
-		id = nla_data(tb[P4TC_KEY_ID]);
-
-		if (idr_find(&table->tbl_keys_idr, *id)) {
-			NL_SET_ERR_MSG(extack, "Key id was already created");
-			ret = -EEXIST;
-			goto out;
-		}
-	}
-
-	key = kmalloc(sizeof(*key), GFP_KERNEL);
+	key = kzalloc(sizeof(*key), GFP_KERNEL);
 	if (!key) {
 		NL_SET_ERR_MSG(extack, "Failed to allocate table key");
 		ret = -ENOMEM;
 		goto out;
 	}
-
-	if (tb[P4TC_KEY_ID]) {
-		key->key_id = *id;
-		ret = idr_alloc_u32(&table->tbl_keys_idr, ERR_PTR(-EBUSY), id,
-				    *id, GFP_KERNEL);
-	} else {
-		key->key_id = 1;
-		ret = idr_alloc_u32(&table->tbl_keys_idr, ERR_PTR(-EBUSY),
-				    &key->key_id, UINT_MAX, GFP_KERNEL);
-	}
-	if (ret < 0)
-		goto free;
 
 	if (tb[P4TC_KEY_ACT]) {
 		key->key_acts = kcalloc(TCA_ACT_MAX_PRIO,
@@ -523,132 +417,25 @@ tcf_table_key_add_1(struct net *net,
 					GFP_KERNEL);
 		if (!key->key_acts) {
 			ret = -ENOMEM;
-			goto free;
+			goto free_key;
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_KEY_ACT], key->key_acts, 0,
 				       extack);
 		if (ret < 0) {
 			kfree(key->key_acts);
-			goto free;
-		}
-		key->key_num_acts = ret;
-	} else {
-		key->key_acts = NULL;
-		key->key_num_acts = 0;
-	}
-
-	table->tbl_keys_count++;
-
-	return key;
-
-free:
-	idr_remove(&table->tbl_keys_idr, key->key_id);
-	kfree(key);
-out:
-	return ERR_PTR(ret);
-}
-
-static inline struct p4tc_table_key *
-tcf_table_key_update_1(struct net *net,
-		       struct p4tc_table *table,
-		       struct nlattr *nla,
-		       int *cu_res,
-		       struct netlink_ext_ack *extack)
-{
-	struct p4tc_table_key *curr_key = NULL;
-	int ret = 0;
-	struct nlattr *tb_key[P4TC_TKEY_MAX + 1];
-	struct p4tc_table_key *key;
-
-	ret = nla_parse_nested(tb_key, P4TC_TKEY_MAX, nla,
-			       p4tc_table_key_policy, extack);
-	if (ret < 0)
-		goto out;
-
-	if (tb_key[P4TC_KEY_ID]) {
-		const u32 *id = nla_data(tb_key[P4TC_KEY_ID]);
-
-		curr_key = idr_find(&table->tbl_keys_idr, *id);
-	}
-
-	/* This means that this is a key creation */
-	if (!curr_key) {
-		*cu_res = P4TC_P_CREATED;
-		return tcf_table_key_add_1(net, table, nla, tb_key, extack);
-	}
-
-	key = kmalloc(sizeof(*key), GFP_KERNEL);
-	if (!key) {
-		ret = -ENOMEM;
-		goto out;
-	}
-	key->key_id = curr_key->key_id;
-
-	if (tb_key[P4TC_KEY_ACT]) {
-		key->key_acts = kcalloc(TCA_ACT_MAX_PRIO,
-					sizeof(struct tc_action *),
-					GFP_KERNEL);
-		if (!key->key_acts) {
-			ret = -ENOMEM;
-			goto free;
-		}
-
-		ret = p4tc_action_init(net, tb_key[P4TC_KEY_ACT], key->key_acts,
-				       0, extack);
-		if (ret < 0) {
-			kfree(key->key_acts);
-			goto free;
+			goto free_key;
 		}
 		key->key_num_acts = ret;
 	}
 
 	return key;
 
-free:
+free_key:
 	kfree(key);
 
 out:
 	return ERR_PTR(ret);
-}
-
-static int tcf_table_key_cu(struct net *net, struct nlattr *nla,
-			    struct p4tc_table *table,
-			    struct p4tc_table_key **keys,
-			    int *cu_res, bool update,
-			    struct netlink_ext_ack *extack)
-{
-	struct nlattr *tb[P4TC_MAXPARSE_KEYS + 1];
-	struct p4tc_table_key *key;
-	int ret;
-	int i;
-
-	ret = nla_parse_nested(tb, P4TC_MAXPARSE_KEYS, nla, NULL, extack);
-	if (ret < 0)
-		return ret;
-
-	for (i = 1; i <= P4TC_MAXPARSE_KEYS && tb[i]; i++) {
-		if (update) {
-			key = tcf_table_key_update_1(net, table, tb[i],
-						     &cu_res[i - 1], extack);
-		} else {
-			key = tcf_table_key_add_1(net, table, tb[i], NULL,
-						  extack);
-			cu_res[i - 1] = P4TC_P_CREATED;
-		}
-		if (IS_ERR(key)) {
-			ret = PTR_ERR(key);
-			goto err;
-		}
-
-		keys[i - 1] = key;
-	}
-
-	return i - 1;
-
-err:
-	tcf_table_key_put_many(keys, table, cu_res, i - 1);
-	return ret;
 }
 
 struct p4tc_table *tcf_table_find_byid(struct p4tc_pipeline *pipeline,
@@ -882,12 +669,10 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 		 u32 tbl_id, struct p4tc_pipeline *pipeline,
 		 struct netlink_ext_ack *extack)
 {
-	struct p4tc_table_key *keys[P4TC_MAXPARSE_KEYS] = {NULL};
-	int cu_res[P4TC_MAXPARSE_KEYS] = {P4TC_P_UNSPEC};
-	char *tblname;
-	int num_keys = 0;
+	struct p4tc_table_key *key = NULL;
 	struct p4tc_table_parm *parm;
 	struct p4tc_table *table;
+	char *tblname;
 	int ret;
 
 	if (pipeline->curr_tables == pipeline->num_tables) {
@@ -1101,51 +886,19 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 		table->tbl_num_postacts = 0;
 	}
 
-	idr_init(&table->tbl_keys_idr);
-	table->tbl_keys_count = 0;
-	if (tb[P4TC_TABLE_KEYS]) {
-		num_keys = tcf_table_key_cu(net, tb[P4TC_TABLE_KEYS],
-					    table, keys, cu_res, false,
-					    extack);
-		if (num_keys < 0) {
-			ret = num_keys;
-			goto idr_dest;
+	if (tb[P4TC_TABLE_KEY]) {
+		key = tcf_table_key_add(net, table, tb[P4TC_TABLE_KEY], extack);
+		if (IS_ERR(key)) {
+			ret = PTR_ERR(key);
+			goto postacts_destroy;
 		}
-
-		tcf_table_key_replace_many(keys, table, cu_res, num_keys);
-	} else {
-		NL_SET_ERR_MSG(extack, "Must specify table keys");
-		ret = -EINVAL;
-		goto idr_dest;
-	}
-
-	if (parm->tbl_flags & P4TC_TABLE_FLAGS_DEFAULT_KEY) {
-		struct p4tc_table_key *default_key;
-
-		if (!parm->tbl_default_key) {
-			NL_SET_ERR_MSG(extack, "default_key cannot be zero");
-			ret = -EINVAL;
-			goto idr_dest;
-		}
-
-		if (num_keys < parm->tbl_default_key) {
-			NL_SET_ERR_MSG(extack,
-				       "tc_default_key field is inconsistent with keys nested field");
-			ret = -EINVAL;
-			goto idr_dest;
-		}
-
-		default_key = keys[parm->tbl_default_key - 1];
-		table->tbl_default_key = default_key->key_id;
-	} else {
-		table->tbl_default_key = 1;
 	}
 
 	ret = tcf_table_init_default_acts(net, tb, NULL,
 					  &table->tbl_default_hitact,
 					  &table->tbl_default_missact, extack);
 	if (ret < 0)
-		goto keys_put;
+		goto key_put;
 
 	table->tbl_curr_used_entries = 0;
 	table->tbl_curr_count = 0;
@@ -1161,6 +914,8 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 		ret = -EINVAL;
 		goto defaultacts_destroy;
 	}
+
+	table->tbl_key = key;
 
 	pipeline->curr_tables += 1;
 
@@ -1189,13 +944,11 @@ defaultacts_destroy:
 		kfree(hitact);
 	}
 
-keys_put:
-	if (num_keys)
-		tcf_table_key_put_many(keys, table, cu_res, num_keys);
+key_put:
+	if (key)
+		tcf_table_key_put(key);
 
-idr_dest:
-	idr_destroy(&table->tbl_keys_idr);
-
+postacts_destroy:
 	if (table->tbl_postacts) {
 		tcf_action_destroy(table->tbl_postacts, TCA_ACT_UNBIND);
 		kfree(table->tbl_postacts);
@@ -1225,9 +978,8 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 		 u32 tbl_id, struct p4tc_pipeline *pipeline,
 		 u32 flags, struct netlink_ext_ack *extack)
 {
-	struct p4tc_table_key *keys[P4TC_MAXPARSE_KEYS] = {NULL};
-	int num_postacts = 0, num_preacts = 0, num_keys = 0;
-	int cu_res[P4TC_MAXPARSE_KEYS] = {P4TC_P_UNSPEC};
+	struct p4tc_table_key *key = NULL;
+	int num_postacts = 0, num_preacts = 0;
 	struct p4tc_table_defact *default_hitact = NULL;
 	struct p4tc_table_defact *default_missact = NULL;
 	struct p4tc_table_perm *perm = NULL;
@@ -1283,12 +1035,11 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 	if (ret < 0)
 		goto postactions_destroy;
 
-	if (tb[P4TC_TABLE_KEYS]) {
-		num_keys = tcf_table_key_cu(net, tb[P4TC_TABLE_KEYS],
-					    table, keys, cu_res, true,
-					    extack);
-		if (num_keys < 0) {
-			ret = num_keys;
+	if (tb[P4TC_TABLE_KEY]) {
+		key = tcf_table_key_add(net, table, tb[P4TC_TABLE_KEY],
+					extack);
+		if (IS_ERR(key)) {
+			ret = PTR_ERR(key);
 			goto defaultacts_destroy;
 		}
 	}
@@ -1300,13 +1051,13 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 				NL_SET_ERR_MSG(extack,
 					       "Table keysz cannot be zero");
 				ret = -EINVAL;
-				goto keys_destroy;
+				goto key_destroy;
 			}
 			if (parm->tbl_keysz > P4TC_MAX_KEYSZ) {
 				NL_SET_ERR_MSG(extack,
 					       "Table keysz exceeds maximum keysz");
 				ret = -EINVAL;
-				goto keys_destroy;
+				goto key_destroy;
 			}
 			table->tbl_keysz = parm->tbl_keysz;
 		}
@@ -1316,13 +1067,13 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 				NL_SET_ERR_MSG(extack,
 					       "Table max_entries cannot be zero");
 				ret = -EINVAL;
-				goto keys_destroy;
+				goto key_destroy;
 			}
 			if (parm->tbl_max_entries > P4TC_MAX_TENTRIES) {
 				NL_SET_ERR_MSG(extack,
 					       "Table max_entries exceeds maximum value");
 				ret = -EINVAL;
-				goto keys_destroy;
+				goto key_destroy;
 			}
 			table->tbl_max_entries = parm->tbl_max_entries;
 		}
@@ -1332,13 +1083,13 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 				NL_SET_ERR_MSG(extack,
 					       "Table max_masks cannot be zero");
 				ret = -EINVAL;
-				goto keys_destroy;
+				goto key_destroy;
 			}
 			if (parm->tbl_max_masks > P4TC_MAX_TMASKS) {
 				NL_SET_ERR_MSG(extack,
 					       "Table max_masks exceeds maximum value");
 				ret = -EINVAL;
-				goto keys_destroy;
+				goto key_destroy;
 			}
 			table->tbl_max_masks = parm->tbl_max_masks;
 		}
@@ -1347,42 +1098,27 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 				NL_SET_ERR_MSG(extack,
 					       "Permission may only have 10 bits turned on");
 				ret = -EINVAL;
-				goto keys_destroy;
+				goto key_destroy;
 			}
 			if (!p4tc_data_exec_ok(parm->tbl_permissions)) {
 				NL_SET_ERR_MSG(extack,
 					       "Table must have execute permissions");
 				ret = -EINVAL;
-				goto keys_destroy;
+				goto key_destroy;
 			}
 			if (!p4tc_data_read_ok(parm->tbl_permissions)) {
 				NL_SET_ERR_MSG(extack,
 					       "Data path read permissions must be set");
 				ret = -EINVAL;
-				goto keys_destroy;
+				goto key_destroy;
 			}
 
 			perm = kzalloc(sizeof(*perm), GFP_KERNEL);
 			if (!perm) {
 				ret = -ENOMEM;
-				goto keys_destroy;
+				goto key_destroy;
 			}
 			perm->permissions = parm->tbl_permissions;
-		}
-	}
-
-	if (parm && parm->tbl_flags & P4TC_TABLE_FLAGS_DEFAULT_KEY) {
-		if (!parm->tbl_default_key) {
-			NL_SET_ERR_MSG(extack, "default_key cannot be zero");
-			ret = -EINVAL;
-			goto free_perm;
-		}
-
-		if (num_keys < parm->tbl_default_key) {
-			NL_SET_ERR_MSG(extack,
-				       "default_key field is inconsistent with keys nested field");
-			ret = -EINVAL;
-			goto free_perm;
 		}
 	}
 
@@ -1403,13 +1139,6 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 			goto free_perm;
 		}
 		table->tbl_const_entry = entry;
-	}
-
-	if (parm && parm->tbl_flags & P4TC_TABLE_FLAGS_DEFAULT_KEY) {
-		struct p4tc_table_key *default_key;
-
-		default_key = keys[parm->tbl_default_key - 1];
-		table->tbl_default_key = default_key->key_id;
 	}
 
 	if (preacts) {
@@ -1453,8 +1182,11 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 		}
 	}
 
-	if (tb[P4TC_TABLE_KEYS])
-		tcf_table_key_replace_many(keys, table, cu_res, num_keys);
+	if (key) {
+		if (table->tbl_key)
+			tcf_table_key_put(table->tbl_key);
+		table->tbl_key = key;
+	}
 
 	if (perm) {
 		perm = rcu_replace_pointer_rtnl(table->tbl_permissions, perm);
@@ -1466,9 +1198,9 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 free_perm:
 	kfree(perm);
 
-keys_destroy:
-	if (tb[P4TC_TABLE_KEYS])
-		tcf_table_key_put_many(keys, table, cu_res, num_keys);
+key_destroy:
+	if (key)
+		tcf_table_key_put(key);
 
 defaultacts_destroy:
 	if (default_missact) {

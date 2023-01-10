@@ -149,7 +149,6 @@ extern const struct p4tc_template_ops p4tc_meta_ops;
 struct p4tc_table_key {
 	struct tc_action **key_acts;
 	int              key_num_acts;
-	u32              key_id;
 };
 
 #define P4TC_CONTROL_PERMISSIONS (GENMASK(9, 5))
@@ -179,7 +178,7 @@ struct p4tc_table_perm {
 
 struct p4tc_table {
 	struct p4tc_template_common         common;
-	struct idr                          tbl_keys_idr;
+	struct p4tc_table_key               *tbl_key;
 	struct idr                          tbl_masks_idr;
 	struct idr                          tbl_prio_idr;
 	struct rhltable                     tbl_entries;
@@ -197,11 +196,9 @@ struct p4tc_table {
 	u32                                 tbl_curr_count;
 	u32                                 tbl_keysz;
 	u32                                 tbl_id;
-	u32                                 tbl_keys_count;
 	u32                                 tbl_max_entries;
 	u32                                 tbl_max_masks;
 	u32                                 tbl_curr_used_entries;
-	u32                                 tbl_default_key;
 	refcount_t                          tbl_ctrl_ref;
 	refcount_t                          tbl_ref;
 	refcount_t                          tbl_entries_ref;
@@ -408,8 +405,6 @@ tcf_table_find_byany(struct p4tc_pipeline *pipeline, const char *tblname,
 		     const u32 tbl_id, struct netlink_ext_ack *extack);
 struct p4tc_table *tcf_table_find_byid(struct p4tc_pipeline *pipeline,
 					      const u32 tbl_id);
-struct p4tc_table_key *tcf_table_key_find(struct p4tc_table *table,
-					  const u32 key_id);
 void *tcf_table_fetch(struct sk_buff *skb, void *tbl_value_ops);
 int tcf_table_try_set_state_ready(struct p4tc_pipeline *pipeline,
 				   struct netlink_ext_ack *extack);
