@@ -227,7 +227,7 @@ static int tcf_p4_dyna_init(struct net *net, struct nlattr *nla,
 		return -ENOMEM;
 
 	p_name = strsep(&act_name, SEPARATOR);
-	pipeline = tcf_pipeline_find_byany(p_name, 0, NULL);
+	pipeline = tcf_pipeline_find_byany(net, p_name, 0, NULL);
 	act = tcf_action_find_byname(act_name, pipeline);
 	kfree(act_name_clone);
 	if (!act->active) {
@@ -1415,9 +1415,11 @@ static int tcf_act_gd(struct net *net, struct sk_buff *skb, struct nlmsghdr *n,
 	struct p4tc_act *act;
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE)
-		pipeline = tcf_pipeline_find_byany_unsealed(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany_unsealed(net, *p_name,
+							    pipeid, extack);
 	else
-		pipeline = tcf_pipeline_find_byany(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany(net, *p_name, pipeid,
+						   extack);
 	if (IS_ERR(pipeline))
 		return PTR_ERR(pipeline);
 
@@ -1467,7 +1469,7 @@ static int tcf_act_put(struct net *net, struct p4tc_template_common *tmpl,
 	struct p4tc_act *act = to_act(tmpl);
 	struct p4tc_pipeline *pipeline;
 
-	pipeline = tcf_pipeline_find_byid(tmpl->p_id);
+	pipeline = tcf_pipeline_find_byid(net, tmpl->p_id);
 
 	return __tcf_act_put(net, pipeline, act, extack);
 }
@@ -1718,7 +1720,8 @@ tcf_act_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	struct p4tc_pipeline *pipeline;
 	int ret;
 
-	pipeline = tcf_pipeline_find_byany_unsealed(*p_name, pipeid, extack);
+	pipeline = tcf_pipeline_find_byany_unsealed(net, *p_name, pipeid,
+						    extack);
 	if (IS_ERR(pipeline))
 		return (void *)pipeline;
 
@@ -1750,15 +1753,17 @@ static int tcf_act_dump(struct sk_buff *skb,
 			char **p_name, u32 *ids,
 			struct netlink_ext_ack *extack)
 {
+	struct net *net = sock_net(skb->sk);
 	struct p4tc_pipeline *pipeline;
 
 	if (!ctx->ids[P4TC_PID_IDX]) {
-		pipeline = tcf_pipeline_find_byany(*p_name, ids[P4TC_PID_IDX], extack);
+		pipeline = tcf_pipeline_find_byany(net, *p_name,
+						   ids[P4TC_PID_IDX], extack);
 		if (IS_ERR(pipeline))
 			return PTR_ERR(pipeline);
 		ctx->ids[P4TC_PID_IDX] = pipeline->common.p_id;
 	} else {
-		pipeline = tcf_pipeline_find_byid(ctx->ids[P4TC_PID_IDX]);
+		pipeline = tcf_pipeline_find_byid(net, ctx->ids[P4TC_PID_IDX]);
 	}
 
 	if (!ids[P4TC_PID_IDX])
