@@ -2961,30 +2961,65 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 
 		val_t->ops->print(net, val_t, name, &readval);
 	} else if (A->oper_type == P4TC_OPER_KEY) {
+		char *path = (char *)A->print_prefix;
 		struct p4tc_table *table;
 		struct p4tc_pipeline *pipeline;
 
 		pipeline = tcf_pipeline_find_byid(A->pipeid);
 		table = tcf_table_find_byid(pipeline, A->immedv);
-		snprintf(name, TEMPLATENAMSZ * 3, "key.%s.%s.%u",
-			 pipeline->common.name, table->common.name,
-			 A->immedv2);
+		if (path)
+			snprintf(name, TEMPLATENAMSZ * 3, "%s key.%s.%s.%u",
+				 path, pipeline->common.name, table->common.name,
+				 A->immedv2);
+		else
+			snprintf(name, TEMPLATENAMSZ * 3, "key.%s.%s.%u",
+				 pipeline->common.name, table->common.name,
+				 A->immedv2);
 		val_t->ops->print(net, val_t, name, &readval);
 	} else if (A->oper_type == P4TC_OPER_PARAM) {
+		char *path = (char *)A->print_prefix;
+
+		if (path)
+			snprintf(name, TEMPLATENAMSZ * 2, "%s param", path);
+		else
+			strcpy(name, "param");
+
 		val_t->ops->print(net, val_t, "param", &readval);
 	} else if (A->oper_type == P4TC_OPER_RES) {
-		if (A->immedv == P4TC_CMDS_RESULTS_HIT)
-			val_t->ops->print(net, val_t, "res.hit", &readval);
-		else if (A->immedv == P4TC_CMDS_RESULTS_MISS)
-			val_t->ops->print(net, val_t, "res.miss", &readval);
+		char *path = (char *)A->print_prefix;
+
+		if (A->immedv == P4TC_CMDS_RESULTS_HIT) {
+			if (path)
+				snprintf(name, TEMPLATENAMSZ * 2, "%s res.hit",
+					 path);
+			else
+				strcpy(name, "res.hit");
+
+		} else if (A->immedv == P4TC_CMDS_RESULTS_MISS) {
+			if (path)
+				snprintf(name, TEMPLATENAMSZ * 2, "%s res.miss",
+					 path);
+			else
+				strcpy(name, "res.miss");
+		}
+
+		val_t->ops->print(net, val_t, name, &readval);
 	} else if (A->oper_type == P4TC_OPER_REG) {
+		char *path = (char *)A->print_prefix;
 		struct p4tc_pipeline *pipeline;
 		struct p4tc_register *reg;
 
 		pipeline = tcf_pipeline_find_byid(A->pipeid);
 		reg = tcf_register_find_byid(pipeline, A->immedv);
-		snprintf(name, TEMPLATENAMSZ * 2, "register.%s.%s[%u]",
-			 pipeline->common.name, reg->common.name, A->immedv2);
+			if (path)
+				snprintf(name, TEMPLATENAMSZ * 2, "%s register.%s.%s[%u]",
+					 path, pipeline->common.name,
+					 reg->common.name, A->immedv2);
+			else
+				snprintf(name, TEMPLATENAMSZ * 2, "register.%s.%s[%u]",
+					 pipeline->common.name,
+					 reg->common.name, A->immedv2);
+
 		val_t->ops->print(net, val_t, name, &readval);
 	} else {
 		pr_info("Unsupported operand for print\n");
