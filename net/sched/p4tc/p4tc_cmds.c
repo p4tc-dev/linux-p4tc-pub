@@ -304,15 +304,6 @@ static int validate_table_operand(struct p4tc_act *act,
 	if (IS_ERR(table))
 		return PTR_ERR(table);
 
-	if (kopnd->immedv2) {
-		if (!tcf_table_key_find(table, kopnd->immedv2)) {
-			NL_SET_ERR_MSG_MOD(extack, "Unknown key id");
-			return -EINVAL;
-		}
-	} else {
-		kopnd->immedv2 = table->tbl_default_key;
-	}
-
 	kopnd->priv = table;
 
 	return 0;
@@ -333,11 +324,6 @@ static int validate_key_operand(struct p4tc_act *act,
 	if (IS_ERR(table))
 		return PTR_ERR(table);
 	kopnd->immedv = table->tbl_id;
-
-	if (!tcf_table_key_find(table, kopnd->immedv2)) {
-		NL_SET_ERR_MSG_MOD(extack, "Unknown key id");
-		return -EINVAL;
-	}
 
 	if (kopnd->oper_flags & DATA_HAS_TYPE_INFO) {
 		if (kopnd->oper_bitstart != 0) {
@@ -3197,7 +3183,7 @@ static int p4tc_cmd_TBLAPP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 	}
 
 	/* Sets key */
-	key = tcf_table_key_find(table, A->immedv2);
+	key = table->tbl_key;
 	ret = tcf_action_exec(skb, key->key_acts, key->key_num_acts, res);
 	if (ret != TC_ACT_PIPE)
 		return ret;
