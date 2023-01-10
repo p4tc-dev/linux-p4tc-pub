@@ -54,7 +54,7 @@ static int _tcf_meta_put(struct p4tc_pipeline *pipeline,
 static int tcf_meta_put(struct net *net, struct p4tc_template_common *template,
 			struct netlink_ext_ack *extack)
 {
-	struct p4tc_pipeline *pipeline = tcf_pipeline_find_byid(template->p_id);
+	struct p4tc_pipeline *pipeline = tcf_pipeline_find_byid(net, template->p_id);
 	struct p4tc_metadata *meta = to_meta(template);
 	int ret;
 
@@ -479,7 +479,8 @@ tcf_meta_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	struct p4tc_pipeline *pipeline;
 	struct p4tc_metadata *meta;
 
-	pipeline = tcf_pipeline_find_byany_unsealed(*p_name, pipeid, extack);
+	pipeline = tcf_pipeline_find_byany_unsealed(net, *p_name, pipeid,
+						    extack);
 	if (IS_ERR(pipeline))
 		return (void *)pipeline;
 
@@ -604,9 +605,11 @@ static int tcf_meta_gd(struct net *net, struct sk_buff *skb, struct nlmsghdr *n,
 	struct p4tc_metadata *meta;
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE)
-		pipeline = tcf_pipeline_find_byany_unsealed(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany_unsealed(net, *p_name,
+							    pipeid, extack);
 	else
-		pipeline = tcf_pipeline_find_byany(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany(net, *p_name, pipeid,
+						   extack);
 	if (IS_ERR(pipeline))
 		return PTR_ERR(pipeline);
 
@@ -661,6 +664,7 @@ static int tcf_meta_dump(struct sk_buff *skb,
 {
 	unsigned char *b = skb_tail_pointer(skb);
 	const u32 pipeid = ids[P4TC_PID_IDX];
+	struct net *net = sock_net(skb->sk);
 	unsigned long m_id = 0;
 	int i = 0;
 	struct p4tc_pipeline *pipeline;
@@ -668,12 +672,13 @@ static int tcf_meta_dump(struct sk_buff *skb,
 	unsigned long tmp;
 
 	if (!ctx->ids[P4TC_PID_IDX]) {
-		pipeline = tcf_pipeline_find_byany(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany(net, *p_name, pipeid,
+						   extack);
 		if (IS_ERR(pipeline))
 			return PTR_ERR(pipeline);
 		ctx->ids[P4TC_PID_IDX] = pipeline->common.p_id;
 	} else {
-		pipeline = tcf_pipeline_find_byid(ctx->ids[P4TC_PID_IDX]);
+		pipeline = tcf_pipeline_find_byid(net, ctx->ids[P4TC_PID_IDX]);
 	}
 
 	m_id = ctx->ids[P4TC_MID_IDX];
@@ -746,60 +751,110 @@ static int p4tc_register_kmeta(struct p4tc_pipeline *pipeline, u32 m_id,
 	return 0;
 }
 
-static void tcf_meta_init(void)
+void tcf_meta_init(struct p4tc_pipeline *root_pipe)
 {
-	struct p4tc_pipeline *pipeline;
+	int ret;
 
-	pipeline = tcf_pipeline_find_byid(0);
-	if (!pipeline) {
-		pr_err("Kernel pipeline was not registered\n");
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_PKTLEN, "pktlen",
+				  0, 31, false, P4T_U32);
+	if (ret < 0)
 		return;
-	}
 
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PKTLEN, "pktlen", 0, 31,
-			    false, P4T_U32);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_DATALEN, "datalen", 0,
-			    31, false, P4T_U32);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_SKBMARK, "skbmark", 0,
-			    31, false, P4T_U32);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_TCINDEX, "tcindex", 0,
-			    15, false, P4T_U16);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_SKBHASH, "skbhash", 0,
-			    31, false, P4T_U32);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_SKBPRIO, "skbprio", 0,
-			    31, false, P4T_U32);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_IFINDEX, "ifindex", 0,
-			    31, false, P4T_S32);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_SKBIIF, "iif", 0, 31,
-			    true, P4T_DEV);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PROTOCOL, "skbproto", 0,
-			    15, false, P4T_BE16);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PKTYPE, "skbptype", 0, 2,
-			    false, P4T_U8);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_IDF, "skbidf", 3, 3,
-			    false, P4T_U8);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_IPSUM, "skbipsum", 5, 6,
-			    false, P4T_U8);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_OOOK, "skboook", 7, 7,
-			    false, P4T_U8);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_FCLONE, "fclone", 2, 3,
-			    false, P4T_U8);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PEEKED, "skbpeek", 4, 4,
-			    false, P4T_U8);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_QMAP, "skbqmap", 0, 15,
-			    false, P4T_U16);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PTYPEOFF, "ptypeoff", 0,
-			    7, false, P4T_U8);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_CLONEOFF, "cloneoff", 0,
-			    7, false, P4T_U8);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_PTCLNOFF, "ptclnoff", 0,
-			    15, false, P4T_U16);
-	p4tc_register_kmeta(pipeline, P4TC_KERNEL_META_DIRECTION, "direction",
-			    7, 7, false, P4T_U8);
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_DATALEN,
+				  "datalen", 0, 31, false, P4T_U32);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_SKBMARK,
+				  "skbmark", 0, 31, false, P4T_U32);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_TCINDEX,
+				  "tcindex", 0, 15, false, P4T_U16);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_SKBHASH,
+				  "skbhash", 0, 31, false, P4T_U32);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_SKBPRIO,
+				  "skbprio", 0, 31, false, P4T_U32);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_IFINDEX,
+				  "ifindex", 0, 31, false, P4T_S32);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_SKBIIF, "iif", 0,
+				  31, true, P4T_DEV);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_PROTOCOL,
+				  "skbproto", 0, 15, false, P4T_BE16);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_PKTYPE,
+				  "skbptype", 0, 2, false, P4T_U8);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_IDF, "skbidf", 3,
+				  3, false, P4T_U8);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_IPSUM, "skbipsum",
+				  5, 6, false, P4T_U8);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_OOOK, "skboook",
+				  7, 7, false, P4T_U8);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_FCLONE, "fclone",
+				  2, 3, false, P4T_U8);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_PEEKED, "skbpeek",
+				  4, 4, false, P4T_U8);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_QMAP, "skbqmap",
+				  0, 15, false, P4T_U16);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_PTYPEOFF,
+				  "ptypeoff", 0, 7, false, P4T_U8);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_CLONEOFF,
+				  "cloneoff", 0, 7, false, P4T_U8);
+	if (ret < 0)
+		return;
+
+	ret = p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_PTCLNOFF,
+				  "ptclnoff", 0, 15, false, P4T_U16);
+	if (ret < 0)
+		return;
+
+	p4tc_register_kmeta(root_pipe, P4TC_KERNEL_META_DIRECTION,
+			    "direction", 7, 7, false, P4T_U8);
 }
 
 const struct p4tc_template_ops p4tc_meta_ops = {
-	.init = tcf_meta_init,
 	.cu = tcf_meta_cu,
 	.fill_nlmsg = tcf_meta_fill_nlmsg,
 	.gd = tcf_meta_gd,

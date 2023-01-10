@@ -756,13 +756,15 @@ static void __tcf_pipeline_init(void)
 
 	strscpy(root_pipeline->common.name, "kernel", PIPELINENAMSIZ);
 
+	idr_init(&root_pipeline->p_meta_idr);
+
 	root_pipeline->common.ops = (struct p4tc_template_ops *)&p4tc_pipeline_ops;
 
 	root_pipeline->common.p_id = pipeid;
 
 	root_pipeline->p_state = P4TC_STATE_READY;
 
-	return 0;
+	return tcf_meta_init(root_pipeline);
 }
 
 static void tcf_pipeline_init(void) {
