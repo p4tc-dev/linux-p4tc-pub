@@ -445,7 +445,8 @@ static void tcf_table_entry_put_table(struct p4tc_pipeline *pipeline,
 	WARN_ON(!refcount_dec_not_one(&pipeline->p_ctrl_ref));
 }
 
-static int tcf_table_entry_get_table(struct p4tc_pipeline **pipeline,
+static int tcf_table_entry_get_table(struct net *net,
+				     struct p4tc_pipeline **pipeline,
 				     struct p4tc_table **table,
 				     struct nlattr **tb, u32 *ids, char *p_name,
 				     struct netlink_ext_ack *extack)
@@ -457,7 +458,7 @@ static int tcf_table_entry_get_table(struct p4tc_pipeline **pipeline,
 
 	pipeid = ids[P4TC_PID_IDX];
 
-	*pipeline = tcf_pipeline_find_byany(p_name, pipeid, extack);
+	*pipeline = tcf_pipeline_find_byany(net, p_name, pipeid, extack);
 	if (IS_ERR(*pipeline)) {
 		ret = PTR_ERR(*pipeline);
 		goto out;
@@ -631,8 +632,9 @@ static int __tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 	return ret;
 }
 
-static int tcf_table_entry_gd(struct sk_buff *skb, struct nlmsghdr *n,
-			      struct nlattr *arg, u32 *ids, char **p_name,
+static int tcf_table_entry_gd(struct net *net, struct sk_buff *skb,
+			      struct nlmsghdr *n, struct nlattr *arg,
+			      u32 *ids, char **p_name,
 			      struct netlink_ext_ack *extack)
 {
 	struct nlattr *tb[P4TC_ENTRY_MAX + 1] = { NULL };
@@ -660,7 +662,7 @@ static int tcf_table_entry_gd(struct sk_buff *skb, struct nlmsghdr *n,
 	prio = *((u32 *)nla_data(tb[P4TC_ENTRY_PRIO]));
 
 	rcu_read_lock();
-	ret = tcf_table_entry_get_table(&pipeline, &table, tb, ids, *p_name,
+	ret = tcf_table_entry_get_table(net, &pipeline, &table, tb, ids, *p_name,
 					extack);
 	rcu_read_unlock();
 	if (ret < 0)
@@ -790,8 +792,9 @@ table_put:
 	return ret;
 }
 
-static int tcf_table_entry_flush(struct sk_buff *skb, struct nlmsghdr *n,
-				 struct nlattr *arg, u32 *ids, char **p_name,
+static int tcf_table_entry_flush(struct net *net, struct sk_buff *skb,
+				 struct nlmsghdr *n, struct nlattr *arg,
+				 u32 *ids, char **p_name,
 				 struct netlink_ext_ack *extack)
 {
 	struct nlattr *tb[P4TC_ENTRY_MAX + 1] = { NULL };
@@ -812,7 +815,7 @@ static int tcf_table_entry_flush(struct sk_buff *skb, struct nlmsghdr *n,
 	}
 
 	rcu_read_lock();
-	ret = tcf_table_entry_get_table(&pipeline, &table, tb, ids, *p_name,
+	ret = tcf_table_entry_get_table(net, &pipeline, &table, tb, ids, *p_name,
 					extack);
 	if (ret < 0) {
 		rcu_read_unlock();
@@ -1287,7 +1290,7 @@ static int tcf_table_entry_cu(struct sk_buff *skb, struct net *net, u32 flags,
 		return ret;
 
 	rcu_read_lock();
-	ret = tcf_table_entry_get_table(&pipeline, &table, tb, ids, *p_name,
+	ret = tcf_table_entry_get_table(net, &pipeline, &table, tb, ids, *p_name,
 					extack);
 	rcu_read_unlock();
 	if (ret < 0)
@@ -1336,8 +1339,9 @@ int tcf_table_const_entry_cu(struct net *net, struct nlattr *arg,
 				    extack);
 }
 
-static int tc_ctl_p4_get_1(struct sk_buff *skb, struct nlmsghdr *n,
-			   u32 *ids, struct nlattr *arg, char **p_name,
+static int tc_ctl_p4_get_1(struct net *net, struct sk_buff *skb,
+			   struct nlmsghdr *n, u32 *ids,
+			   struct nlattr *arg, char **p_name,
 			   struct netlink_ext_ack *extack)
 {
 	int ret = 0;
@@ -1361,11 +1365,13 @@ static int tc_ctl_p4_get_1(struct sk_buff *skb, struct nlmsghdr *n,
 	arg_ids =  nla_data(tb[P4TC_PATH]);
 	memcpy(&ids[P4TC_TBLID_IDX], arg_ids, nla_len(tb[P4TC_PATH]));
 
-	return tcf_table_entry_gd(skb, n, tb[P4TC_PARAMS], ids, p_name, extack);
+	return tcf_table_entry_gd(net, skb, n, tb[P4TC_PARAMS], ids, p_name,
+				  extack);
 }
 
-static int tc_ctl_p4_delete_1(struct sk_buff *skb, struct nlmsghdr *n,
-			      struct nlattr *arg, u32 *ids, char **p_name,
+static int tc_ctl_p4_delete_1(struct net *net, struct sk_buff *skb,
+			      struct nlmsghdr *n, struct nlattr *arg,
+			      u32 *ids, char **p_name,
 			      struct netlink_ext_ack *extack)
 {
 	int ret = 0;
@@ -1389,11 +1395,11 @@ static int tc_ctl_p4_delete_1(struct sk_buff *skb, struct nlmsghdr *n,
 	arg_ids = nla_data(tb[P4TC_PATH]);
 	memcpy(&ids[P4TC_TBLID_IDX], arg_ids, nla_len(tb[P4TC_PATH]));
 	if (n->nlmsg_flags & NLM_F_ROOT)
-		ret = tcf_table_entry_flush(skb, n, tb[P4TC_PARAMS],
+		ret = tcf_table_entry_flush(net, skb, n, tb[P4TC_PARAMS],
 					    ids, p_name, extack);
 	else
-		ret = tcf_table_entry_gd(skb, n, tb[P4TC_PARAMS], ids, p_name,
-					 extack);
+		ret = tcf_table_entry_gd(net, skb, n, tb[P4TC_PARAMS], ids,
+					 p_name, extack);
 
 	return ret;
 }
@@ -1498,14 +1504,14 @@ static int tc_ctl_p4_table_n(struct sk_buff *skb, struct nlmsghdr *n,
 		struct nlattr *nest = nla_nest_start(new_skb, i);
 
 		if (cmd == RTM_GETP4TBENT)
-			ret = tc_ctl_p4_get_1(new_skb, nlh, ids, p4tca[i],
+			ret = tc_ctl_p4_get_1(net, new_skb, nlh, ids, p4tca[i],
 					      &p_name_out, extack);
 		else if (cmd == RTM_CREATEP4TBENT)
 			ret = tc_ctl_p4_cu_1(new_skb, net, nlh, ids, p4tca[i],
 					     &p_name_out, extack);
 		else if (cmd == RTM_DELP4TBENT)
-			ret = tc_ctl_p4_delete_1(new_skb, nlh, p4tca[i], ids,
-						 &p_name_out, extack);
+			ret = tc_ctl_p4_delete_1(net, new_skb, nlh, p4tca[i],
+						 ids, &p_name_out, extack);
 
 		if (ret < 0) {
 			if (i == 1) {
@@ -1606,6 +1612,7 @@ static int tcf_table_entry_dump(struct sk_buff *skb, struct nlattr *arg,
 	unsigned char *b = skb_tail_pointer(skb);
 	struct p4tc_pipeline *pipeline = NULL;
 	struct p4tc_table_entry *entry = NULL;
+	struct net *net = sock_net(skb->sk);
 	int i = 0;
 	struct p4tc_table *table;
 	int ret;
@@ -1620,7 +1627,7 @@ static int tcf_table_entry_dump(struct sk_buff *skb, struct nlattr *arg,
 	}
 
 	rcu_read_lock();
-	ret = tcf_table_entry_get_table(&pipeline, &table, tb, ids, *p_name,
+	ret = tcf_table_entry_get_table(net, &pipeline, &table, tb, ids, *p_name,
 					extack);
 	rcu_read_unlock();
 	if (ret < 0) {
