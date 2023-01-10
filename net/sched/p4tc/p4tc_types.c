@@ -81,12 +81,8 @@ int p4t_copy(struct p4tc_type_mask_shift *dst_mask_shift,
 	dsto = dst_t->ops;
 	srco = src_t->ops;
 
-	if (src_mask_shift) {
-		srco->host_read(src_t, src_mask_shift, srcv, &readval);
-		dsto->host_write(dst_t, dst_mask_shift, &readval, dstv);
-	} else {
-		dsto->host_write(dst_t, dst_mask_shift, srcv, dstv);
-	}
+	srco->host_read(src_t, src_mask_shift, srcv, &readval);
+	dsto->host_write(dst_t, dst_mask_shift, &readval, dstv);
 
 	return 0;
 }
@@ -322,10 +318,10 @@ static int p4t_be32_hread(struct p4tc_type *container,
 		u32 *smask = mask_shift->mask;
 		u8 shift = mask_shift->shift;
 
-		readval = (*src & *smask) >> shift;
+		readval = (readval & *smask) >> shift;
 	}
 
-	*dst = be32_to_cpu(readval);
+	*dst = readval;
 
 	return 0;
 }
@@ -358,6 +354,57 @@ static void p4t_be32_print(struct net *net, struct p4tc_type *container,
 	__be32 *v = val;
 
 	pr_info("%s 0x%x\n", prefix, *v);
+}
+
+static int p4t_be64_hread(struct p4tc_type *container,
+			  struct p4tc_type_mask_shift *mask_shift,
+			  void *sval,
+			  void *dval)
+{
+	u64 *dst = dval;
+	u64 *src = sval;
+	u64 readval = be64_to_cpu(*src);
+
+	if (mask_shift) {
+		u64 *smask = mask_shift->mask;
+		u8 shift = mask_shift->shift;
+
+		readval = (readval & *smask) >> shift;
+	}
+
+	*dst = readval;
+
+	return 0;
+}
+
+static int p4t_be64_write(struct p4tc_type *container,
+			  struct p4tc_type_mask_shift *mask_shift,
+			  void *sval,
+			  void *dval)
+{
+	__be64 *dst = dval;
+	u64 maskedst = 0;
+	u64 *src = sval;
+	u8 shift = 0;
+
+	if (mask_shift) {
+		u64 *dmask = (u64 *)mask_shift->mask;
+
+		maskedst = *dst & ~*dmask;
+		shift = mask_shift->shift;
+	}
+
+	*dst = cpu_to_be64(maskedst | (*src << shift));
+
+	return 0;
+}
+
+static void p4t_be64_print(struct net *net, struct p4tc_type *container,
+			   const char *prefix, void *val)
+{
+	__be64 *v = val;
+
+	pr_info("%s 0x%llx\n", prefix, *v);
 }
 
 static int p4t_u16_validate(struct p4tc_type *container, void *value,
@@ -544,10 +591,10 @@ static int p4t_be16_hread(struct p4tc_type *container,
 		u16 *smask = mask_shift->mask;
 		u8 shift = mask_shift->shift;
 
-		readval = (*src & *smask) >> shift;
+		readval = (readval & *smask) >> shift;
 	}
 
-	*dst = be16_to_cpu(readval);
+	*dst = readval;
 
 	return 0;
 }
@@ -871,7 +918,10 @@ static int p4t_ipv4_validate(struct p4tc_type *container, void *value, u16 bitst
 static void p4t_ipv4_print(struct net *net, struct p4tc_type *container,
 			   const char *prefix, void *val)
 {
+	u32 *v32 = val;
 	u8 *v = val;
+
+	*v32 = cpu_to_be32(*v32);
 
 	pr_info("%s %u.%u.%u.%u\n", prefix, v[0], v[1], v[2], v[3]);
 }
@@ -1112,6 +1162,13 @@ static struct p4tc_type_ops be32_ops = {
 	.print = p4t_be32_print,
 };
 
+static struct p4tc_type_ops be64_ops = {
+	.validate_p4t = p4t_u64_validate,
+	.host_read = p4t_be64_hread,
+	.host_write = p4t_be64_write,
+	.print = p4t_be64_print,
+};
+
 static struct p4tc_type_ops string_ops = {};
 static struct p4tc_type_ops nullstring_ops = {};
 
@@ -1219,6 +1276,8 @@ int p4tc_register_types(void)
 	if (p4tc_register_type(P4T_BE16, 16, 16, "be16", &be16_ops) < 0)
 		return -1;
 	if (p4tc_register_type(P4T_BE32, 32, 32, "be32", &be32_ops) < 0)
+		return -1;
+	if (p4tc_register_type(P4T_BE64, 64, 64, "be64", &be64_ops) < 0)
 		return -1;
 	if (p4tc_register_type(P4T_S16, 16, 16, "s16", &s16_ops) < 0)
 		return -1;
