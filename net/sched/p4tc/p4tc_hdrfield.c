@@ -22,6 +22,7 @@
 #include <net/p4tc.h>
 #include <net/netlink.h>
 #include <net/p4tc_types.h>
+#include <net/sock.h>
 
 static const struct nla_policy tc_hdrfield_policy[P4TC_HDRFIELD_MAX + 1] = {
 	[P4TC_HDRFIELD_DATA] = { .type = NLA_BINARY,
@@ -53,7 +54,7 @@ static int tcf_hdrfield_put(struct net *net, struct p4tc_template_common *tmpl,
 	struct p4tc_pipeline *pipeline;
 	struct p4tc_parser *parser;
 
-	pipeline = tcf_pipeline_find_byid(tmpl->p_id);
+	pipeline = tcf_pipeline_find_byid(net, tmpl->p_id);
 
 	hdrfield = to_hdrfield(tmpl);
 	parser = pipeline->parser;
@@ -320,7 +321,8 @@ tcf_hdrfield_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 		return ERR_PTR(-EOPNOTSUPP);
 	}
 
-	pipeline = tcf_pipeline_find_byany_unsealed(*p_name, pipeid, extack);
+	pipeline = tcf_pipeline_find_byany_unsealed(net, *p_name, pipeid,
+						    extack);
 	if (IS_ERR(pipeline))
 		return (void *)pipeline;
 
@@ -458,7 +460,7 @@ static int tcf_hdrfield_gd(struct net *net, struct sk_buff *skb,
 	struct p4tc_parser *parser;
 	int ret;
 
-	pipeline = tcf_pipeline_find_byany(*p_name, pipeid, extack);
+	pipeline = tcf_pipeline_find_byany(net, *p_name, pipeid, extack);
 	if (IS_ERR(pipeline))
 		return PTR_ERR(pipeline);
 
@@ -540,17 +542,19 @@ static int tcf_hdrfield_dump(struct sk_buff *skb, struct p4tc_dump_ctx *ctx,
 {
 	struct nlattr *tb[P4TC_HDRFIELD_MAX + 1] = {NULL};
 	const u32 pipeid = ids[P4TC_PID_IDX];
+	struct net *net = sock_net(skb->sk);
 	struct p4tc_pipeline *pipeline;
 	struct p4tc_parser *parser;
 	int ret;
 
 	if (!ctx->ids[P4TC_PID_IDX]) {
-		pipeline = tcf_pipeline_find_byany(*p_name, pipeid, extack);
+		pipeline = tcf_pipeline_find_byany(net, *p_name, pipeid,
+						   extack);
 		if (IS_ERR(pipeline))
 			return PTR_ERR(pipeline);
 		ctx->ids[P4TC_PID_IDX] = pipeline->common.p_id;
 	} else {
-		pipeline = tcf_pipeline_find_byid(ctx->ids[P4TC_PID_IDX]);
+		pipeline = tcf_pipeline_find_byid(net, ctx->ids[P4TC_PID_IDX]);
 	}
 
 	if (!ctx->ids[P4TC_PARSEID_IDX]) {
