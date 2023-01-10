@@ -72,13 +72,13 @@ P4TC_CMD_DECLARE(p4tc_cmd_BOR);
 P4TC_CMD_DECLARE(p4tc_cmd_BXOR);
 P4TC_CMD_DECLARE(p4tc_cmd_JUMP);
 
-static void kfree_opentry(struct p4tc_cmd_operate *ope,
+static void kfree_opentry(struct net *net, struct p4tc_cmd_operate *ope,
 			  bool called_from_template)
 {
 	if (!ope)
 		return;
 
-	ope->cmd->free_operation(ope, called_from_template, NULL);
+	ope->cmd->free_operation(net, ope, called_from_template, NULL);
 }
 
 static void copy_k2u_operand(struct p4tc_cmd_operand *k,
@@ -225,18 +225,18 @@ nla_put_failure:
 	return -1;
 }
 
-void p4tc_cmds_release_ope_list(struct list_head *entries,
+void p4tc_cmds_release_ope_list(struct net *net, struct list_head *entries,
 				bool called_from_template)
 {
 	struct p4tc_cmd_operate *entry, *e;
 
 	list_for_each_entry_safe(entry, e, entries, cmd_operations) {
 		list_del(&entry->cmd_operations);
-		kfree_opentry(entry, called_from_template);
+		kfree_opentry(net, entry, called_from_template);
 	}
 }
 
-static void kfree_tmp_oplist(struct p4tc_cmd_operate *oplist[],
+static void kfree_tmp_oplist(struct net *net, struct p4tc_cmd_operate *oplist[],
 			     bool called_from_template)
 {
 	int i = 0;
@@ -247,7 +247,7 @@ static void kfree_tmp_oplist(struct p4tc_cmd_operate *oplist[],
 		if (!ope)
 			continue;
 
-		kfree_opentry(ope, called_from_template);
+		kfree_opentry(net, ope, called_from_template);
 	}
 }
 
@@ -683,7 +683,7 @@ create_metadata_bitops(struct p4tc_cmd_operand *kopnd,
 	return mask_shift;
 }
 
-static int __validate_metadata_operand(struct p4tc_act *act,
+static int __validate_metadata_operand(struct net *net, struct p4tc_act *act,
 				       struct p4tc_cmd_operand *kopnd,
 				       struct netlink_ext_ack *extack)
 {
@@ -694,7 +694,7 @@ static int __validate_metadata_operand(struct p4tc_act *act,
 	int err;
 
 	if (kopnd->oper_flags & DATA_USES_ROOT_PIPE)
-		pipeline = tcf_pipeline_find_byid(0);
+		pipeline = tcf_pipeline_find_byid(net, 0);
 	else
 		pipeline = act->pipeline;
 
@@ -847,7 +847,7 @@ static int validate_operand(struct net *net, struct p4tc_act *act,
 		kopnd->oper_flags |=  DATA_IS_READ_ONLY;
 		break;
 	case P4TC_OPER_META:
-		err = __validate_metadata_operand(act, kopnd, extack);
+		err = __validate_metadata_operand(net, act, kopnd, extack);
 		break;
 	case P4TC_OPER_ACTID:
 		err = 0;
@@ -886,19 +886,20 @@ static int validate_operand(struct net *net, struct p4tc_act *act,
 
 #define noop
 
-static void _free_operand(struct p4tc_cmd_operand *op)
+static void _free_operand(struct net *net, struct p4tc_cmd_operand *op,
+			  bool called_from_template)
 {
-	if (op->oper_type == P4TC_OPER_HDRFIELD) {
+	if (op->oper_type == P4TC_OPER_HDRFIELD && net) {
 		struct p4tc_pipeline *pipeline;
 
-		pipeline = tcf_pipeline_find_byid(op->pipeid);
+		pipeline = tcf_pipeline_find_byid(net, op->pipeid);
 		/* Should never be NULL */
 		if (pipeline)
 			refcount_dec(&pipeline->p_hdrs_used);
-	} else if (op->oper_type == P4TC_OPER_REG) {
+	} else if (op->oper_type == P4TC_OPER_REG && net) {
 		struct p4tc_pipeline *pipeline;
 
-		pipeline = tcf_pipeline_find_byid(op->pipeid);
+		pipeline = tcf_pipeline_find_byid(net, op->pipeid);
 		/* Should never be NULL */
 		if (pipeline) {
 			struct p4tc_register *reg;
@@ -931,31 +932,33 @@ static void _free_operand(struct p4tc_cmd_operand *op)
 	kfree(op);
 }
 
-static void _free_operand_list(struct list_head *operands_list)
+static void _free_operand_list(struct net *net, struct list_head *operands_list,
+			       bool called_from_template)
 {
 	struct p4tc_cmd_operand *op, *tmp;
 
 	list_for_each_entry_safe(op, tmp, operands_list, oper_list_node) {
 		list_del(&op->oper_list_node);
-		_free_operand(op);
+		_free_operand(net, op, called_from_template);
 	}
 }
 
-static void _free_operation(struct p4tc_cmd_operate *ope,
+static void _free_operation(struct net *net, struct p4tc_cmd_operate *ope,
+			    bool called_from_template,
 			    struct netlink_ext_ack *extack)
 {
-	_free_operand_list(&ope->operands_list);
+	_free_operand_list(net, &ope->operands_list, called_from_template);
 
 	kfree(ope->label1);
 	kfree(ope->label2);
 	kfree(ope);
 }
 
-static void free_op_SET(struct p4tc_cmd_operate *ope,
+static void free_op_SET(struct net *net, struct p4tc_cmd_operate *ope,
 			bool called_from_template,
 			struct netlink_ext_ack *extack)
 {
-	return _free_operation(ope, extack);
+	_free_operation(net, ope, called_from_template, extack);
 }
 
 /* XXX: copied from act_api::tcf_free_cookie_rcu - at some point share the code */
@@ -996,9 +999,8 @@ static void _free_tcf(struct tc_action *p)
 
 #define P4TC_CMD_OPER_ACT_RUNTIME (BIT(0))
 
-static void free_op_ACT(struct p4tc_cmd_operate *ope,
-			bool dec_act_refs,
-			struct netlink_ext_ack *extack)
+static void free_op_ACT(struct net *net, struct p4tc_cmd_operate *ope,
+			bool dec_act_refs, struct netlink_ext_ack *extack)
 {
 	struct p4tc_cmd_operand *A;
 	struct tc_action *p = NULL;
@@ -1027,7 +1029,7 @@ static void free_op_ACT(struct p4tc_cmd_operate *ope,
 		}
 	}
 
-	return _free_operation(ope, extack);
+	return _free_operation(net, ope, dec_act_refs, extack);
 }
 
 static inline int opnd_is_assignable(struct p4tc_cmd_operand *kopnd)
@@ -1960,10 +1962,11 @@ int validate_BRN(struct net *net, struct p4tc_act *act,
 	return 0;
 }
 
-static void generic_free_op(struct p4tc_cmd_operate *ope, bool called_from_template,
-			struct netlink_ext_ack *extack)
+static void generic_free_op(struct net *net, struct p4tc_cmd_operate *ope,
+			    bool called_from_template,
+			    struct netlink_ext_ack *extack)
 {
-	return _free_operation(ope, extack);
+	return _free_operation(net, ope, called_from_template, extack);
 }
 
 static struct p4tc_cmd_s cmds[] = {
@@ -2473,17 +2476,19 @@ static void p4tc_cmds_ops_pass_to_list(struct p4tc_cmd_operate **oplist,
 	}
 }
 
-static void p4tc_cmd_ops_del_list(struct list_head *cmd_operations)
+static void p4tc_cmd_ops_del_list(struct net *net,
+				  struct list_head *cmd_operations)
 {
 	struct p4tc_cmd_operate *ope, *tmp;
 
 	list_for_each_entry_safe(ope, tmp, cmd_operations, cmd_operations) {
 		list_del(&ope->cmd_operations);
-		kfree_opentry(ope, false);
+		kfree_opentry(net, ope, false);
 	}
 }
 
-static int p4tc_cmds_copy_opnd(struct p4tc_cmd_operand **new_kopnd,
+static int p4tc_cmds_copy_opnd(struct p4tc_act *act,
+			       struct p4tc_cmd_operand **new_kopnd,
 			       struct p4tc_cmd_operand *kopnd,
 			       struct netlink_ext_ack *extack)
 {
@@ -2512,11 +2517,10 @@ static int p4tc_cmds_copy_opnd(struct p4tc_cmd_operand **new_kopnd,
 		struct p4tc_pipeline *pipeline;
 		struct p4tc_metadata *meta;
 
-		pipeline = tcf_pipeline_find_byid(kopnd->pipeid);
-		if (!pipeline) {
-			err = -EINVAL;
-			goto err;
-		}
+		if (kopnd->pipeid == P4TC_KERNEL_PIPEID)
+			pipeline = tcf_pipeline_find_byid(NULL, kopnd->pipeid);
+		else
+			pipeline = act->pipeline;
 
 		meta = tcf_meta_find_byid(pipeline, kopnd->immedv);
 		if (!meta) {
@@ -2601,7 +2605,8 @@ err:
 	return err;
 }
 
-static int p4tc_cmds_copy_ops(struct p4tc_cmd_operate **new_op_entry,
+static int p4tc_cmds_copy_ops(struct p4tc_act *act,
+			      struct p4tc_cmd_operate **new_op_entry,
 			      struct p4tc_cmd_operate *op_entry,
 			      struct netlink_ext_ack *extack)
 {
@@ -2617,7 +2622,7 @@ static int p4tc_cmds_copy_ops(struct p4tc_cmd_operate **new_op_entry,
 	list_for_each_entry(cursor, &op_entry->operands_list, oper_list_node) {
 		struct p4tc_cmd_operand *new_opnd = NULL;
 
-		err = p4tc_cmds_copy_opnd(&new_opnd, cursor, extack);
+		err = p4tc_cmds_copy_opnd(act, &new_opnd, cursor, extack);
 		if (new_opnd) {
 			struct list_head *head;
 
@@ -2653,10 +2658,10 @@ int p4tc_cmds_copy(struct p4tc_act *act, struct list_head *new_cmd_operations,
 	int err;
 
 	if (delete_old)
-		p4tc_cmd_ops_del_list(new_cmd_operations);
+		p4tc_cmd_ops_del_list(NULL, new_cmd_operations);
 
 	list_for_each_entry(op, &act->cmd_operations, cmd_operations) {
-		err = p4tc_cmds_copy_ops(&oplist[i], op, extack);
+		err = p4tc_cmds_copy_ops(act, &oplist[i], op, extack);
 		if (err < 0)
 			goto free_oplist;
 
@@ -2668,7 +2673,7 @@ int p4tc_cmds_copy(struct p4tc_act *act, struct list_head *new_cmd_operations,
 	return 0;
 
 free_oplist:
-	kfree_tmp_oplist(oplist, false);
+	kfree_tmp_oplist(NULL, oplist, false);
 	return err;
 }
 
@@ -2711,7 +2716,7 @@ int p4tc_cmds_parse(struct net *net,
 		    p4tc_cmd_process_ops(net, act, oplist_attr[i],
 					 &oplist[i - 1], i - 1, extack);
 		if (err) {
-			kfree_tmp_oplist(oplist, true);
+			kfree_tmp_oplist(net, oplist, true);
 
 			if (err == P4TC_CMD_POLICY) {
 				err = -EINVAL;
@@ -2724,12 +2729,12 @@ int p4tc_cmds_parse(struct net *net,
 
 	err = cmd_brn_validate(act, oplist, i, extack);
 	if (err < 0) {
-		kfree_tmp_oplist(oplist, true);
+		kfree_tmp_oplist(net, oplist, true);
 		goto free_labels;
 	}
 
 	if (ovr) {
-		p4tc_cmd_ops_del_list(&act->cmd_operations);
+		p4tc_cmd_ops_del_list(net, &act->cmd_operations);
 		if (labels) {
 			rhashtable_free_and_destroy(labels, p4tc_label_ht_destroy,
 						    NULL);
@@ -2913,7 +2918,7 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		char *path = (char *)A->print_prefix;
 		struct p4tc_metadata *meta;
 
-		pipeline = tcf_pipeline_find_byid(A->pipeid);
+		pipeline = tcf_pipeline_find_byid(net, A->pipeid);
 		meta = tcf_meta_find_byid(pipeline, A->immedv);
 
 		if (path)
@@ -2932,7 +2937,7 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		struct p4tc_pipeline *pipeline;
 		struct p4tc_parser *parser;
 
-		pipeline = tcf_pipeline_find_byid(A->pipeid);
+		pipeline = tcf_pipeline_find_byid(net, A->pipeid);
 		parser = tcf_parser_find_byid(pipeline, A->immedv);
 		hdrfield = tcf_hdrfield_find_byid(parser, A->immedv2);
 
@@ -2951,7 +2956,7 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		struct p4tc_table *table;
 		struct p4tc_pipeline *pipeline;
 
-		pipeline = tcf_pipeline_find_byid(A->pipeid);
+		pipeline = tcf_pipeline_find_byid(net, A->pipeid);
 		table = tcf_table_find_byid(pipeline, A->immedv);
 		if (path)
 			snprintf(name, TEMPLATENAMSZ * 3, "%s key.%s.%s.%u",
@@ -2995,7 +3000,7 @@ static int p4tc_cmd_PRINT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		struct p4tc_pipeline *pipeline;
 		struct p4tc_register *reg;
 
-		pipeline = tcf_pipeline_find_byid(A->pipeid);
+		pipeline = tcf_pipeline_find_byid(net, A->pipeid);
 		reg = tcf_register_find_byid(pipeline, A->immedv);
 			if (path)
 				snprintf(name, TEMPLATENAMSZ * 2, "%s register.%s.%s[%u]",

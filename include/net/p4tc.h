@@ -501,7 +501,7 @@ int p4tc_cmds_copy(struct p4tc_act *act, struct list_head *new_cmd_operations,
 		   bool delete_old, struct netlink_ext_ack *extack);
 
 int p4tc_cmds_fillup(struct sk_buff *skb, struct list_head *meta_ops);
-void p4tc_cmds_release_ope_list(struct list_head *entries,
+void p4tc_cmds_release_ope_list(struct net *net, struct list_head *entries,
 				bool called_from_template);
 struct p4tc_cmd_operand;
 int p4tc_cmds_fill_operand(struct sk_buff *skb, struct p4tc_cmd_operand *kopnd);
@@ -555,7 +555,7 @@ struct p4tc_cmd_s {
 	int (*validate_operands)(struct net *net, struct p4tc_act *act,
 				 struct p4tc_cmd_operate *ope, u32 cmd_num_opns,
 				 struct netlink_ext_ack *extack);
-	void (*free_operation)(struct p4tc_cmd_operate *op,
+	void (*free_operation)(struct net *net, struct p4tc_cmd_operate *op,
 			       bool called_for_instance,
 			       struct netlink_ext_ack *extack);
 	int (*run)(struct sk_buff *skb, struct p4tc_cmd_operate *op,

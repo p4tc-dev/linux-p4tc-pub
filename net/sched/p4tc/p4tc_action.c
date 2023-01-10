@@ -118,15 +118,6 @@ static int __tcf_p4_dyna_init(struct net *net, struct nlattr *est,
 
 		pipeline = act->pipeline;
 
-		/* p_ref here should never be 0, because if we are here, it
-		 * means that a template action of this kind was created. Thus
-		 * p_ref should be at least 1. Also since this operation and
-		 * others that add or delete pipelines and action templates run
-		 * with rtnl_lock held, we cannot do this op and a deletion op
-		 * in parallel.
-		 */
-		WARN_ON(!refcount_inc_not_zero(&pipeline->p_ref));
-
 		p = to_p4act(*a);
 		p->p_id = pipeline->common.p_id;
 		INIT_LIST_HEAD(&p->cmd_operations);
@@ -678,18 +669,14 @@ static void tcf_p4_dyna_cleanup(struct tc_action *a)
 	struct tc_action_ops *ops = (struct tc_action_ops *)a->ops;
 	struct tcf_p4act *m = to_p4act(a);
 	struct tcf_p4act_params *params;
-	struct p4tc_pipeline *pipeline;
 
-	pipeline = m->p_id ? tcf_pipeline_find_byid(m->p_id) : NULL;
 	params = rcu_dereference_protected(m->params, 1);
 
 	if (refcount_read(&ops->dyn_ref) > 1)
 		refcount_dec(&ops->dyn_ref);
-	if (pipeline)
-		WARN_ON(!refcount_dec_not_one(&pipeline->p_ref));
 
 	spin_lock_bh(&m->tcf_lock);
-	p4tc_cmds_release_ope_list(&m->cmd_operations, false);
+	p4tc_cmds_release_ope_list(NULL, &m->cmd_operations, false);
 	if (params)
 		call_rcu(&params->rcu, tcf_p4_act_params_destroy_rcu);
 	spin_unlock_bh(&m->tcf_lock);
@@ -1264,7 +1251,7 @@ static int __tcf_act_put(struct net *net, struct p4tc_pipeline *pipeline,
 		kfree(act_param);
 	}
 
-	p4tc_cmds_release_ope_list(&act->cmd_operations, true);
+	p4tc_cmds_release_ope_list(net, &act->cmd_operations, true);
 
 	rtnl_unlock();
 	ret = tcf_unregister_action(&act->ops, act->p4_net_ops);
