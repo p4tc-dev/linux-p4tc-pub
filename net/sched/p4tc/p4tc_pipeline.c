@@ -134,7 +134,7 @@ static int tcf_pipeline_put(struct net *net,
 		act->common.ops->put(net, &act->common, extack);
 
 	idr_for_each_entry_ul(&pipeline->p_tbl_idr, table, tmp, tbl_id)
-		table->common.ops->put(net, &table->common, extack);
+		table->common.ops->put(net, &table->common, true, extack);
 
 	idr_remove(&pipe_net->pipeline_idr, pipeline->common.p_id);
 

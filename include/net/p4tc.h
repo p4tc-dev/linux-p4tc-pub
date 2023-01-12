@@ -439,6 +439,10 @@ struct p4tc_table *tcf_table_find_byid(struct p4tc_pipeline *pipeline,
 void *tcf_table_fetch(struct sk_buff *skb, void *tbl_value_ops);
 int tcf_table_try_set_state_ready(struct p4tc_pipeline *pipeline,
 				   struct netlink_ext_ack *extack);
+struct p4tc_table *
+tcf_table_get(struct p4tc_pipeline *pipeline, const char *tblname,
+	      const u32 tbl_id, struct netlink_ext_ack *extack);
+void tcf_table_put_ref(struct p4tc_table *table);
 
 void tcf_table_entry_destroy_hash(void *ptr, void *arg);
 

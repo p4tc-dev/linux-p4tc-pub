@@ -274,6 +274,7 @@ static inline int _tcf_table_put(struct net *net,
 				 struct nlattr **tb,
 				 struct p4tc_pipeline *pipeline,
 				 struct p4tc_table *table,
+				 bool unconditional_purge,
 				 struct netlink_ext_ack *extack)
 {
 	bool default_act_del = false;
@@ -283,13 +284,15 @@ static inline int _tcf_table_put(struct net *net,
 		default_act_del = tb[P4TC_TABLE_DEFAULT_HIT] || tb[P4TC_TABLE_DEFAULT_MISS];
 
 	if (!default_act_del) {
-		if (!refcount_dec_if_one(&table->tbl_ctrl_ref)) {
+		if (!unconditional_purge &&
+		    !refcount_dec_if_one(&table->tbl_ctrl_ref)) {
 			NL_SET_ERR_MSG(extack,
 				       "Unable to delete referenced table");
 			return -EBUSY;
 		}
 
-		if (!refcount_dec_if_one(&table->tbl_ref)) {
+		if (!unconditional_purge &&
+		    !refcount_dec_if_one(&table->tbl_ref)) {
 			refcount_set(&table->tbl_ctrl_ref, 1);
 			NL_SET_ERR_MSG(extack,
 				       "Unable to delete referenced table");
@@ -383,12 +386,14 @@ static inline int _tcf_table_put(struct net *net,
 }
 
 static int tcf_table_put(struct net *net, struct p4tc_template_common *tmpl,
+			 bool unconditional_purge,
 			 struct netlink_ext_ack *extack)
 {
 	struct p4tc_pipeline *pipeline = tcf_pipeline_find_byid(net, tmpl->p_id);
 	struct p4tc_table *table = to_table(tmpl);
 
-	return _tcf_table_put(net, NULL, pipeline, table, extack);
+	return _tcf_table_put(net, NULL, pipeline, table, unconditional_purge,
+			      extack);
 }
 
 static inline struct p4tc_table_key *
@@ -420,8 +425,8 @@ tcf_table_key_add(struct net *net, struct p4tc_table *table, struct nlattr *nla,
 			goto free_key;
 		}
 
-		ret = p4tc_action_init(net, tb[P4TC_KEY_ACT], key->key_acts, 0,
-				       extack);
+		ret = p4tc_action_init(net, tb[P4TC_KEY_ACT], key->key_acts,
+				       table->common.p_id, 0, extack);
 		if (ret < 0) {
 			kfree(key->key_acts);
 			goto free_key;
@@ -501,9 +506,30 @@ out:
 	return ERR_PTR(err);
 }
 
+struct p4tc_table *
+tcf_table_get(struct p4tc_pipeline *pipeline, const char *tblname,
+	      const u32 tbl_id, struct netlink_ext_ack *extack)
+{
+	struct p4tc_table *table;
+
+	table = tcf_table_find_byany(pipeline, tblname, tbl_id, extack);
+	if (IS_ERR(table))
+		return table;
+
+	/* Should never be zero */
+	WARN_ON(!refcount_inc_not_zero(&table->tbl_ref));
+	return table;
+}
+
+void tcf_table_put_ref(struct p4tc_table *table)
+{
+	/* Should never be zero */
+	WARN_ON(!refcount_dec_not_one(&table->tbl_ref));
+}
+
 static int
 tcf_table_init_default_act(struct net *net, struct nlattr **tb,
-			   struct p4tc_table_defact **default_act,
+			   struct p4tc_table_defact **default_act, u32 pipeid,
 			   __u16 curr_permissions, struct netlink_ext_ack *extack)
 {
 	int ret;
@@ -555,7 +581,7 @@ tcf_table_init_default_act(struct net *net, struct nlattr **tb,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_TABLE_DEFAULT_ACTION],
-				       default_acts, 0, extack);
+				       default_acts, pipeid, 0, extack);
 		if (ret < 0) {
 			kfree(default_acts);
 			goto default_act_free;
@@ -609,7 +635,8 @@ tcf_table_init_default_acts(struct net *net, struct nlattr **tb,
 			return ret;
 
 		ret = tcf_table_init_default_act(net, tb_default,
-						 default_hitact, permissions,
+						 default_hitact,
+						 table->common.p_id, permissions,
 						 extack);
 		if (ret < 0)
 			return ret;
@@ -632,7 +659,8 @@ tcf_table_init_default_acts(struct net *net, struct nlattr **tb,
 			goto default_hitacts_free;
 
 		ret = tcf_table_init_default_act(net, tb_default,
-						 default_missact, permissions,
+						 default_missact,
+						 table->common.p_id, permissions,
 						 extack);
 		if (ret < 0)
 			goto default_hitacts_free;
@@ -855,7 +883,8 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_TABLE_PREACTIONS],
-				       table->tbl_preacts, 0, extack);
+				       table->tbl_preacts, table->common.p_id,
+				       0, extack);
 		if (ret < 0) {
 			kfree(table->tbl_preacts);
 			goto idr_rm;
@@ -875,7 +904,8 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_TABLE_POSTACTIONS],
-				       table->tbl_postacts, 0, extack);
+				       table->tbl_postacts, table->common.p_id,
+				       0, extack);
 		if (ret < 0) {
 			kfree(table->tbl_postacts);
 			goto preactions_destroy;
@@ -1004,7 +1034,7 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_TABLE_PREACTIONS],
-				       preacts, 0, extack);
+				       preacts, table->common.p_id, 0, extack);
 		if (ret < 0) {
 			kfree(preacts);
 			goto out;
@@ -1022,7 +1052,7 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_TABLE_POSTACTIONS],
-				       postacts, 0, extack);
+				       postacts, table->common.p_id, 0, extack);
 		if (ret < 0) {
 			kfree(postacts);
 			goto preactions_destroy;
@@ -1325,7 +1355,7 @@ static int tcf_table_flush(struct net *net, struct sk_buff *skb,
 	}
 
 	idr_for_each_entry_ul(&pipeline->p_tbl_idr, table, tmp, tbl_id) {
-		if (_tcf_table_put(net, NULL, pipeline, table, extack) < 0) {
+		if (_tcf_table_put(net, NULL, pipeline, table, false, extack) < 0) {
 			ret = -EBUSY;
 			continue;
 		}
@@ -1403,7 +1433,7 @@ static int tcf_table_gd(struct net *net, struct sk_buff *skb,
 	}
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE) {
-		ret = _tcf_table_put(net, tb, pipeline, table, extack);
+		ret = _tcf_table_put(net, tb, pipeline, table, false, extack);
 		if (ret < 0)
 			goto out_nlmsg_trim;
 	}
