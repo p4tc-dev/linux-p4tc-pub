@@ -100,6 +100,7 @@ static void tcf_pipeline_destroy(struct rcu_head *head)
 
 static int tcf_pipeline_put(struct net *net,
 			    struct p4tc_template_common *template,
+			    bool unconditional_purgeline,
 			    struct netlink_ext_ack *extack)
 {
 	struct p4tc_pipeline_net *pipe_net = net_generic(net, pipeline_net_id);
@@ -299,7 +300,7 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_PIPELINE_PREACTIONS],
-				       pipeline->preacts, 0, extack);
+				       pipeline->preacts, pipeid, 0, extack);
 		if (ret < 0) {
 			kfree(pipeline->preacts);
 			goto idr_rm;
@@ -320,7 +321,7 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_PIPELINE_POSTACTIONS],
-				       pipeline->postacts, 0, extack);
+				       pipeline->postacts, pipeid, 0, extack);
 		if (ret < 0) {
 			kfree(pipeline->postacts);
 			goto preactions_destroy;
@@ -494,7 +495,8 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_PIPELINE_PREACTIONS],
-				       preacts, 0, extack);
+				       preacts, pipeline->common.p_id, 0,
+				       extack);
 		if (ret < 0) {
 			kfree(preacts);
 			goto out;
@@ -511,7 +513,8 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_PIPELINE_POSTACTIONS],
-				       postacts, 0, extack);
+				       postacts, pipeline->common.p_id, 0,
+				       extack);
 		if (ret < 0) {
 			kfree(postacts);
 			goto preactions_destroy;
@@ -651,7 +654,7 @@ static int tcf_pipeline_del_one(struct net *net,
 				struct p4tc_template_common *tmpl,
 				struct netlink_ext_ack *extack)
 {
-	return tcf_pipeline_put(net, tmpl, extack);
+	return tcf_pipeline_put(net, tmpl, false, extack);
 }
 
 static int tcf_pipeline_gd(struct net *net, struct sk_buff *skb,

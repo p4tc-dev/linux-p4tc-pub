@@ -65,7 +65,7 @@ struct p4tc_template_ops {
 	(*cu)(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	      char **pname, u32 *ids, struct netlink_ext_ack *extack);
 	int (*put)(struct net *net, struct p4tc_template_common *tmpl,
-		   struct netlink_ext_ack *extack);
+		   bool unconditional_purge, struct netlink_ext_ack *extack);
 	/* XXX: Triple check to see if it's really ok not to have net as an argument */
 	int (*gd)(struct net *net, struct sk_buff *skb, struct nlmsghdr *n,
 		  struct nlattr *nla,  char **p_name, u32 *ids,
@@ -357,18 +357,41 @@ void *tcf_meta_fetch(struct sk_buff *skb, struct p4tc_metadata *meta);
 void tcf_meta_init(struct p4tc_pipeline *root_pipe);
 
 static inline int p4tc_action_init(struct net *net, struct nlattr *nla,
-				   struct tc_action *acts[], u32 flags,
-				   struct netlink_ext_ack *extack)
+				   struct tc_action *acts[], u32 pipeid,
+				   u32 flags, struct netlink_ext_ack *extack)
 {
 	int init_res[TCA_ACT_MAX_PRIO];
 	size_t attrs_size;
 	int ret;
+	int i;
 
 	/* If action was already created, just bind to existing one*/
 	flags |= TCA_ACT_FLAGS_BIND;
+	flags |= TCA_ACT_FLAGS_FROM_P4TC;
 	ret = tcf_action_init(net, NULL, nla, NULL, acts, init_res,
 			      &attrs_size, flags, 0, extack);
 
+	/* Check if we are trying to bind to dynamic action from different pipe */
+	for (i = 0; i < TCA_ACT_MAX_PRIO && acts[i]; i++) {
+		struct tc_action *a = acts[i];
+		struct tcf_p4act *p;
+
+		if (a->ops->id < TCA_ID_DYN)
+			continue;
+
+		p = to_p4act(a);
+		if (p->p_id != pipeid) {
+			NL_SET_ERR_MSG(extack,
+				       "Unable to bind to dynact from different pipeline");
+			ret = -EPERM;
+			goto destroy_acts;
+		}
+	}
+
+	return ret;
+
+destroy_acts:
+	tcf_action_destroy(acts, TCA_ACT_FLAGS_BIND);
 	return ret;
 }
 

@@ -359,7 +359,7 @@ tcf_p4_tmpl_cu_1(struct sk_buff *skb, struct net *net,
 	return tmpl;
 
 put:
-	op->put(net, tmpl, extack);
+	op->put(net, tmpl, false, extack);
 
 out:
 	return ERR_PTR(ret);
@@ -464,7 +464,7 @@ undo_prev:
 		while (--i > 0) {
 			struct p4tc_template_common *tmpl = tmpls[i - 1];
 
-			tmpl->ops->put(net, tmpl, extack);
+			tmpl->ops->put(net, tmpl, false, extack);
 		}
 	}
 
