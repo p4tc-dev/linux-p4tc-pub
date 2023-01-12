@@ -481,6 +481,11 @@ void *tcf_hdrfield_fetch(struct sk_buff *skb,
 struct p4tc_register *tcf_register_find_byid(struct p4tc_pipeline *pipeline,
 					     const u32 reg_id);
 struct p4tc_register *
+tcf_register_get(struct p4tc_pipeline *pipeline, const char *regname,
+		  const u32 reg_id, struct netlink_ext_ack *extack);
+void tcf_register_put_ref(struct p4tc_register *reg);
+
+struct p4tc_register *
 tcf_register_find_byany(struct p4tc_pipeline *pipeline,
 			const char *regname, const u32 reg_id,
 			struct netlink_ext_ack *extack);

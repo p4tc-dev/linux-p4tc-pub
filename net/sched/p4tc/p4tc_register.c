@@ -93,6 +93,26 @@ out:
 	return ERR_PTR(err);
 }
 
+struct p4tc_register *
+tcf_register_get(struct p4tc_pipeline *pipeline, const char *regname,
+		  const u32 reg_id, struct netlink_ext_ack *extack)
+{
+	struct p4tc_register *reg;
+
+	reg = tcf_register_find_byany(pipeline, regname, reg_id, extack);
+	if (IS_ERR(reg))
+		return reg;
+
+	WARN_ON(!refcount_inc_not_zero(&reg->reg_ref));
+
+	return reg;
+}
+
+void tcf_register_put_ref(struct p4tc_register *reg)
+{
+	WARN_ON(!refcount_dec_not_one(&reg->reg_ref));
+}
+
 static struct p4tc_register *
 tcf_register_find_byanyattr(struct p4tc_pipeline *pipeline,
 			    struct nlattr *name_attr,
@@ -184,12 +204,12 @@ static int tcf_register_fill_nlmsg(struct net *net, struct sk_buff *skb,
 }
 
 static int _tcf_register_put(struct p4tc_pipeline *pipeline,
-			     struct p4tc_register *reg,
+			     struct p4tc_register *reg, bool unconditional_purge,
 			     struct netlink_ext_ack *extack)
 {
 	void *value;
 
-	if (!refcount_dec_if_one(&reg->reg_ref))
+	if (!refcount_dec_if_one(&reg->reg_ref) && !unconditional_purge)
 		return -EBUSY;
 
 	idr_remove(&pipeline->p_reg_idr, reg->reg_id);
@@ -210,6 +230,7 @@ static int _tcf_register_put(struct p4tc_pipeline *pipeline,
 }
 
 static int tcf_register_put(struct net *net, struct p4tc_template_common *tmpl,
+			    bool unconditional_purge,
 			    struct netlink_ext_ack *extack)
 {
 	struct p4tc_pipeline *pipeline = tcf_pipeline_find_byid(net,
@@ -217,7 +238,7 @@ static int tcf_register_put(struct net *net, struct p4tc_template_common *tmpl,
 	struct p4tc_register *reg = to_register(tmpl);
 	int ret;
 
-	ret = _tcf_register_put(pipeline, reg, extack);
+	ret = _tcf_register_put(pipeline, reg, unconditional_purge, extack);
 	if (ret < 0)
 		NL_SET_ERR_MSG(extack, "Unable to delete referenced register");
 
@@ -558,7 +579,7 @@ static int tcf_register_flush(struct sk_buff *skb,
 	}
 
 	idr_for_each_entry_ul(&pipeline->p_reg_idr, reg, tmp, reg_id) {
-		if (_tcf_register_put(pipeline, reg, extack) < 0) {
+		if (_tcf_register_put(pipeline, reg, false, extack) < 0) {
 			ret = -EBUSY;
 			continue;
 		}
@@ -657,7 +678,7 @@ static int tcf_register_gd(struct net *net, struct sk_buff *skb,
 	}
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE) {
-		ret = _tcf_register_put(pipeline, reg, extack);
+		ret = _tcf_register_put(pipeline, reg, false, extack);
 		if (ret < 0) {
 			NL_SET_ERR_MSG(extack,
 				       "Unable to delete referenced register");

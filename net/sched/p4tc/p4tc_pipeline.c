@@ -136,9 +136,6 @@ static int tcf_pipeline_put(struct net *net,
 	idr_for_each_entry_ul(&pipeline->p_tbl_idr, table, tmp, tbl_id)
 		table->common.ops->put(net, &table->common, extack);
 
-	idr_for_each_entry_ul(&pipeline->p_reg_idr, reg, tmp, reg_id)
-		reg->common.ops->put(net, &reg->common, extack);
-
 	idr_remove(&pipe_net->pipeline_idr, pipeline->common.p_id);
 
 	/* XXX: The action fields are only accessed in the control path
@@ -155,6 +152,10 @@ static int tcf_pipeline_put(struct net *net,
 		tcf_action_destroy(pipeline->postacts, TCA_ACT_UNBIND);
 		kfree(pipeline->postacts);
 	}
+
+
+	idr_for_each_entry_ul(&pipeline->p_reg_idr, reg, tmp, reg_id)
+		reg->common.ops->put(net, &reg->common, true, extack);
 
 	call_rcu(&pipeline->rcu, tcf_pipeline_destroy);
 
