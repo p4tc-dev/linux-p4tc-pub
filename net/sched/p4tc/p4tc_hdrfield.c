@@ -34,13 +34,17 @@ static const struct nla_policy tc_hdrfield_policy[P4TC_HDRFIELD_MAX + 1] = {
 
 static int _tcf_hdrfield_put(struct p4tc_pipeline *pipeline,
 			     struct p4tc_parser *parser,
-			     struct p4tc_header_field *hdrfield)
+			     struct p4tc_header_field *hdrfield,
+			     bool unconditional_purge,
+			     struct netlink_ext_ack *extack)
 {
+	if (!refcount_dec_if_one(&hdrfield->hdrfield_ref) &&
+	    !unconditional_purge) {
+		NL_SET_ERR_MSG(extack, "Unable to delete referenced header field");
+		return -EBUSY;
+	}
 	idr_remove(&parser->hdr_fields_idr, hdrfield->hdr_field_id);
 
-	/* This is done with rtnl_lock, so p_ref should never be one here */
-	WARN_ON(!refcount_dec_not_one(&pipeline->p_ref));
-	/* XXX: Need to revisit this */
 	WARN_ON(!refcount_dec_not_one(&parser->parser_ref));
 	kfree(hdrfield);
 
@@ -48,6 +52,7 @@ static int _tcf_hdrfield_put(struct p4tc_pipeline *pipeline,
 }
 
 static int tcf_hdrfield_put(struct net *net, struct p4tc_template_common *tmpl,
+			    bool unconditional_purge,
 			    struct netlink_ext_ack *extack)
 {
 	struct p4tc_header_field *hdrfield;
@@ -59,7 +64,8 @@ static int tcf_hdrfield_put(struct net *net, struct p4tc_template_common *tmpl,
 	hdrfield = to_hdrfield(tmpl);
 	parser = pipeline->parser;
 
-	return _tcf_hdrfield_put(pipeline, parser, hdrfield);
+	return _tcf_hdrfield_put(pipeline, parser, hdrfield,
+				 unconditional_purge, extack);
 }
 
 static struct p4tc_header_field *
@@ -118,6 +124,28 @@ tcf_hdrfield_find_byany(struct p4tc_parser *parser, const char *hdrfield_name,
 
 out:
 	return ERR_PTR(err);
+}
+
+struct p4tc_header_field *
+tcf_hdrfield_get(struct p4tc_parser *parser, const char *hdrfield_name,
+		u32 hdrfield_id, struct netlink_ext_ack *extack)
+{
+	struct p4tc_header_field *hdrfield;
+
+	hdrfield = tcf_hdrfield_find_byany(parser, hdrfield_name, hdrfield_id,
+					   extack);
+	if (IS_ERR(hdrfield))
+		return hdrfield;
+
+	/* Should never happend */
+	WARN_ON(!refcount_inc_not_zero(&hdrfield->hdrfield_ref));
+
+	return hdrfield;
+}
+
+void tcf_hdrfield_put_ref(struct p4tc_header_field *hdrfield)
+{
+	WARN_ON(!refcount_dec_not_one(&hdrfield->hdrfield_ref));
 }
 
 static struct p4tc_header_field *
@@ -192,9 +220,6 @@ tcf_hdrfield_create(struct nlmsghdr *n, struct nlattr *nla,
 	}
 	hdr_arg = nla_data(tb[P4TC_HDRFIELD_DATA]);
 
-	/* This is done with rtnl_lock, so p_ref should never be zero here */
-	WARN_ON(!refcount_inc_not_zero(&pipeline->p_ref));
-
 	if (tb[P4TC_HDRFIELD_PARSER_NAME])
 		parser_name = nla_data(tb[P4TC_HDRFIELD_PARSER_NAME]);
 
@@ -204,25 +229,22 @@ tcf_hdrfield_create(struct nlmsghdr *n, struct nlattr *nla,
 		rcu_read_unlock();
 		if (!parser_name) {
 			NL_SET_ERR_MSG(extack, "Must supply parser name");
-			ret = -EINVAL;
-			goto refcount_dec_pipeline;
+			return ERR_PTR(-EINVAL);
 		}
 
 		/* If the parser instance wasn't created, let's create it here */
 		parser = tcf_parser_create(pipeline, parser_name, parser_id,
 					   extack);
-		if (IS_ERR(parser)) {
-			ret = PTR_ERR(parser);
-			goto refcount_dec_pipeline;
-		}
+
+		if (IS_ERR(parser))
+			return (void *)parser;
 		rcu_read_lock();
 	}
 
 	if (!refcount_inc_not_zero(&parser->parser_ref)) {
 		NL_SET_ERR_MSG(extack, "Parser is stale");
 		rcu_read_unlock();
-		ret = -EBUSY;
-		goto refcount_dec_pipeline;
+		return ERR_PTR(-EBUSY);
 	}
 	rcu_read_unlock();
 
@@ -291,6 +313,7 @@ tcf_hdrfield_create(struct nlmsghdr *n, struct nlattr *nla,
 	hdrfield->common.p_id = pipeline->common.p_id;
 	hdrfield->common.ops = (struct p4tc_template_ops *)&p4tc_hdrfield_ops;
 	hdrfield->parser = parser;
+	refcount_set(&hdrfield->hdrfield_ref, 1);
 
 	if (hdrfield_name)
 		strscpy(hdrfield->common.name, hdrfield_name, HDRFIELDNAMSIZ);
@@ -302,9 +325,6 @@ free_hdr:
 
 refcount_dec_parser:
 	WARN_ON(!refcount_dec_not_one(&parser->parser_ref));
-
-refcount_dec_pipeline:
-	WARN_ON(!refcount_dec_not_one(&pipeline->p_ref));
 	return ERR_PTR(ret);
 }
 
@@ -418,7 +438,7 @@ static int tcf_hdrfield_flush(struct sk_buff *skb,
 	}
 
 	idr_for_each_entry_ul(&parser->hdr_fields_idr, hdrfield, tmp, hdrfield_id) {
-		if (_tcf_hdrfield_put(pipeline, parser, hdrfield) < 0) {
+		if (_tcf_hdrfield_put(pipeline, parser, hdrfield, false, extack) < 0) {
 			ret = -EBUSY;
 			continue;
 		}
@@ -458,6 +478,7 @@ static int tcf_hdrfield_gd(struct net *net, struct sk_buff *skb,
 	struct p4tc_header_field *hdrfield;
 	struct p4tc_pipeline *pipeline;
 	struct p4tc_parser *parser;
+	char *parser_name;
 	int ret;
 
 	pipeline = tcf_pipeline_find_byany(net, *p_name, pipeid, extack);
@@ -469,9 +490,11 @@ static int tcf_hdrfield_gd(struct net *net, struct sk_buff *skb,
 	if (ret < 0)
 		return ret;
 
-	parser = tcf_parser_find_byany(pipeline,
-				       nla_data(tb[P4TC_HDRFIELD_PARSER_NAME]),
-				       parser_inst_id, extack);
+	parser_name = tb[P4TC_HDRFIELD_PARSER_NAME] ?
+		nla_data(tb[P4TC_HDRFIELD_PARSER_NAME]) : NULL;
+
+	parser = tcf_parser_find_byany(pipeline, parser_name, parser_inst_id,
+				       extack);
 	if (IS_ERR(parser))
 		return PTR_ERR(parser);
 
@@ -494,7 +517,8 @@ static int tcf_hdrfield_gd(struct net *net, struct sk_buff *skb,
 		return -ENOMEM;
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE) {
-		ret = _tcf_hdrfield_put(pipeline, parser, hdrfield);
+		ret = _tcf_hdrfield_put(pipeline, parser, hdrfield, false,
+					extack);
 		if (ret < 0)
 			goto out_nlmsg_trim;
 	}

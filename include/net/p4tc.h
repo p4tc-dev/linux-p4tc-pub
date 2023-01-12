@@ -324,6 +324,7 @@ struct p4tc_header_field {
 	struct p4tc_parser          *parser;
 	u32                         parser_inst_id;
 	u32                         hdr_field_id;
+	refcount_t                  hdrfield_ref;
 	u16                         startbit;
 	u16                         endbit;
 	u8                          datatype; /* T_XXX */
@@ -481,6 +482,10 @@ bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
 				struct p4tc_header_field *hdrfield);
 void *tcf_hdrfield_fetch(struct sk_buff *skb,
 			 struct p4tc_header_field *hdrfield);
+struct p4tc_header_field *
+tcf_hdrfield_get(struct p4tc_parser *parser, const char *hdrfield_name,
+		u32 hdrfield_id, struct netlink_ext_ack *extack);
+void tcf_hdrfield_put_ref(struct p4tc_header_field *hdrfield);
 
 struct p4tc_register *tcf_register_find_byid(struct p4tc_pipeline *pipeline,
 					     const u32 reg_id);
