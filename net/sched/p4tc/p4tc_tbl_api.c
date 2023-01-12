@@ -381,45 +381,80 @@ tcf_table_entry_mask_add(struct p4tc_table *table,
 	return mask_found;
 }
 
-static void tcf_table_entry_del_act_work(struct work_struct *work)
+static void tcf_table_entry_del_act(struct p4tc_table_entry *entry)
 {
-	struct p4tc_table_entry *entry;
-
-	entry = container_of(work, typeof(*entry), work);
-
 	tcf_action_destroy(entry->acts, TCA_ACT_UNBIND);
 	kfree(entry->acts);
 	kfree(entry);
 }
 
-static void tcf_table_entry_put(struct rcu_head *rcu)
+static void tcf_table_entry_del_act_work(struct work_struct *work)
 {
-	struct p4tc_table_entry *entry;
+	struct p4tc_table_entry_work *entry_work;
+
+	entry_work = container_of(work, typeof(*entry_work), work);
+
+	tcf_table_entry_del_act(entry_work->entry);
+
+	refcount_dec(&entry_work->pipeline->p_entry_deferal_ref);
+
+	kfree(entry_work);
+}
+
+static void tcf_table_entry_put(struct p4tc_table_entry *entry)
+{
 	struct p4tc_table_entry_tm *tm;
 
-	entry = container_of(rcu, struct p4tc_table_entry, rcu);
 	tm = rcu_dereference(entry->tm);
 	kfree(tm);
 
 	kfree(entry->key.unmasked_key);
 	kfree(entry->key.value);
 
-	if (entry->acts)
-		schedule_work(&entry->work);
-	else
+	if (entry->acts) {
+		struct p4tc_table_entry_work *entry_work = entry->entry_work;
+
+		if (entry_work->defer_deletion) {
+			refcount_inc(&entry_work->pipeline->p_entry_deferal_ref);
+			schedule_work(&entry_work->work);
+		} else {
+			kfree(entry_work);
+			tcf_table_entry_del_act(entry);
+		}
+	} else {
+		kfree(entry->entry_work);
 		kfree(entry);
+	}
+}
+
+static void tcf_table_entry_put_rcu(struct rcu_head *rcu)
+{
+	struct p4tc_table_entry *entry;
+
+	entry = container_of(rcu, struct p4tc_table_entry, rcu);
+
+	tcf_table_entry_put(entry);
 }
 
 static int tcf_table_entry_destroy(struct p4tc_table *table,
-				   struct p4tc_table_entry *entry)
+				   struct p4tc_table_entry *entry,
+				   bool remove_from_hash)
 {
 	/* Entry was deleted in parallel */
 	if (!refcount_dec_if_one(&entry->entries_ref))
 		return -EBUSY;
-	rhltable_remove(&table->tbl_entries, &entry->ht_node,
-			entry_hlt_params);
+
+	if (remove_from_hash)
+		rhltable_remove(&table->tbl_entries, &entry->ht_node,
+				entry_hlt_params);
+
 	tcf_table_entry_mask_del(table, entry);
-	call_rcu(&entry->rcu, tcf_table_entry_put);
+	if (entry->entry_work->defer_deletion) {
+		call_rcu(&entry->rcu, tcf_table_entry_put_rcu);
+	} else {
+		synchronize_rcu();
+		tcf_table_entry_put(entry);
+	}
 
 	return 0;
 }
@@ -432,9 +467,10 @@ void tcf_table_entry_destroy_hash(void *ptr, void *arg)
 	struct p4tc_table *table = arg;
 	struct p4tc_table_entry *entry = ptr;
 
-	WARN_ON(refcount_dec_not_one(&table->tbl_entries_ref));
+	refcount_dec(&table->tbl_entries_ref);
 
-	tcf_table_entry_destroy(table, entry);
+	entry->entry_work->defer_deletion = false;
+	tcf_table_entry_destroy(table, entry, false);
 }
 
 static void tcf_table_entry_put_table(struct p4tc_pipeline *pipeline,
@@ -557,8 +593,7 @@ static void tcf_table_entry_build_key(struct p4tc_table_entry_key *key,
 static int ___tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 				  struct p4tc_table *table,
 				  struct p4tc_table_entry *entry,
-				  bool from_control,
-				  struct netlink_ext_ack *extack)
+				  bool from_control)
    __must_hold(RCU)
 {
 	int ret = 0;
@@ -571,25 +606,15 @@ static int ___tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 			return -EPERM;
 	}
 
-	if (!refcount_dec_not_one(&pipeline->p_ref)) {
-		NL_SET_ERR_MSG(extack, "Pipeline is stale");
-		ret = -EBUSY;
-		goto out;
-	}
-
-	if (!refcount_dec_not_one(&table->tbl_entries_ref)) {
-		NL_SET_ERR_MSG(extack, "Table entry is stale");
-		ret = -EBUSY;
-		goto inc_p_ref;
-	}
+	if (!refcount_dec_not_one(&table->tbl_entries_ref))
+		return -EBUSY;
 
 	spin_lock_bh(&table->tbl_prio_idr_lock);
 	idr_remove(&table->tbl_prio_idr, entry->prio);
 	spin_unlock_bh(&table->tbl_prio_idr_lock);
 
-	if (tcf_table_entry_destroy(table, entry) < 0) {
-		NL_SET_ERR_MSG(extack,
-			       "Unable to destroy referenced entry");
+	if (tcf_table_entry_destroy(table, entry, true) < 0) {
+		ret = -EBUSY;
 		goto inc_entries_ref;
 	}
 
@@ -597,9 +622,6 @@ static int ___tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 
 inc_entries_ref:
 	WARN_ON(!refcount_dec_not_one(&table->tbl_entries_ref));
-
-inc_p_ref:
-	WARN_ON(refcount_inc_not_zero(&pipeline->p_ref));
 
 out:
 	return ret;
@@ -618,7 +640,6 @@ static int __tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 
 	tcf_table_entry_build_key(key, mask);
 
-	rcu_read_lock();
 	entry = p4tc_entry_lookup(table, key, prio);
 	if (!entry) {
 		rcu_read_unlock();
@@ -626,8 +647,8 @@ static int __tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 		return -EINVAL;
 	}
 
-	ret = ___tcf_table_entry_del(pipeline, table, entry, false, extack);
-	rcu_read_unlock();
+	entry->entry_work->defer_deletion = true;
+	ret = ___tcf_table_entry_del(pipeline, table, entry, false);
 
 	return ret;
 }
@@ -759,8 +780,8 @@ static int tcf_table_entry_gd(struct net *net, struct sk_buff *skb,
 	}
 
 	if (n->nlmsg_type == RTM_DELP4TBENT) {
-		ret = ___tcf_table_entry_del(pipeline, table, entry, true,
-					     extack);
+		entry->entry_work->defer_deletion = true;
+		ret = ___tcf_table_entry_del(pipeline, table, entry, true);
 		if (ret < 0)
 			goto unlock;
 	}
@@ -840,12 +861,6 @@ static int tcf_table_entry_flush(struct net *net, struct sk_buff *skb,
 				ret = -EPERM;
 				continue;
 			}
-			if (!refcount_dec_not_one(&pipeline->p_ref)) {
-				NL_SET_ERR_MSG(extack, "Pipeline is stale");
-				ret = -EBUSY;
-				rhashtable_walk_stop(&iter);
-				goto walk_exit;
-			}
 
 			if (!refcount_dec_not_one(&table->tbl_entries_ref)) {
 				NL_SET_ERR_MSG(extack, "Table entry is stale");
@@ -854,7 +869,8 @@ static int tcf_table_entry_flush(struct net *net, struct sk_buff *skb,
 				goto walk_exit;
 			}
 
-			if (tcf_table_entry_destroy(table, entry) < 0) {
+			entry->entry_work->defer_deletion = true;
+			if (tcf_table_entry_destroy(table, entry, true) < 0) {
 				ret = -EBUSY;
 				continue;
 			}
@@ -911,6 +927,7 @@ static int __tcf_table_entry_create(struct p4tc_pipeline *pipeline,
 {
 	struct p4tc_table_perm *tbl_perm;
 	struct p4tc_table_entry_mask *mask_found;
+	struct p4tc_table_entry_work *entry_work;
 	struct p4tc_table_entry_tm *dtm;
 	u16 permissions;
 	int ret;
@@ -935,14 +952,9 @@ static int __tcf_table_entry_create(struct p4tc_pipeline *pipeline,
 
 	tcf_table_entry_build_key(&entry->key, mask_found);
 
-	if (!refcount_inc_not_zero(&pipeline->p_ref))  {
-		ret = -EBUSY;
-		goto rm_masks_idr;
-	}
-
 	if (!refcount_inc_not_zero(&table->tbl_entries_ref))  {
 		ret = -EBUSY;
-		goto dec_p_ref;
+		goto rm_masks_idr;
 	}
 
 	if (p4tc_entry_lookup(table, &entry->key, entry->prio)) {
@@ -963,22 +975,34 @@ static int __tcf_table_entry_create(struct p4tc_pipeline *pipeline,
 	dtm->lastused = jiffies;
 	rcu_assign_pointer(entry->tm, dtm);
 
-	if (rhltable_insert(&table->tbl_entries, &entry->ht_node,
-			    entry_hlt_params) < 0) {
-		ret = -EBUSY;
+	entry_work = kzalloc(sizeof(*(entry_work)), GFP_ATOMIC);
+	if (!entry_work) {
+		ret = -ENOMEM;
 		goto free_tm;
 	}
 
+	entry_work->pipeline = pipeline;
+	entry_work->entry = entry;
+	entry->entry_work = entry_work;
+
+	INIT_WORK(&entry_work->work, tcf_table_entry_del_act_work);
+
+	if (rhltable_insert(&table->tbl_entries, &entry->ht_node,
+			    entry_hlt_params) < 0) {
+		ret = -EBUSY;
+		goto free_entry_work;
+	}
+
 	return 0;
+
+free_entry_work:
+	kfree(entry_work);
 
 free_tm:
 	kfree(dtm);
 /*If we are here, it means that this was just incremented, so it should be > 1 */
 dec_entries_ref:
 	WARN_ON(!refcount_dec_not_one(&table->tbl_entries_ref));
-
-dec_p_ref:
-	WARN_ON(!refcount_dec_not_one(&pipeline->p_ref));
 
 rm_masks_idr:
 	tcf_table_entry_mask_del(table, entry);
@@ -996,6 +1020,7 @@ static int __tcf_table_entry_update(struct p4tc_pipeline *pipeline,
 	__must_hold(RCU)
 {
 	struct p4tc_table_entry_mask *mask_found;
+	struct p4tc_table_entry_work *entry_work;
 	struct p4tc_table_entry *entry_old;
 	struct p4tc_table_entry_tm *tm_old;
 	struct p4tc_table_entry_tm *tm;
@@ -1054,19 +1079,34 @@ static int __tcf_table_entry_update(struct p4tc_pipeline *pipeline,
 
 	rcu_assign_pointer(entry->tm, tm);
 
-	if (rhltable_insert(&table->tbl_entries, &entry->ht_node,
-			    entry_hlt_params) < 0) {
-		ret = -EEXIST;
+	entry_work = kzalloc(sizeof(*(entry_work)), GFP_ATOMIC);
+	if (!entry_work) {
+		ret = -ENOMEM;
 		goto free_tm;
 	}
 
-	if (tcf_table_entry_destroy(table, entry_old) < 0) {
-		kfree(tm);
+	entry_work->pipeline = pipeline;
+	entry_work->entry = entry;
+	entry->entry_work = entry_work;
+
+	INIT_WORK(&entry_work->work, tcf_table_entry_del_act_work);
+
+	if (rhltable_insert(&table->tbl_entries, &entry->ht_node,
+			    entry_hlt_params) < 0) {
+		ret = -EEXIST;
+		goto free_entry_work;
+	}
+
+	entry_old->entry_work->defer_deletion = true;
+	if (tcf_table_entry_destroy(table, entry_old, true) < 0) {
 		ret = -EBUSY;
 		goto out;
 	}
 
 	return 0;
+
+free_entry_work:
+	kfree(entry_work);
 
 free_tm:
 	kfree(tm);
@@ -1130,10 +1170,13 @@ static int __tcf_table_entry_cu(struct net *net, u32 flags, struct nlattr **tb,
 			return -EINVAL;
 		}
 	}
-	if (tb[P4TC_ENTRY_WHODUNNIT])
+	if (tb[P4TC_ENTRY_WHODUNNIT]) {
 		whodunnit = *((u8 *)nla_data(tb[P4TC_ENTRY_WHODUNNIT]));
-	else
+	} else {
 		NL_SET_ERR_MSG(extack, "Must specify whodunnit attribute");
+		ret = -EINVAL;
+		goto idr_rm;
+	}
 
 	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
 	if (!entry) {
@@ -1221,6 +1264,7 @@ static int __tcf_table_entry_cu(struct net *net, u32 flags, struct nlattr **tb,
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_ENTRY_ACT], entry->acts,
+				       table->common.p_id,
 				       TCA_ACT_FLAGS_NO_RTNL, extack);
 		if (ret < 0) {
 			kfree(entry->acts);

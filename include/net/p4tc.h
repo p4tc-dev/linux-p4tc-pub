@@ -104,6 +104,7 @@ struct p4tc_pipeline {
 	u32                         p_meta_offset;
 	refcount_t                  p_ref;
 	refcount_t                  p_ctrl_ref;
+	refcount_t                  p_entry_deferal_ref;
 	u16                         num_tables;
 	u16                         curr_tables;
 	u8                          p_state;
@@ -272,6 +273,14 @@ void p4tc_label_ht_destroy(void *ptr, void *arg);
 
 extern const struct rhashtable_params entry_hlt_params;
 
+struct p4tc_table_entry;
+struct p4tc_table_entry_work {
+	struct work_struct   work;
+	struct p4tc_pipeline *pipeline;
+	struct p4tc_table_entry *entry;
+	bool defer_deletion;
+};
+
 struct p4tc_table_entry_key {
 	u8  *value;
 	u8  *unmasked_key;
@@ -288,11 +297,12 @@ struct p4tc_table_entry_mask {
 
 struct p4tc_table_entry {
 	struct p4tc_table_entry_key      key;
-	struct work_struct	         work;
+	struct work_struct               work;
 	struct p4tc_table_entry_tm __rcu *tm;
 	u32                              prio;
 	u32                              mask_id;
 	struct tc_action                 **acts;
+	struct p4tc_table_entry_work     *entry_work;
 	int                              num_acts;
 	struct rhlist_head               ht_node;
 	struct list_head                 list;

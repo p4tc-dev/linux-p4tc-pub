@@ -349,6 +349,7 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 	refcount_set(&pipeline->p_ref, 1);
 	refcount_set(&pipeline->p_ctrl_ref, 1);
 	refcount_set(&pipeline->p_hdrs_used, 1);
+	refcount_set(&pipeline->p_entry_deferal_ref, 1);
 
 	pipeline->common.ops = (struct p4tc_template_ops *)&p4tc_pipeline_ops;
 
