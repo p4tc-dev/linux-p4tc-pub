@@ -88,6 +88,17 @@ struct p4tc_template_common {
 
 extern const struct p4tc_template_ops p4tc_pipeline_ops;
 
+struct p4tc_act_dep_edge_node {
+	struct list_head head;
+	u32 act_id;
+};
+
+struct p4tc_act_dep_node {
+	struct list_head incoming_egde_list;
+	struct list_head head;
+	u32 act_id;
+};
+
 struct p4tc_pipeline {
 	struct p4tc_template_common common;
 	struct idr                  p_meta_idr;
@@ -100,8 +111,11 @@ struct p4tc_pipeline {
 	int                         num_preacts;
 	struct tc_action            **postacts;
 	int                         num_postacts;
+	struct list_head            act_dep_graph;
+	struct list_head            act_topological_order;
 	u32                         max_rules;
 	u32                         p_meta_offset;
+	u32                         num_created_acts;
 	refcount_t                  p_ref;
 	refcount_t                  p_ctrl_ref;
 	refcount_t                  p_entry_deferal_ref;
@@ -137,6 +151,19 @@ static inline bool pipeline_sealed(struct p4tc_pipeline *pipeline)
 {
 	return pipeline->p_state == P4TC_STATE_READY;
 }
+void tcf_pipeline_add_dep_edge(struct p4tc_pipeline *pipeline,
+			       struct p4tc_act_dep_edge_node *edge_node,
+			       u32 vertex_id);
+bool tcf_pipeline_check_act_backedge(struct p4tc_pipeline *pipeline,
+				     struct p4tc_act_dep_edge_node *edge_node,
+				     u32 vertex_id);
+int determine_act_topological_order(struct p4tc_pipeline *pipeline,
+				    bool copy_dep_graph);
+
+struct p4tc_act;
+void tcf_pipeline_delete_from_dep_graph(struct p4tc_pipeline *pipeline,
+					struct p4tc_act *act);
+
 
 struct p4tc_metadata {
 	struct p4tc_template_common common;
@@ -265,7 +292,9 @@ struct p4tc_act {
 	struct list_head            head;
 	u32                         a_id;
 	bool                        active;
+	refcount_t                  a_ref;
 };
+
 extern const struct p4tc_template_ops p4tc_act_ops;
 extern const struct rhashtable_params p4tc_label_ht_params;
 extern const struct rhashtable_params acts_params;
@@ -431,6 +460,10 @@ tcf_action_find_byany(struct p4tc_pipeline *pipeline,
 		      const char *act_name,
 		      const u32 a_id,
 		      struct netlink_ext_ack *extack);
+struct p4tc_act *
+tcf_action_get(struct p4tc_pipeline *pipeline,  const char *act_name,
+	       const u32 a_id, struct netlink_ext_ack *extack);
+void tcf_action_put(struct p4tc_act *act);
 int tcf_p4_dyna_template_init(struct net *net, struct tc_action **a,
 			      struct p4tc_act *act,
 			      struct list_head *params_list,

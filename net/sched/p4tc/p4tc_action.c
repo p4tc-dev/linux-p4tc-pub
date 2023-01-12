@@ -992,6 +992,25 @@ out:
 	return ERR_PTR(err);
 }
 
+struct p4tc_act *
+tcf_action_get(struct p4tc_pipeline *pipeline,  const char *act_name,
+	       const u32 a_id, struct netlink_ext_ack *extack)
+{
+	struct p4tc_act *act;
+
+	act = tcf_action_find_byany(pipeline, act_name, a_id, extack);
+	if (IS_ERR(act))
+		return act;
+
+	WARN_ON(!refcount_inc_not_zero(&act->a_ref));
+	return act;
+}
+
+void tcf_action_put(struct p4tc_act *act)
+{
+	WARN_ON(!refcount_dec_not_one(&act->a_ref));
+}
+
 static struct p4tc_act *
 tcf_action_find_byanyattr(struct nlattr *act_name_attr,
 			  const u32 a_id,
@@ -1236,17 +1255,24 @@ static const struct nla_policy p4tc_act_policy[P4TC_ACT_MAX + 1] = {
 };
 
 static int __tcf_act_put(struct net *net, struct p4tc_pipeline *pipeline,
-			struct p4tc_act *act, struct netlink_ext_ack *extack)
+			 struct p4tc_act *act, bool unconditional_purge,
+			 struct netlink_ext_ack *extack)
 {
 	struct p4tc_act_param *act_param;
 	unsigned long param_id, tmp;
+	struct tc_action_net *tn;
+	struct idr *idr;
 	int ret;
 
-	if (refcount_read(&act->ops.dyn_ref) > 1) {
+	if (!unconditional_purge && (refcount_read(&act->ops.dyn_ref) > 1 ||
+	    refcount_read(&act->a_ref) > 1)) {
 		NL_SET_ERR_MSG(extack,
 			       "Unable to delete referenced action template");
 		return -EBUSY;
 	}
+
+	tn = net_generic(net, act->ops.net_id);
+	idr = &tn->idrinfo->action_idr;
 
 	idr_for_each_entry_ul(&act->params_idr, act_param, tmp, param_id) {
 		idr_remove(&act->params_idr, param_id);
@@ -1273,9 +1299,15 @@ static int __tcf_act_put(struct net *net, struct p4tc_pipeline *pipeline,
 
 	idr_remove(&pipeline->p_act_idr, act->a_id);
 
+	if (!unconditional_purge)
+		tcf_pipeline_delete_from_dep_graph(pipeline, act);
+
 	list_del(&act->head);
 	kfree(act->p4_net_ops);
+
 	kfree(act);
+
+	pipeline->num_created_acts--;
 
 	return 0;
 }
@@ -1365,7 +1397,7 @@ static int tcf_act_flush(struct sk_buff *skb, struct net *net,
 	}
 
 	idr_for_each_entry_ul(&pipeline->p_act_idr, act, tmp, act_id) {
-		if (__tcf_act_put(net, pipeline, act, extack) < 0) {
+		if (__tcf_act_put(net, pipeline, act, false, extack) < 0) {
 			ret = -EBUSY;
 			continue;
 		}
@@ -1440,7 +1472,7 @@ static int tcf_act_gd(struct net *net, struct sk_buff *skb, struct nlmsghdr *n,
 	}
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE) {
-		ret = __tcf_act_put(net, pipeline, act, extack);
+		ret = __tcf_act_put(net, pipeline, act, false, extack);
 		if (ret < 0)
 			goto out_nlmsg_trim;
 	}
@@ -1453,14 +1485,14 @@ out_nlmsg_trim:
 }
 
 static int tcf_act_put(struct net *net, struct p4tc_template_common *tmpl,
-		       struct netlink_ext_ack *extack)
+		       bool unconditional_purge, struct netlink_ext_ack *extack)
 {
 	struct p4tc_act *act = to_act(tmpl);
 	struct p4tc_pipeline *pipeline;
 
 	pipeline = tcf_pipeline_find_byid(net, tmpl->p_id);
 
-	return __tcf_act_put(net, pipeline, act, extack);
+	return __tcf_act_put(net, pipeline, act, unconditional_purge, extack);
 }
 
 static void p4tc_params_replace_many(struct idr *params_idr,
@@ -1490,9 +1522,30 @@ int p4tc_init_net_ops(struct net *net, unsigned int id)
 	return tc_action_net_init(net, tn, &act->ops);
 }
 
+static inline void p4tc_action_net_exit(struct list_head *net_list,
+					unsigned int id)
+{
+	unsigned long a_id, tmp;
+	struct tc_action *a;
+	struct net *net;
+
+	rtnl_lock();
+	list_for_each_entry(net, net_list, exit_list) {
+		struct tc_action_net *tn = net_generic(net, id);
+
+		idr_for_each_entry_ul(&tn->idrinfo->action_idr, a, tmp, a_id) {
+			tcf_idr_release(a, atomic_read(&a->tcfa_bindcnt) > 0);
+		}
+
+		tcf_idrinfo_destroy(tn->ops, tn->idrinfo);
+		kfree(tn->idrinfo);
+	}
+	rtnl_unlock();
+}
+
 void p4tc_exit_net_ops(struct list_head *net_list, unsigned int id)
 {
-	tc_action_net_exit(net_list, id);
+	p4tc_action_net_exit(net_list, id);
 }
 
 static struct p4tc_act *
@@ -1505,6 +1558,7 @@ tcf_act_create(struct net *net, struct nlattr **tb,
 	int num_params = 0;
 	int ret = 0;
 	struct pernet_operations *p4_net_ops;
+	struct p4tc_act_dep_node *dep_node;
 	struct p4tc_act *act;
 	char *act_name;
 
@@ -1570,6 +1624,15 @@ tcf_act_create(struct net *net, struct nlattr **tb,
 		}
 	}
 
+	dep_node = kzalloc(sizeof(*dep_node), GFP_KERNEL);
+	if (!dep_node) {
+		ret = -ENOMEM;
+		goto idr_rm;
+	}
+	dep_node->act_id = act->a_id;
+	INIT_LIST_HEAD(&dep_node->incoming_egde_list);
+	list_add_tail(&dep_node->head, &pipeline->act_dep_graph);
+
 	refcount_set(&act->ops.dyn_ref, 1);
 	rtnl_unlock();
 	/* Increment module counter */
@@ -1579,7 +1642,7 @@ tcf_act_create(struct net *net, struct nlattr **tb,
 		NL_SET_ERR_MSG(extack,
 			       "Unable to register new action template");
 		rtnl_lock();
-		goto idr_rm;
+		goto free_dep_node;
 	}
 	rtnl_lock();
 
@@ -1599,10 +1662,20 @@ tcf_act_create(struct net *net, struct nlattr **tb,
 			goto uninit;
 	}
 
+	pipeline->num_created_acts++;
+
+	ret = determine_act_topological_order(pipeline, true);
+	if (ret < 0) {
+		pipeline->num_created_acts--;
+		goto uninit;
+	}
+
 	act->common.p_id = pipeline->common.p_id;
 	snprintf(act->common.name, ACTNAMSIZ, "%s/%s", pipeline->common.name,
 		 act_name);
 	act->common.ops = (struct p4tc_template_ops *)&p4tc_act_ops;
+
+	refcount_set(&act->a_ref, 1);
 
 	list_add_tail(&act->head, &dynact_list);
 
@@ -1616,6 +1689,10 @@ unregister:
 	rtnl_unlock();
 	tcf_unregister_action(&act->ops, p4_net_ops);
 	rtnl_lock();
+
+free_dep_node:
+	list_del(&dep_node->head);
+	kfree(dep_node);
 
 idr_rm:
 	idr_remove(&pipeline->p_act_idr, act->a_id);

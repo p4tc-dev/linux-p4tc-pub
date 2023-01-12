@@ -84,6 +84,222 @@ static const struct nla_policy tc_pipeline_policy[P4TC_PIPELINE_MAX + 1] = {
 	[P4TC_PIPELINE_POSTACTIONS] = { .type = NLA_NESTED },
 };
 
+static void __act_dep_graph_free(struct list_head *incoming_egde_list)
+{
+	struct p4tc_act_dep_edge_node *cursor_edge, *tmp_edge;
+
+	list_for_each_entry_safe(cursor_edge, tmp_edge, incoming_egde_list,
+				 head) {
+		list_del(&cursor_edge->head);
+		kfree(cursor_edge);
+	}
+}
+
+static void act_dep_graph_free(struct list_head *graph)
+{
+	struct p4tc_act_dep_node *cursor, *tmp;
+
+	list_for_each_entry_safe(cursor, tmp, graph, head) {
+
+		__act_dep_graph_free(&cursor->incoming_egde_list);
+
+		list_del(&cursor->head);
+		kfree(cursor);
+	}
+}
+
+void tcf_pipeline_delete_from_dep_graph(struct p4tc_pipeline *pipeline,
+					struct p4tc_act *act)
+{
+	struct p4tc_act_dep_node *act_node, *node_tmp;
+
+	list_for_each_entry_safe(act_node, node_tmp, &pipeline->act_dep_graph,
+				 head) {
+		if (act_node->act_id == act->a_id) {
+			__act_dep_graph_free(&act_node->incoming_egde_list);
+			list_del(&act_node->head);
+			kfree(act_node);
+		}
+	}
+
+	list_for_each_entry_safe(act_node, node_tmp,
+				 &pipeline->act_topological_order, head) {
+		if (act_node->act_id == act->a_id) {
+			list_del(&act_node->head);
+			kfree(act_node);
+		}
+	}
+}
+
+/* Node id indicates the callee's act id.
+ * edge_node->act_id indicates the caller's act id.
+ */
+void tcf_pipeline_add_dep_edge(struct p4tc_pipeline *pipeline,
+			       struct p4tc_act_dep_edge_node *edge_node,
+			       u32 node_id)
+{
+	struct p4tc_act_dep_node *cursor;
+
+	list_for_each_entry(cursor, &pipeline->act_dep_graph, head) {
+		if (cursor->act_id == node_id)
+			break;
+	}
+
+	list_add_tail(&edge_node->head, &cursor->incoming_egde_list);
+}
+
+/* Find root node, that is, the node in our graph that has no incoming edges.
+ */
+struct p4tc_act_dep_node *find_root_node(struct list_head *act_dep_graph)
+{
+	struct p4tc_act_dep_node *cursor, *root_node;
+
+	list_for_each_entry(cursor, act_dep_graph, head) {
+		if (list_empty(&cursor->incoming_egde_list)) {
+			root_node = cursor;
+			return root_node;
+		}
+	}
+
+	return NULL;
+}
+
+/* node_id indicates where the edge is directed to
+ * edge_node->act_id indicates where the edge comes from.
+ */
+bool tcf_pipeline_check_act_backedge(struct p4tc_pipeline *pipeline,
+				     struct p4tc_act_dep_edge_node *edge_node,
+				     u32 node_id)
+{
+	struct p4tc_act_dep_node *root_node = NULL;
+
+	/* make sure we dont call ourselves */
+	if (edge_node->act_id == node_id)
+		return true;
+
+	/* add to the list temporarily so we can run our algorithm to
+	 * find edgeless node and detect a cycle
+	*/
+	tcf_pipeline_add_dep_edge(pipeline, edge_node, node_id);
+
+	/* Now lets try to find a node which has no incoming edges (root node).
+	 * If we find a root node it means there is no cycle;
+	 * OTOH, if we dont find one, it means we have circular depency.
+	 */
+	root_node = find_root_node(&pipeline->act_dep_graph);
+
+	if (!root_node)
+		return true;
+
+	list_del(&edge_node->head);
+
+	return false;
+}
+
+static struct p4tc_act_dep_node *
+find_and_del_root_node(struct list_head *act_dep_graph)
+{
+	struct p4tc_act_dep_node *cursor, *tmp, *root_node;
+
+	root_node = find_root_node(act_dep_graph);
+	list_del(&root_node->head);
+
+	list_for_each_entry_safe(cursor, tmp, act_dep_graph, head) {
+		struct p4tc_act_dep_edge_node *cursor_edge, *tmp_edge;
+
+		list_for_each_entry_safe(cursor_edge, tmp_edge,
+					 &cursor->incoming_egde_list, head) {
+			if (cursor_edge->act_id == root_node->act_id) {
+				list_del(&cursor_edge->head);
+				kfree(cursor_edge);
+			}
+		}
+	}
+
+	return root_node;
+}
+
+static int act_dep_graph_copy(struct list_head *new_graph,
+			      struct list_head *old_graph)
+{
+	int err = -ENOMEM;
+	struct p4tc_act_dep_node *cursor, *tmp;
+
+	list_for_each_entry_safe(cursor, tmp, old_graph, head) {
+		struct p4tc_act_dep_edge_node *cursor_edge, *tmp_edge;
+		struct p4tc_act_dep_node *new_dep_node;
+
+		new_dep_node = kzalloc(sizeof(*new_dep_node), GFP_KERNEL);
+		if (!new_dep_node)
+			goto free_graph;
+
+		INIT_LIST_HEAD(&new_dep_node->incoming_egde_list);
+		list_add_tail(&new_dep_node->head, new_graph);
+		new_dep_node->act_id = cursor->act_id;
+
+		list_for_each_entry_safe(cursor_edge, tmp_edge,
+					 &cursor->incoming_egde_list, head) {
+			struct p4tc_act_dep_edge_node *new_dep_edge_node;
+
+			new_dep_edge_node = kzalloc(sizeof(*new_dep_edge_node),
+						    GFP_KERNEL);
+			if (!new_dep_edge_node)
+				goto free_graph;
+
+			list_add_tail(&new_dep_edge_node->head,
+				      &new_dep_node->incoming_egde_list);
+			new_dep_edge_node->act_id = cursor_edge->act_id;
+		}
+	}
+
+	return 0;
+
+free_graph:
+	act_dep_graph_free(new_graph);
+	return err;
+}
+
+int determine_act_topological_order(struct p4tc_pipeline *pipeline,
+			       bool copy_dep_graph)
+{
+	int i = pipeline->num_created_acts;
+	struct p4tc_act_dep_node *act_node, *node_tmp;
+	struct p4tc_act_dep_node *node;
+	struct list_head *dep_graph;
+
+	if (copy_dep_graph) {
+		int err;
+
+		dep_graph = kzalloc(sizeof(*dep_graph), GFP_KERNEL);
+		if (!dep_graph)
+			return -ENOMEM;
+
+		INIT_LIST_HEAD(dep_graph);
+		err = act_dep_graph_copy(dep_graph, &pipeline->act_dep_graph);
+		if (err < 0)
+			return err;
+	} else {
+		dep_graph = &pipeline->act_dep_graph;
+	}
+
+	/* Clear from previous calls */
+	list_for_each_entry_safe(act_node, node_tmp,
+				 &pipeline->act_topological_order, head) {
+		list_del(&act_node->head);
+		kfree(act_node);
+	}
+
+	while (i--) {
+		node = find_and_del_root_node(dep_graph);
+		list_add_tail(&node->head, &pipeline->act_topological_order);
+	}
+
+	if (copy_dep_graph)
+		kfree(dep_graph);
+
+	return 0;
+}
+
 static void tcf_pipeline_destroy(struct rcu_head *head)
 {
 	struct p4tc_pipeline *pipeline;
@@ -105,10 +321,10 @@ static int tcf_pipeline_put(struct net *net,
 {
 	struct p4tc_pipeline_net *pipe_net = net_generic(net, pipeline_net_id);
 	struct p4tc_pipeline *pipeline = to_pipeline(template);
-	unsigned long reg_id, tbl_id, act_id, m_id, tmp;
+	unsigned long reg_id, tbl_id, m_id, tmp;
+	struct p4tc_act_dep_node *act_node, *node_tmp;
 	struct p4tc_table *table;
 	struct p4tc_metadata *meta;
-	struct p4tc_act *act;
 	struct p4tc_register *reg;
 
 	if (!refcount_dec_if_one(&pipeline->p_ctrl_ref)) {
@@ -123,17 +339,6 @@ static int tcf_pipeline_put(struct net *net,
 			       "Can't delete referenced pipeline");
 		return -EBUSY;
 	}
-
-	idr_for_each_entry_ul(&pipeline->p_meta_idr, meta, tmp, m_id)
-		meta->common.ops->put(net, &meta->common, true, extack);
-
-	idr_for_each_entry_ul(&pipeline->p_act_idr, act, tmp, act_id)
-		act->common.ops->put(net, &act->common, extack);
-
-	idr_for_each_entry_ul(&pipeline->p_tbl_idr, table, tmp, tbl_id)
-		table->common.ops->put(net, &table->common, true, extack);
-
-	idr_remove(&pipe_net->pipeline_idr, pipeline->common.p_id);
 
 	/* XXX: The action fields are only accessed in the control path
 	 * since they will be copied to the filter, where the data path
@@ -150,11 +355,31 @@ static int tcf_pipeline_put(struct net *net,
 		kfree(pipeline->postacts);
 	}
 
-	idr_for_each_entry_ul(&pipeline->p_reg_idr, reg, tmp, reg_id)
-		reg->common.ops->put(net, &reg->common, true, extack);
+	idr_for_each_entry_ul(&pipeline->p_tbl_idr, table, tmp, tbl_id)
+		table->common.ops->put(net, &table->common, true, extack);
+
+	act_dep_graph_free(&pipeline->act_dep_graph);
+
+	list_for_each_entry_safe(act_node, node_tmp,
+				 &pipeline->act_topological_order, head) {
+		struct p4tc_act *act;
+
+		act = tcf_action_find_byid(pipeline, act_node->act_id);
+		act->common.ops->put(net, &act->common, true, extack);
+		list_del(&act_node->head);
+		kfree(act_node);
+	}
+
+	idr_for_each_entry_ul(&pipeline->p_meta_idr, meta, tmp, m_id)
+		meta->common.ops->put(net, &meta->common, true, extack);
 
 	if (pipeline->parser)
 		tcf_parser_del(net, pipeline, pipeline->parser, extack);
+
+	idr_for_each_entry_ul(&pipeline->p_reg_idr, reg, tmp, reg_id)
+		reg->common.ops->put(net, &reg->common, true, extack);
+
+	idr_remove(&pipe_net->pipeline_idr, pipeline->common.p_id);
 
 	call_rcu(&pipeline->rcu, tcf_pipeline_destroy);
 
@@ -186,6 +411,10 @@ static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 	ret = tcf_table_try_set_state_ready(pipeline, extack);
 	if (ret < 0)
 		return ret;
+
+
+	/* Will never fail in this case */
+	determine_act_topological_order(pipeline, false);
 
 	pipeline->p_state = P4TC_STATE_READY;
 	return true;
@@ -343,6 +572,10 @@ tcf_pipeline_create(struct net *net, struct nlmsghdr *n,
 	pipeline->p_meta_offset = 0;
 
 	idr_init(&pipeline->p_reg_idr);
+
+	INIT_LIST_HEAD(&pipeline->act_dep_graph);
+	INIT_LIST_HEAD(&pipeline->act_topological_order);
+	pipeline->num_created_acts = 0;
 
 	pipeline->p_state = P4TC_STATE_NOT_READY;
 
