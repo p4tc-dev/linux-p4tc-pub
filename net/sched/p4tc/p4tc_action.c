@@ -103,7 +103,7 @@ static int __tcf_p4_dyna_init(struct net *net, struct nlattr *est,
 		ret = tcf_idr_create(tn, index, est, a,
 				     a_o, bind, false, flags);
 		if (ret) {
-			tcf_idr_cleanup(tn, index);
+			tcf_idr_cleanup(act->tn, index);
 			return ret;
 		}
 
@@ -120,6 +120,7 @@ static int __tcf_p4_dyna_init(struct net *net, struct nlattr *est,
 
 		p = to_p4act(*a);
 		p->p_id = pipeline->common.p_id;
+		p->act_id = act->a_id;
 		INIT_LIST_HEAD(&p->cmd_operations);
 
 		ret = ACT_P_CREATED;
@@ -197,6 +198,13 @@ static int tcf_p4_dyna_init(struct net *net, struct nlattr *nla,
 	struct p4tc_act *act;
 	int err;
 
+	if (flags & TCA_ACT_FLAGS_BIND &&
+	    !(flags & TCA_ACT_FLAGS_FROM_P4TC)) {
+		NL_SET_ERR_MSG(extack,
+			       "Can only bind to dynamic action from P4TC objects");
+		return -EPERM;
+	}
+
 	if (!nla) {
 		NL_SET_ERR_MSG(extack,
 			       "Must specify action netlink attributes");
@@ -235,6 +243,10 @@ static int tcf_p4_dyna_init(struct net *net, struct nlattr *nla,
 		return ret;
 	if (bind && !ret)
 		return 0;
+
+	err = tcf_action_check_ctrlact(parm->action, tp, &goto_ch, extack);
+	if (err < 0)
+		goto release_idr;
 
 	params = kzalloc(sizeof(*params), GFP_KERNEL);
 	if (!params) {
@@ -492,6 +504,10 @@ int tcf_p4_dyna_template_init(struct net *net, struct tc_action **a,
 				 flags, extack);
 	if (ret < 0)
 		return ret;
+
+	err = tcf_action_check_ctrlact(parm->action, NULL, &goto_ch, extack);
+	if (err < 0)
+		goto release_idr;
 
 	params = kzalloc(sizeof(*params), GFP_KERNEL);
 	if (!params) {
@@ -1667,7 +1683,7 @@ tcf_act_create(struct net *net, struct nlattr **tb,
 	ret = determine_act_topological_order(pipeline, true);
 	if (ret < 0) {
 		pipeline->num_created_acts--;
-		goto uninit;
+		goto release_cmds;
 	}
 
 	act->common.p_id = pipeline->common.p_id;
@@ -1680,6 +1696,10 @@ tcf_act_create(struct net *net, struct nlattr **tb,
 	list_add_tail(&act->head, &dynact_list);
 
 	return act;
+
+release_cmds:
+	if (tb[P4TC_ACT_CMDS_LIST])
+		p4tc_cmds_release_ope_list(net, &act->cmd_operations, false);
 
 uninit:
 	p4_put_many_params(&act->params_idr, params, num_params);
@@ -1766,8 +1786,18 @@ tcf_act_update(struct net *net, struct nlattr **tb,
 			goto params_del;
 	}
 
+	if (tb[P4TC_ACT_CMDS_LIST]) {
+		ret = determine_act_topological_order(pipeline, true);
+		if (ret < 0)
+			goto release_cmds;
+	}
+
 	p4tc_params_replace_many(&act->params_idr, params, num_params);
 	return act;
+
+release_cmds:
+	if (tb[P4TC_ACT_CMDS_LIST])
+		p4tc_cmds_release_ope_list(net, &act->cmd_operations, false);
 
 params_del:
 	p4_put_many_params(&act->params_idr, params, num_params);

@@ -298,9 +298,8 @@ static int validate_table_operand(struct p4tc_act *act,
 {
 	struct p4tc_table *table;
 
-	table = tcf_table_find_byany(act->pipeline,
-				     (const char*)kopnd->path_or_value,
-				     kopnd->immedv, extack);
+	table = tcf_table_get(act->pipeline, (const char*)kopnd->path_or_value,
+			      kopnd->immedv, extack);
 	if (IS_ERR(table))
 		return PTR_ERR(table);
 
@@ -318,9 +317,8 @@ static int validate_key_operand(struct p4tc_act *act,
 
 	kopnd->pipeid = act->pipeline->common.p_id;
 
-	table = tcf_table_find_byany(act->pipeline,
-				     (const char*)kopnd->path_or_value,
-				     kopnd->immedv, extack);
+	table = tcf_table_get(act->pipeline, (const char*)kopnd->path_or_value,
+			      kopnd->immedv, extack);
 	if (IS_ERR(table))
 		return PTR_ERR(table);
 	kopnd->immedv = table->tbl_id;
@@ -388,9 +386,9 @@ static int validate_hdrfield_operand(struct p4tc_act *act,
 		return PTR_ERR(parser);
 	kopnd->immedv = parser->parser_inst_id;
 
-	hdrfield = tcf_hdrfield_find_byany(parser,
-					   (const char*)kopnd->path_or_value_extra,
-					   kopnd->immedv2, extack);
+	hdrfield = tcf_hdrfield_get(parser,
+				    (const char*)kopnd->path_or_value_extra,
+				    kopnd->immedv2, extack);
 	if (IS_ERR(hdrfield))
 		return PTR_ERR(hdrfield);
 	kopnd->immedv2 = hdrfield->hdr_field_id;
@@ -419,16 +417,22 @@ static int validate_hdrfield_operand(struct p4tc_act *act,
 		kopnd->oper_mask_shift = mask_shift;
 	}
 
-        kopnd->priv = hdrfield;
+	kopnd->priv = hdrfield;
 
 	refcount_inc(&act->pipeline->p_hdrs_used);
 
 	return 0;
 }
 
+struct p4tc_cmd_opnd_priv_dev {
+	struct net_device *dev;
+	netdevice_tracker *tracker;
+};
+
 int validate_dev_operand(struct net *net, struct p4tc_cmd_operand *kopnd,
 			 struct netlink_ext_ack *extack)
 {
+	struct p4tc_cmd_opnd_priv_dev *priv_dev;
 	struct net_device *dev;
 
 	if (kopnd->oper_datatype->typeid != P4T_DEV) {
@@ -444,13 +448,18 @@ int validate_dev_operand(struct net *net, struct p4tc_cmd_operand *kopnd,
 		return -EINVAL;
 	}
 
+	priv_dev = kzalloc(sizeof(*priv_dev), GFP_KERNEL);
+	if (!priv_dev)
+		return -ENOMEM;
+	kopnd->priv = priv_dev;
+
 	dev = dev_get_by_index(net, kopnd->immedv);
 	if (!dev) {
 		NL_SET_ERR_MSG_MOD(extack, "Invalid ifindex");
-		return -EINVAL;
+		return -ENODEV;
 	}
-
-	kopnd->priv = dev;
+	priv_dev->dev = dev;
+	netdev_tracker_alloc(dev, priv_dev->tracker, GFP_KERNEL);
 
 	return 0;
 }
@@ -612,19 +621,19 @@ static int validate_reg_operand(struct p4tc_act *act,
 	struct p4tc_register *reg;
 	struct p4tc_type *t;
 
-	reg = tcf_register_find_byany(act->pipeline,
-				      (const char *)kopnd->path_or_value,
-				      kopnd->immedv, extack);
+	reg = tcf_register_get(act->pipeline,
+			       (const char *)kopnd->path_or_value,
+			       kopnd->immedv, extack);
 	if (IS_ERR(reg))
 		return PTR_ERR(reg);
 
 	kopnd->pipeid = act->pipeline->common.p_id;
+	kopnd->immedv = reg->reg_id;
 
 	if (kopnd->immedv2 >= reg->reg_num_elems) {
 		NL_SET_ERR_MSG_MOD(extack, "Register index out of bounds");
 		return -EINVAL;
 	}
-	kopnd->immedv = reg->reg_id;
 
 	t = reg->reg_type;
 	kopnd->oper_datatype = t;
@@ -675,8 +684,13 @@ create_metadata_bitops(struct p4tc_cmd_operand *kopnd,
 	u8 bitstart, bitend;
 	u32 bitsz;
 
-	bitstart = meta->m_startbit + kopnd->oper_bitstart;
-	bitend = meta->m_startbit + kopnd->oper_bitend;
+	if (kopnd->oper_flags & DATA_IS_SLICE) {
+		bitstart = meta->m_startbit + kopnd->oper_bitstart;
+		bitend = meta->m_startbit + kopnd->oper_bitend;
+	} else {
+		bitstart = meta->m_startbit;
+		bitend = meta->m_endbit;
+	}
 	bitsz = bitend - bitstart + 1;
 	mask_shift = t->ops->create_bitops(bitsz, bitstart, bitend,
 					   extack);
@@ -700,8 +714,8 @@ static int __validate_metadata_operand(struct net *net, struct p4tc_act *act,
 
 	kopnd->pipeid = pipeline->common.p_id;
 
-	meta = tcf_meta_find_byany(pipeline, (const char *)kopnd->path_or_value,
-				   kopnd->immedv, extack);
+	meta = tcf_meta_get(pipeline, (const char *)kopnd->path_or_value,
+			    kopnd->immedv, extack);
 	if (IS_ERR(meta))
 		return PTR_ERR(meta);
 	kopnd->immedv = meta->m_id;
@@ -884,46 +898,8 @@ static int validate_operand(struct net *net, struct p4tc_act *act,
 	return err;
 }
 
-#define noop
-
-static void _free_operand(struct net *net, struct p4tc_cmd_operand *op,
-			  bool called_from_template)
+static void __free_operand(struct p4tc_cmd_operand *op)
 {
-	if (op->oper_type == P4TC_OPER_HDRFIELD && net) {
-		struct p4tc_pipeline *pipeline;
-
-		pipeline = tcf_pipeline_find_byid(net, op->pipeid);
-		/* Should never be NULL */
-		if (pipeline)
-			refcount_dec(&pipeline->p_hdrs_used);
-	} else if (op->oper_type == P4TC_OPER_REG && net) {
-		struct p4tc_pipeline *pipeline;
-
-		pipeline = tcf_pipeline_find_byid(net, op->pipeid);
-		/* Should never be NULL */
-		if (pipeline) {
-			struct p4tc_register *reg;
-
-			reg = tcf_register_find_byid(pipeline, op->immedv);
-			/* The cmd creation may be aborted before we call
-			 * validate_operand, but the free function will always
-			 * be called after an abort. With this in mind, what may
-			 * happen is this function is called and
-			 * validate_operand is never called. When that happends,
-			 * the refcount was not incremented. To account for this
-			 * case, we need to check the refcount before decrementing
-			 */
-			if (reg && !refcount_dec_not_one(&reg->reg_ref))
-				noop;
-		}
-	} else if (op->oper_type == P4TC_OPER_DEV) {
-		struct net_device *dev;
-
-		dev = op->priv;
-		if (dev)
-			netdev_put(dev, NULL);
-	}
-
 	if (op->oper_mask_shift)
 		p4t_release(op->oper_mask_shift);
 	kfree(op->path_or_value);
@@ -932,14 +908,135 @@ static void _free_operand(struct net *net, struct p4tc_cmd_operand *op,
 	kfree(op);
 }
 
-static void _free_operand_list(struct net *net, struct list_head *operands_list,
-			       bool called_from_template)
+static void _free_operand_template(struct net *net, struct p4tc_cmd_operand *op)
+{
+	switch (op->oper_type) {
+	case P4TC_OPER_META: {
+		struct p4tc_pipeline *pipeline;
+		struct p4tc_metadata *meta;
+
+		pipeline = tcf_pipeline_find_byid(net, op->pipeid);
+		if (pipeline) {
+			meta = tcf_meta_find_byid(pipeline, op->immedv);
+			if (meta)
+				tcf_meta_put_ref(meta);
+		}
+		break;
+	}
+	case P4TC_OPER_ACTID: {
+		struct p4tc_pipeline *pipeline;
+		struct p4tc_act *act;
+
+		if (!(op->oper_flags & DATA_USES_ROOT_PIPE)) {
+			pipeline = tcf_pipeline_find_byid(net,
+							  op->pipeid);
+			if (pipeline) {
+				act = tcf_action_find_byid(pipeline,
+							   op->immedv);
+				if (act)
+					tcf_action_put(act);
+			}
+		}
+		kfree(op->priv);
+		break;
+	}
+	case P4TC_OPER_TBL: {
+		struct p4tc_pipeline *pipeline;
+		struct p4tc_table *table;
+
+		pipeline = tcf_pipeline_find_byid(net, op->pipeid);
+		if (pipeline) {
+			table = tcf_table_find_byid(pipeline,
+						    op->immedv);
+			if (table)
+				tcf_table_put_ref(table);
+		}
+		break;
+	}
+	case P4TC_OPER_KEY: {
+		struct p4tc_pipeline *pipeline;
+		struct p4tc_table *table;
+
+		pipeline = tcf_pipeline_find_byid(net, op->pipeid);
+		if (pipeline) {
+			table = tcf_table_find_byid(pipeline,
+						    op->immedv);
+			if (table)
+				tcf_table_put_ref(table);
+		}
+		break;
+	}
+	case P4TC_OPER_HDRFIELD: {
+		struct p4tc_pipeline *pipeline;
+
+		pipeline = tcf_pipeline_find_byid(net, op->pipeid);
+		/* Should never be NULL */
+		if (pipeline) {
+			struct p4tc_header_field *hdrfield;
+			struct p4tc_parser *parser;
+
+			if (refcount_read(&pipeline->p_hdrs_used) > 1)
+				refcount_dec(&pipeline->p_hdrs_used);
+
+			parser = tcf_parser_find_byid(pipeline,
+						      op->immedv);
+			if (parser) {
+				hdrfield = tcf_hdrfield_find_byid(parser,
+								  op->immedv2);
+
+				if (hdrfield)
+					if (refcount_read(&hdrfield->hdrfield_ref) > 1)
+						tcf_hdrfield_put_ref(hdrfield);
+			}
+		}
+		break;
+	}
+	case P4TC_OPER_DEV: {
+		struct p4tc_cmd_opnd_priv_dev *priv = op->priv;
+
+		if (priv && priv->dev)
+			netdev_put(priv->dev, priv->tracker);
+		kfree(priv);
+		break;
+	}
+	case P4TC_OPER_REG: {
+		struct p4tc_pipeline *pipeline;
+
+		pipeline = tcf_pipeline_find_byid(net, op->pipeid);
+		/* Should never be NULL */
+		if (pipeline) {
+			struct p4tc_register *reg;
+
+			reg = tcf_register_find_byid(pipeline,
+						     op->immedv);
+			if (reg)
+				tcf_register_put_ref(reg);
+		}
+		break;
+	}
+	}
+
+	__free_operand(op);
+}
+
+static void _free_operand_list_instance(struct list_head *operands_list)
 {
 	struct p4tc_cmd_operand *op, *tmp;
 
 	list_for_each_entry_safe(op, tmp, operands_list, oper_list_node) {
 		list_del(&op->oper_list_node);
-		_free_operand(net, op, called_from_template);
+		__free_operand(op);
+	}
+}
+
+static void _free_operand_list_template(struct net *net,
+					struct list_head *operands_list)
+{
+	struct p4tc_cmd_operand *op, *tmp;
+
+	list_for_each_entry_safe(op, tmp, operands_list, oper_list_node) {
+		list_del(&op->oper_list_node);
+		_free_operand_template(net, op);
 	}
 }
 
@@ -947,18 +1044,15 @@ static void _free_operation(struct net *net, struct p4tc_cmd_operate *ope,
 			    bool called_from_template,
 			    struct netlink_ext_ack *extack)
 {
-	_free_operand_list(net, &ope->operands_list, called_from_template);
+
+	if (called_from_template)
+		_free_operand_list_template(net, &ope->operands_list);
+	else
+		_free_operand_list_instance(&ope->operands_list);
 
 	kfree(ope->label1);
 	kfree(ope->label2);
 	kfree(ope);
-}
-
-static void free_op_SET(struct net *net, struct p4tc_cmd_operate *ope,
-			bool called_from_template,
-			struct netlink_ext_ack *extack)
-{
-	_free_operation(net, ope, called_from_template, extack);
 }
 
 /* XXX: copied from act_api::tcf_free_cookie_rcu - at some point share the code */
@@ -1010,9 +1104,9 @@ static void free_op_ACT(struct net *net, struct p4tc_cmd_operate *ope,
 		p = A->action;
 
 	if (p) {
-		struct tcf_idrinfo *idrinfo = p->idrinfo;
-
 		if (dec_act_refs) {
+			struct tcf_idrinfo *idrinfo = p->idrinfo;
+
 			atomic_dec(&p->tcfa_bindcnt);
 
 			if (refcount_dec_and_mutex_lock(&p->tcfa_refcnt,
@@ -1304,10 +1398,9 @@ static int check_runtime_params(struct p4tc_cmd_operate *ope,
 	return 0;
 }
 
-/* Syntax: act ACTION_ID ACTION_INDEX
- * Operation: The tc action instance of kind ID ACTION_ID and index ACTION_INDEX
+/* Syntax: act ACTION_ID ACTION_INDEX | act ACTION_ID/ACTION_NAME PARAMS
+ * Operation: The tc action instance of kind ID ACTION_ID and optional index ACTION_INDEX
  * is executed.
- * Restriction: The action instance must exist.
  */
 int validate_ACT(struct net *net, struct p4tc_act *act,
 		 struct p4tc_cmd_operate *ope,
@@ -1348,25 +1441,55 @@ int validate_ACT(struct net *net, struct p4tc_act *act,
 		}
 		A->pipeid = 0;
 	} else {
-		act = tcf_action_find_byany(act->pipeline,
+		struct p4tc_pipeline *pipeline = act->pipeline;
+		struct p4tc_act_dep_edge_node *edge_node;
+		struct p4tc_act *callee_act;
+		bool has_back_edge;
+
+		/* lets check if we have cycles where we are calling an
+		   action that might end calling us
+		 */
+		callee_act = tcf_action_get(pipeline,
 					    (const char*)A->path_or_value,
 					    A->immedv, extack);
-		if (IS_ERR(act))
-			return PTR_ERR(act);
+		if (IS_ERR(callee_act))
+			return PTR_ERR(callee_act);
 
 		A->pipeid = act->pipeline->common.p_id;
-		A->immedv = act->a_id;
+		A->immedv = callee_act->a_id;
+
+		edge_node = kzalloc(sizeof(*edge_node), GFP_KERNEL);
+		if (!edge_node) {
+			err = -ENOMEM;
+			goto free_params_list;
+		}
+		edge_node->act_id = act->a_id;
+
+		has_back_edge = tcf_pipeline_check_act_backedge(pipeline,
+								edge_node,
+								callee_act->a_id);
+		if (has_back_edge) {
+			NL_SET_ERR_MSG_FMT_MOD(extack,
+					       "Call creates a back edge: %s -> %s",
+					       act->common.name,
+					       callee_act->common.name);
+			err = -EINVAL;
+			kfree(edge_node);
+			goto free_params_list;
+		}
+
+		A->priv = edge_node;
 		if (is_runtime_act) {
 			u32 flags = TCA_ACT_FLAGS_BIND;
 			struct tc_act_dyna parm = {0};
 
-			err = validate_act_params(net, act, ope, A,
+			err = validate_act_params(net, callee_act, ope, A,
 						  &params_list, extack);
 			if (err < 0)
 				return err;
 
 			parm.action = TC_ACT_PIPE;
-			err = tcf_p4_dyna_template_init(net, &action, act,
+			err = tcf_p4_dyna_template_init(net, &action, callee_act,
 							&params_list, &parm,
 							flags, extack);
 			if (err < 0)
@@ -1375,7 +1498,7 @@ int validate_ACT(struct net *net, struct p4tc_act *act,
 			ope->op_flags |= P4TC_CMD_OPER_ACT_RUNTIME;
 		}
 
-		action_ops = &act->ops;
+		action_ops = &callee_act->ops;
 	}
 
 	if (!is_runtime_act) {
@@ -1970,7 +2093,7 @@ static void generic_free_op(struct net *net, struct p4tc_cmd_operate *ope,
 }
 
 static struct p4tc_cmd_s cmds[] = {
-	{ P4TC_CMD_OP_SET, 2, validate_SET, free_op_SET, p4tc_cmd_SET },
+	{ P4TC_CMD_OP_SET, 2, validate_SET, generic_free_op, p4tc_cmd_SET },
 	{ P4TC_CMD_OP_ACT, 1, validate_ACT, free_op_ACT, p4tc_cmd_ACT },
 	{ P4TC_CMD_OP_BEQ, 2, validate_BRN, generic_free_op, p4tc_cmd_BEQ },
 	{ P4TC_CMD_OP_BNE, 2, validate_BRN, generic_free_op, p4tc_cmd_BNE },
@@ -2445,14 +2568,26 @@ static int cmd_brn_validate(struct p4tc_act *act,
 	return 0;
 }
 
-static void p4tc_cmds_insert_acts(struct p4tc_cmd_operate *ope)
+static void p4tc_cmds_insert_acts(struct p4tc_act *act,
+				  struct p4tc_cmd_operate *ope)
 {
 	struct tc_action *actions[TCA_ACT_MAX_PRIO] = {NULL};
 	int i = 0;
 	struct p4tc_cmd_operand *kopnd;
 
 	list_for_each_entry(kopnd, &ope->operands_list, oper_list_node) {
-		if (kopnd->oper_type == P4TC_OPER_ACTID) {
+		if (kopnd->oper_type == P4TC_OPER_ACTID &&
+		    !(kopnd->oper_flags & DATA_USES_ROOT_PIPE)) {
+			struct p4tc_act_dep_edge_node *edge_node = kopnd->priv;
+			struct tcf_p4act *p = to_p4act(kopnd->action);
+
+			/* Add to the dependency graph so we can detect
+			 * circular references
+			 */
+			tcf_pipeline_add_dep_edge(act->pipeline, edge_node,
+						  p->act_id);
+			kopnd->priv = NULL;
+
 			actions[i] = kopnd->action;
 			i++;
 		}
@@ -2461,16 +2596,18 @@ static void p4tc_cmds_insert_acts(struct p4tc_cmd_operate *ope)
 	tcf_idr_insert_many(actions);
 }
 
-static void p4tc_cmds_ops_pass_to_list(struct p4tc_cmd_operate **oplist,
-				       struct list_head *cmd_operations)
+static void p4tc_cmds_ops_pass_to_list(struct p4tc_act *act,
+				       struct p4tc_cmd_operate **oplist,
+				       struct list_head *cmd_operations,
+				       bool called_from_instance)
 {
 	int i;
 
 	for (i = 0; i < P4TC_CMDS_LIST_MAX && oplist[i]; i++) {
 		struct p4tc_cmd_operate *ope = oplist[i];
 
-		if (ope->op_flags & P4TC_CMD_OPER_ACT_RUNTIME)
-			p4tc_cmds_insert_acts(ope);
+		if (!called_from_instance)
+			p4tc_cmds_insert_acts(act, ope);
 
 		list_add_tail(&ope->cmd_operations, cmd_operations);
 	}
@@ -2584,8 +2721,7 @@ static int p4tc_cmds_copy_opnd(struct p4tc_act *act,
 		if (!_new_kopnd->print_prefix) {
 			err = -ENOMEM;
                         goto err;
-                }
-
+		}
 		memcpy(_new_kopnd->print_prefix, kopnd->print_prefix,
 		       kopnd->print_prefix_sz);
 	}
@@ -2668,7 +2804,7 @@ int p4tc_cmds_copy(struct p4tc_act *act, struct list_head *new_cmd_operations,
 		i++;
 	}
 
-	p4tc_cmds_ops_pass_to_list(oplist, new_cmd_operations);
+	p4tc_cmds_ops_pass_to_list(act, oplist, new_cmd_operations, true);
 
 	return 0;
 
@@ -2718,12 +2854,10 @@ int p4tc_cmds_parse(struct net *net,
 		if (err) {
 			kfree_tmp_oplist(net, oplist, true);
 
-			if (err == P4TC_CMD_POLICY) {
+			if (err == P4TC_CMD_POLICY)
 				err = -EINVAL;
-				goto free_labels;
-			}
 
-			return err;
+			goto free_labels;
 		}
 	}
 
@@ -2743,7 +2877,7 @@ int p4tc_cmds_parse(struct net *net,
 	}
 
 	/*XXX: At this point we have all the cmds and they are valid */
-	p4tc_cmds_ops_pass_to_list(oplist, &act->cmd_operations);
+	p4tc_cmds_ops_pass_to_list(act, oplist, &act->cmd_operations, false);
 
 	return 0;
 
