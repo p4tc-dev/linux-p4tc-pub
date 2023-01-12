@@ -467,7 +467,7 @@ struct p4tc_parser *tcf_parser_find_byid(struct p4tc_pipeline *pipeline,
 struct p4tc_parser *
 tcf_parser_find_byany(struct p4tc_pipeline *pipeline, const char *parser_name,
 		      u32 parser_inst_id, struct netlink_ext_ack *extack);
-int tcf_parser_del(struct p4tc_pipeline *pipeline,
+int tcf_parser_del(struct net *net, struct p4tc_pipeline *pipeline,
 		   struct p4tc_parser *parser, struct netlink_ext_ack *extack);
 bool tcf_parser_is_callable(struct p4tc_parser *parser);
 int tcf_skb_parse(struct sk_buff *skb, struct p4tc_skb_ext *p4tc_ext,

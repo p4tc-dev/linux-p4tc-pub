@@ -124,9 +124,6 @@ static int tcf_pipeline_put(struct net *net,
 		return -EBUSY;
 	}
 
-	if (pipeline->parser)
-		tcf_parser_del(pipeline, pipeline->parser, extack);
-
 	idr_for_each_entry_ul(&pipeline->p_meta_idr, meta, tmp, m_id)
 		meta->common.ops->put(net, &meta->common, true, extack);
 
@@ -153,9 +150,11 @@ static int tcf_pipeline_put(struct net *net,
 		kfree(pipeline->postacts);
 	}
 
-
 	idr_for_each_entry_ul(&pipeline->p_reg_idr, reg, tmp, reg_id)
 		reg->common.ops->put(net, &reg->common, true, extack);
+
+	if (pipeline->parser)
+		tcf_parser_del(net, pipeline, pipeline->parser, extack);
 
 	call_rcu(&pipeline->rcu, tcf_pipeline_destroy);
 

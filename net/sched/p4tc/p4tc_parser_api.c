@@ -207,15 +207,16 @@ bool tcf_parser_check_hdrfields(struct p4tc_parser *parser,
 	return true;
 }
 
-int tcf_parser_del(struct p4tc_pipeline *pipeline,
+int tcf_parser_del(struct net *net, struct p4tc_pipeline *pipeline,
 		   struct p4tc_parser *parser, struct netlink_ext_ack *extack)
 {
-	if (!refcount_dec_if_one(&parser->parser_ref)) {
-		NL_SET_ERR_MSG(extack, "Unable to delete referenced parser");
-		return -EBUSY;
-	}
+	struct p4tc_header_field *hdrfield;
+	unsigned long hdr_field_id, tmp;
 
 	__tcf_parser_put(parser);
+
+	idr_for_each_entry_ul(&parser->hdr_fields_idr, hdrfield, tmp, hdr_field_id)
+		hdrfield->common.ops->put(net, &hdrfield->common, true, extack);
 
 	idr_destroy(&parser->hdr_fields_idr);
 
