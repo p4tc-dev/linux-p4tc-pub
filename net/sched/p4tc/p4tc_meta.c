@@ -37,10 +37,10 @@ static const struct nla_policy p4tc_meta_policy[P4TC_META_MAX + 1] = {
 };
 
 static int _tcf_meta_put(struct p4tc_pipeline *pipeline,
-			 struct p4tc_metadata *meta,
+			 struct p4tc_metadata *meta, bool unconditional_purge,
 			 struct netlink_ext_ack *extack)
 {
-	if (!refcount_dec_if_one(&meta->m_ref))
+	if (!unconditional_purge && !refcount_dec_if_one(&meta->m_ref))
 		return -EBUSY;
 
 	pipeline->p_meta_offset -= BITS_TO_U32(meta->m_sz) * sizeof(u32);
@@ -52,13 +52,13 @@ static int _tcf_meta_put(struct p4tc_pipeline *pipeline,
 }
 
 static int tcf_meta_put(struct net *net, struct p4tc_template_common *template,
-			struct netlink_ext_ack *extack)
+			bool unconditional_purge, struct netlink_ext_ack *extack)
 {
 	struct p4tc_pipeline *pipeline = tcf_pipeline_find_byid(net, template->p_id);
 	struct p4tc_metadata *meta = to_meta(template);
 	int ret;
 
-	ret = _tcf_meta_put(pipeline, meta, extack);
+	ret = _tcf_meta_put(pipeline, meta, unconditional_purge, extack);
 	if (ret < 0)
 		NL_SET_ERR_MSG(extack, "Unable to delete referenced metadatum");
 
@@ -90,9 +90,9 @@ tcf_meta_find_byname_attr(struct nlattr *name_attr, struct p4tc_pipeline *pipeli
 	return tcf_meta_find_byname(nla_data(name_attr), pipeline);
 }
 
-struct p4tc_metadata *tcf_meta_find_byany(struct p4tc_pipeline *pipeline,
-					  const char *mname, const u32 m_id,
-					  struct netlink_ext_ack *extack)
+static struct p4tc_metadata *
+tcf_meta_find_byany(struct p4tc_pipeline *pipeline, const char *mname,
+		    const u32 m_id, struct netlink_ext_ack *extack)
 {
 	struct p4tc_metadata *meta;
 	int err;
@@ -125,6 +125,26 @@ struct p4tc_metadata *tcf_meta_find_byany(struct p4tc_pipeline *pipeline,
 	return meta;
 out:
 	return ERR_PTR(err);
+}
+
+struct p4tc_metadata *
+tcf_meta_get(struct p4tc_pipeline *pipeline, const char *mname,
+	     const u32 m_id, struct netlink_ext_ack *extack)
+{
+	struct p4tc_metadata *meta;
+
+	meta = tcf_meta_find_byany(pipeline, mname, m_id, extack);
+	if (IS_ERR(meta))
+		return meta;
+
+	/* Should never be zero */
+	WARN_ON(!refcount_inc_not_zero(&meta->m_ref));
+	return meta;
+}
+
+void tcf_meta_put_ref(struct p4tc_metadata *meta)
+{
+	WARN_ON(!refcount_dec_not_one(&meta->m_ref));
 }
 
 static struct p4tc_metadata *
@@ -568,7 +588,7 @@ static int tcf_meta_flush(struct sk_buff *skb,
 	}
 
 	idr_for_each_entry_ul(&pipeline->p_meta_idr, meta, tmp, m_id) {
-		if (_tcf_meta_put(pipeline, meta, extack) < 0) {
+		if (_tcf_meta_put(pipeline, meta, false, extack) < 0) {
 			ret = -EBUSY;
 			continue;
 		}
@@ -641,7 +661,7 @@ static int tcf_meta_gd(struct net *net, struct sk_buff *skb, struct nlmsghdr *n,
 	}
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE)  {
-		ret = _tcf_meta_put(pipeline, meta, extack);
+		ret = _tcf_meta_put(pipeline, meta, false, extack);
 		if (ret < 0) {
 			NL_SET_ERR_MSG(extack,
 				       "Unable to delete referenced metadatum");

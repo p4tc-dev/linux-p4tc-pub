@@ -128,7 +128,7 @@ static int tcf_pipeline_put(struct net *net,
 		tcf_parser_del(pipeline, pipeline->parser, extack);
 
 	idr_for_each_entry_ul(&pipeline->p_meta_idr, meta, tmp, m_id)
-		meta->common.ops->put(net, &meta->common, extack);
+		meta->common.ops->put(net, &meta->common, true, extack);
 
 	idr_for_each_entry_ul(&pipeline->p_act_idr, act, tmp, act_id)
 		act->common.ops->put(net, &act->common, extack);

@@ -347,14 +347,15 @@ struct p4tc_register {
 
 extern const struct p4tc_template_ops p4tc_register_ops;
 
-struct p4tc_metadata *
-tcf_meta_find_byany(struct p4tc_pipeline *pipeline, const char *mname,
-		    const u32 m_id, struct netlink_ext_ack *extack);
 struct p4tc_metadata *tcf_meta_find_byid(struct p4tc_pipeline *pipeline,
 					 u32 m_id);
 void tcf_meta_fill_user_offsets(struct p4tc_pipeline *pipeline);
 void *tcf_meta_fetch(struct sk_buff *skb, struct p4tc_metadata *meta);
 void tcf_meta_init(struct p4tc_pipeline *root_pipe);
+struct p4tc_metadata *
+tcf_meta_get(struct p4tc_pipeline *pipeline, const char *mname,
+	     const u32 m_id, struct netlink_ext_ack *extack);
+void tcf_meta_put_ref(struct p4tc_metadata *meta);
 
 static inline int p4tc_action_init(struct net *net, struct nlattr *nla,
 				   struct tc_action *acts[], u32 pipeid,
