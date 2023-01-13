@@ -3485,7 +3485,9 @@ static int p4tc_cmd_CONCAT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 					   cursor->oper_mask_shift,
 					   srcR,
 					   &Rval);
-		memcpy((char *)RvalAcc + rvalue_tot_sz, &Rval, cursor_bytesz);
+		cursor_type_ops->host_write(cursor->oper_datatype,
+					    cursor->oper_mask_shift, &Rval,
+					    (char *)RvalAcc + rvalue_tot_sz);
 		rvalue_tot_sz += cursor_bytesz;
 	}
 
