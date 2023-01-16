@@ -181,6 +181,39 @@ static int __tcf_p4_dyna_init_set(struct p4tc_act *act, struct tc_action **a,
 	return err;
 }
 
+static struct p4tc_act *tcf_p4_find_act(struct net *net,
+					const struct tc_action_ops *a_o)
+{
+	char *act_name_clone, *act_name, *p_name;
+	struct p4tc_pipeline *pipeline;
+	struct p4tc_act *act;
+	int err;
+
+	act_name_clone = act_name = kstrdup(a_o->kind, GFP_KERNEL);
+	if (!act_name)
+		return ERR_PTR(-ENOMEM);
+
+	p_name = strsep(&act_name, SEPARATOR);
+	pipeline = tcf_pipeline_find_byany(net, p_name, 0, NULL);
+	if (!pipeline) {
+		err = -ENOENT;
+		goto free_act_name;
+	}
+
+	act = tcf_action_find_byname(act_name, pipeline);
+	if (!act) {
+		err = -ENOENT;
+		goto free_act_name;
+	}
+	kfree(act_name_clone);
+
+	return act;
+
+free_act_name:
+	kfree(act_name_clone);
+	return ERR_PTR(err);
+}
+
 static int tcf_p4_dyna_init(struct net *net, struct nlattr *nla,
 			    struct nlattr *est, struct tc_action **a,
 			    struct tcf_proto *tp, struct tc_action_ops *a_o,
@@ -680,6 +713,37 @@ nla_put_failure:
 	spin_unlock_bh(&dynact->tcf_lock);
 	nlmsg_trim(skb, b);
 	return -1;
+}
+
+static int tcf_p4_dyna_lookup(struct net *net, struct tc_action **a, u32 index)
+{
+	struct tcf_p4act *m = to_p4act(*a);
+	struct p4tc_pipeline *pipeline;
+	struct p4tc_act *act;
+
+	pipeline = tcf_pipeline_find_byid(net, m->p_id);
+	if (!pipeline)
+		return -ENOENT;
+
+	act = tcf_action_find_byid(pipeline, m->act_id);
+	if (!act)
+		return -ENOENT;
+
+	return tcf_idr_search(act->tn, a, index);
+}
+
+static int tcf_p4_dyna_walker(struct net *net, struct sk_buff *skb,
+			      struct netlink_callback *cb, int type,
+			      const struct tc_action_ops *ops,
+			      struct netlink_ext_ack *extack)
+{
+	struct p4tc_act *act;
+
+	act = tcf_p4_find_act(net, ops);
+	if (IS_ERR(act))
+		return PTR_ERR(act);
+
+	return tcf_generic_walker(act->tn, skb, cb, type, ops, extack);
 }
 
 static void tcf_p4_dyna_cleanup(struct tc_action *a)
@@ -1270,6 +1334,13 @@ static const struct nla_policy p4tc_act_policy[P4TC_ACT_MAX + 1] = {
 	[P4TC_ACT_ACTIVE] = { .type = NLA_U8 },
 };
 
+static inline void p4tc_action_net_exit(struct tc_action_net *tn)
+{
+	tcf_idrinfo_destroy(tn->ops, tn->idrinfo);
+	kfree(tn->idrinfo);
+	kfree(tn);
+}
+
 static int __tcf_act_put(struct net *net, struct p4tc_pipeline *pipeline,
 			 struct p4tc_act *act, bool unconditional_purge,
 			 struct netlink_ext_ack *extack)
@@ -1297,15 +1368,13 @@ static int __tcf_act_put(struct net *net, struct p4tc_pipeline *pipeline,
 
 	p4tc_cmds_release_ope_list(net, &act->cmd_operations, true);
 
-	rtnl_unlock();
-	ret = tcf_unregister_action(&act->ops, act->p4_net_ops);
+	ret = __tcf_unregister_action(&act->ops);
 	if (ret < 0) {
 		NL_SET_ERR_MSG(extack,
 			       "Unable to unregister new action template");
-		rtnl_lock();
 		return ret;
 	}
-	rtnl_lock();
+	p4tc_action_net_exit(act->tn);
 
 	if (act->labels) {
 		rhashtable_free_and_destroy(act->labels, p4tc_label_ht_destroy,
@@ -1525,45 +1594,6 @@ static void p4tc_params_replace_many(struct idr *params_idr,
 	}
 }
 
-int p4tc_init_net_ops(struct net *net, unsigned int id)
-{
-	struct tc_action_net *tn = net_generic(net, id);
-	struct p4tc_act *act;
-
-	list_for_each_entry(act, &dynact_list, head) {
-		if (act->ops.net_id == id)
-			break;
-	}
-
-	return tc_action_net_init(net, tn, &act->ops);
-}
-
-static inline void p4tc_action_net_exit(struct list_head *net_list,
-					unsigned int id)
-{
-	unsigned long a_id, tmp;
-	struct tc_action *a;
-	struct net *net;
-
-	rtnl_lock();
-	list_for_each_entry(net, net_list, exit_list) {
-		struct tc_action_net *tn = net_generic(net, id);
-
-		idr_for_each_entry_ul(&tn->idrinfo->action_idr, a, tmp, a_id) {
-			tcf_idr_release(a, atomic_read(&a->tcfa_bindcnt) > 0);
-		}
-
-		tcf_idrinfo_destroy(tn->ops, tn->idrinfo);
-		kfree(tn->idrinfo);
-	}
-	rtnl_unlock();
-}
-
-void p4tc_exit_net_ops(struct list_head *net_list, unsigned int id)
-{
-	p4tc_action_net_exit(net_list, id);
-}
-
 static struct p4tc_act *
 tcf_act_create(struct net *net, struct nlattr **tb,
 	       struct p4tc_pipeline *pipeline, u32 *ids,
@@ -1573,7 +1603,6 @@ tcf_act_create(struct net *net, struct nlattr **tb,
 	u32 a_id = ids[P4TC_AID_IDX];
 	int num_params = 0;
 	int ret = 0;
-	struct pernet_operations *p4_net_ops;
 	struct p4tc_act_dep_node *dep_node;
 	struct p4tc_act *act;
 	char *act_name;
@@ -1604,18 +1633,23 @@ tcf_act_create(struct net *net, struct nlattr **tb,
 	act->ops.dump = tcf_p4_dyna_dump;
 	act->ops.cleanup = tcf_p4_dyna_cleanup;
 	act->ops.init_ops = tcf_p4_dyna_init;
+	act->ops.lookup = tcf_p4_dyna_lookup;
+	act->ops.walk = tcf_p4_dyna_walker;
 	act->ops.size = sizeof(struct tcf_p4act);
 	INIT_LIST_HEAD(&act->head);
 
-	p4_net_ops = kzalloc(sizeof(*p4_net_ops), GFP_KERNEL);
-	if (!p4_net_ops) {
+	act->tn = kzalloc(sizeof(*act->tn), GFP_KERNEL);
+	if (!act->tn) {
 		ret = -ENOMEM;
 		goto free_act_ops;
 	}
-	p4_net_ops->init_id = p4tc_init_net_ops;
-	p4_net_ops->exit_batch_id = p4tc_exit_net_ops;
-	p4_net_ops->size = sizeof(struct tc_action_net);
-	p4_net_ops->id = &act->ops.net_id;
+
+	ret = tc_action_net_init(net, act->tn, &act->ops);
+	if (ret < 0) {
+		kfree(act->tn);
+		goto free_act_ops;
+	}
+	act->tn->ops = &act->ops;
 
 	snprintf(act->ops.kind, ACTNAMSIZ, "%s/%s", pipeline->common.name,
 		 act_name);
@@ -1625,7 +1659,7 @@ tcf_act_create(struct net *net, struct nlattr **tb,
 				    a_id, GFP_KERNEL);
 		if (ret < 0) {
 			NL_SET_ERR_MSG(extack, "Unable to alloc action id");
-			goto free_net_ops;
+			goto free_action_net;
 		}
 
 		act->a_id = a_id;
@@ -1636,7 +1670,7 @@ tcf_act_create(struct net *net, struct nlattr **tb,
 				    UINT_MAX, GFP_KERNEL);
 		if (ret < 0) {
 			NL_SET_ERR_MSG(extack, "Unable to alloc action id");
-			goto free_net_ops;
+			goto free_action_net;
 		}
 	}
 
@@ -1650,19 +1684,13 @@ tcf_act_create(struct net *net, struct nlattr **tb,
 	list_add_tail(&dep_node->head, &pipeline->act_dep_graph);
 
 	refcount_set(&act->ops.dyn_ref, 1);
-	rtnl_unlock();
-	/* Increment module counter */
-	/* Maybe we need to grab a lock before doing rtnl_unlock() */
-	ret = tcf_register_action(&act->ops, p4_net_ops);
+	ret = __tcf_register_action(&act->ops);
 	if (ret < 0) {
 		NL_SET_ERR_MSG(extack,
 			       "Unable to register new action template");
-		rtnl_lock();
 		goto free_dep_node;
 	}
-	rtnl_lock();
 
-	act->p4_net_ops = p4_net_ops;
 	num_params = p4_act_init(act, tb[P4TC_ACT_PARMS], params, extack);
 	if (num_params < 0) {
 		ret = num_params;
@@ -1707,7 +1735,7 @@ uninit:
 
 unregister:
 	rtnl_unlock();
-	tcf_unregister_action(&act->ops, p4_net_ops);
+	__tcf_unregister_action(&act->ops);
 	rtnl_lock();
 
 free_dep_node:
@@ -1717,8 +1745,8 @@ free_dep_node:
 idr_rm:
 	idr_remove(&pipeline->p_act_idr, act->a_id);
 
-free_net_ops:
-	kfree(p4_net_ops);
+free_action_net:
+	p4tc_action_net_exit(act->tn);
 
 free_act_ops:
 	kfree(act);

@@ -412,7 +412,6 @@ static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 	if (ret < 0)
 		return ret;
 
-
 	/* Will never fail in this case */
 	determine_act_topological_order(pipeline, false);
 

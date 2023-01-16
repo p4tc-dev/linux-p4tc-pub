@@ -285,7 +285,7 @@ struct p4tc_act {
 	struct tc_action_ops        ops;
 	struct rhashtable           *labels;
 	struct list_head            cmd_operations;
-	struct pernet_operations    *p4_net_ops;
+	struct tc_action_net        *tn;
 	struct p4tc_pipeline        *pipeline;
 	struct idr                  params_idr;
 	struct tcf_exts             exts;
