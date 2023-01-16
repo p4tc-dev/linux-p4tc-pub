@@ -947,18 +947,10 @@ static void tcf_pernet_del_id_list(unsigned int id)
 	mutex_unlock(&act_id_mutex);
 }
 
-int tcf_register_action(struct tc_action_ops *act,
-			struct pernet_operations *ops)
+static int tcf_register_action_pernet(struct pernet_operations *ops)
 {
 	int ret;
 
-	if (!act->act || !act->dump || (!act->init && !act->init_ops))
-		return -EINVAL;
-
-	/* We have to register pernet ops before making the action ops visible,
-	 * otherwise tcf_action_init_1() could get a partially initialized
-	 * netns.
-	 */
 	ret = register_pernet_subsys(ops);
 	if (ret)
 		return ret;
@@ -968,6 +960,17 @@ int tcf_register_action(struct tc_action_ops *act,
 		if (ret)
 			goto err_id;
 	}
+
+	return 0;
+
+err_id:
+	unregister_pernet_subsys(ops);
+	return ret;
+}
+
+int __tcf_register_action(struct tc_action_ops *act)
+{
+	int ret;
 
 	write_lock(&act_mod_lock);
 	if (act->id) {
@@ -994,16 +997,46 @@ int tcf_register_action(struct tc_action_ops *act,
 
 err_out:
 	write_unlock(&act_mod_lock);
-	if (ops->id)
-		tcf_pernet_del_id_list(*ops->id);
+	return ret;
+}
+EXPORT_SYMBOL(__tcf_register_action);
+
+int tcf_register_action(struct tc_action_ops *act,
+			struct pernet_operations *ops)
+{
+	int ret;
+
+	if (!act->act || !act->dump || !act->init)
+		return -EINVAL;
+
+	/* We have to register pernet ops before making the action ops visible,
+	 * otherwise tcf_action_init_1() could get a partially initialized
+	 * netns.
+	 */
+	ret = tcf_register_action_pernet(ops);
+	if (ret)
+		return ret;
+
+	ret = __tcf_register_action(act);
+	if (ret < 0)
+		goto err_id;
+
+	return 0;
+
 err_id:
 	unregister_pernet_subsys(ops);
 	return ret;
 }
 EXPORT_SYMBOL(tcf_register_action);
 
-int tcf_unregister_action(struct tc_action_ops *act,
-			  struct pernet_operations *ops)
+static void tcf_unregister_action_pernet(struct pernet_operations *ops)
+{
+	unregister_pernet_subsys(ops);
+	if (ops->id)
+		tcf_pernet_del_id_list(*ops->id);
+}
+
+int __tcf_unregister_action(struct tc_action_ops *act)
 {
 	int err = 0;
 
@@ -1012,10 +1045,19 @@ int tcf_unregister_action(struct tc_action_ops *act,
 		err = -EINVAL;
 
 	write_unlock(&act_mod_lock);
+
+	return err;
+}
+EXPORT_SYMBOL(__tcf_unregister_action);
+
+int tcf_unregister_action(struct tc_action_ops *act,
+			  struct pernet_operations *ops)
+{
+	int err;
+
+	err = __tcf_unregister_action(act);
 	if (!err) {
-		unregister_pernet_subsys(ops);
-		if (ops->id)
-			tcf_pernet_del_id_list(*ops->id);
+		tcf_unregister_action_pernet(ops);
 	}
 	return err;
 }
