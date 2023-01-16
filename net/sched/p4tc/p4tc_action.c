@@ -85,14 +85,12 @@ static int __tcf_p4_dyna_init(struct net *net, struct nlattr *est,
 	bool exists = false;
 	int ret = 0;
 	struct p4tc_pipeline *pipeline;
-	struct tc_action_net *tn;
 	u32 index;
 	int err;
 
 	index = parm->index;
 
-	tn = net_generic(net, a_o->net_id);
-	err = tcf_idr_check_alloc(tn, &index, a, bind);
+	err = tcf_idr_check_alloc(act->tn, &index, a, bind);
 	if (err < 0)
 		return err;
 
@@ -100,7 +98,7 @@ static int __tcf_p4_dyna_init(struct net *net, struct nlattr *est,
 	if (!exists) {
 		struct tcf_p4act *p;
 
-		ret = tcf_idr_create(tn, index, est, a,
+		ret = tcf_idr_create(act->tn, index, est, a,
 				     a_o, bind, false, flags);
 		if (ret) {
 			tcf_idr_cleanup(act->tn, index);
@@ -128,7 +126,7 @@ static int __tcf_p4_dyna_init(struct net *net, struct nlattr *est,
 		if (bind) /* dont override defaults */
 			return 0;
 		if (!(flags & TCA_ACT_FLAGS_REPLACE)) {
-			tcf_idr_cleanup(tn, index);
+			tcf_idr_cleanup(act->tn, index);
 			return -EEXIST;
 		}
 	}
@@ -223,10 +221,8 @@ static int tcf_p4_dyna_init(struct net *net, struct nlattr *nla,
 	struct tcf_chain *goto_ch = NULL;
 	bool exists = false;
 	int ret = 0;
-	char *act_name_clone, *act_name, *p_name;
 	struct nlattr *tb[P4TC_ACT_MAX + 1];
 	struct tcf_p4act_params *params;
-	struct p4tc_pipeline *pipeline;
 	struct tc_act_dyna *parm;
 	struct p4tc_act *act;
 	int err;
@@ -254,14 +250,10 @@ static int tcf_p4_dyna_init(struct net *net, struct nlattr *nla,
 		return -EINVAL;
 	}
 
-	act_name_clone = act_name = kstrdup(a_o->kind, GFP_KERNEL);
-	if (!act_name)
-		return -ENOMEM;
+	act = tcf_p4_find_act(net, a_o);
+	if (IS_ERR(act))
+		return PTR_ERR(act);
 
-	p_name = strsep(&act_name, SEPARATOR);
-	pipeline = tcf_pipeline_find_byany(net, p_name, 0, NULL);
-	act = tcf_action_find_byname(act_name, pipeline);
-	kfree(act_name_clone);
 	if (!act->active) {
 		NL_SET_ERR_MSG(extack,
 			       "Dynamic action must be active to create instance");
@@ -715,19 +707,14 @@ nla_put_failure:
 	return -1;
 }
 
-static int tcf_p4_dyna_lookup(struct net *net, struct tc_action **a, u32 index)
+static int tcf_p4_dyna_lookup(struct net *net, const struct tc_action_ops *ops,
+			      struct tc_action **a, u32 index)
 {
-	struct tcf_p4act *m = to_p4act(*a);
-	struct p4tc_pipeline *pipeline;
 	struct p4tc_act *act;
 
-	pipeline = tcf_pipeline_find_byid(net, m->p_id);
-	if (!pipeline)
-		return -ENOENT;
-
-	act = tcf_action_find_byid(pipeline, m->act_id);
-	if (!act)
-		return -ENOENT;
+	act = tcf_p4_find_act(net, ops);
+	if (IS_ERR(act))
+		return PTR_ERR(act);
 
 	return tcf_idr_search(act->tn, a, index);
 }
@@ -1388,7 +1375,6 @@ static int __tcf_act_put(struct net *net, struct p4tc_pipeline *pipeline,
 		tcf_pipeline_delete_from_dep_graph(pipeline, act);
 
 	list_del(&act->head);
-	kfree(act->p4_net_ops);
 
 	kfree(act);
 
