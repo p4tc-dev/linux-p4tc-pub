@@ -212,6 +212,7 @@ struct p4tc_table_perm {
 
 struct p4tc_table {
 	struct p4tc_template_common         common;
+	struct list_head                    tbl_acts_list;
 	struct p4tc_table_key               *tbl_key;
 	struct idr                          tbl_masks_idr;
 	struct idr                          tbl_prio_idr;
@@ -293,6 +294,12 @@ struct p4tc_act {
 	u32                         a_id;
 	bool                        active;
 	refcount_t                  a_ref;
+};
+
+struct p4tc_table_act {
+	struct list_head node;
+	struct tc_action_ops *ops;
+	u8     flags;
 };
 
 extern const struct p4tc_template_ops p4tc_act_ops;

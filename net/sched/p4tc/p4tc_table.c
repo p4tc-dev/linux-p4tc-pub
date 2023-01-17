@@ -85,6 +85,7 @@ static const struct nla_policy p4tc_table_policy[P4TC_TABLE_MAX + 1] = {
 	[P4TC_TABLE_POSTACTIONS] = { .type = NLA_NESTED },
 	[P4TC_TABLE_DEFAULT_HIT] = { .type = NLA_NESTED },
 	[P4TC_TABLE_DEFAULT_MISS] = { .type = NLA_NESTED },
+	[P4TC_TABLE_ACTS_LIST] = { .type = NLA_NESTED },
 	[P4TC_TABLE_OPT_ENTRY] = { .type = NLA_NESTED },
 };
 
@@ -112,9 +113,13 @@ static int tcf_table_key_fill_nlmsg(struct sk_buff *skb,
 static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 {
 	unsigned char *b = skb_tail_pointer(skb);
+	int i = 1;
 	struct p4tc_table_perm *tbl_perm;
+	struct p4tc_table_act *table_act;
+	struct nlattr *nested_tbl_acts;
 	struct nlattr *default_missact;
 	struct nlattr *default_hitact;
+	struct nlattr *nested_count;
 	struct p4tc_table_parm parm;
 	struct nlattr *nest_key;
 	struct nlattr *nest;
@@ -214,6 +219,21 @@ static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 		nla_nest_end(skb, default_missact);
 	}
 
+	nested_tbl_acts = nla_nest_start(skb, P4TC_TABLE_ACTS_LIST);
+	list_for_each_entry(table_act, &table->tbl_acts_list, node) {
+		nested_count = nla_nest_start(skb, i);
+		if (nla_put_string(skb, P4TC_TABLE_ACT_NAME,
+				   table_act->ops->kind) < 0)
+			goto out_nlmsg_trim;
+		if (nla_put_u32(skb, P4TC_TABLE_ACT_FLAGS,
+				table_act->flags) < 0)
+			goto out_nlmsg_trim;
+
+		nla_nest_end(skb, nested_count);
+		i++;
+	}
+	nla_nest_end(skb, nested_tbl_acts);
+
 	if (table->tbl_const_entry) {
 		struct nlattr *const_nest;
 
@@ -268,6 +288,19 @@ static void tcf_table_put_defaultact(struct p4tc_table_defact *defact)
 		kfree(defact->default_acts);
 	}
 	kfree(defact);
+}
+
+void tcf_table_acts_list_destroy(struct list_head *acts_list) {
+	struct p4tc_table_act *table_act, *tmp;
+
+	list_for_each_entry_safe(table_act, tmp, acts_list, node) {
+		struct p4tc_act *act;
+
+		act = container_of(table_act->ops, typeof(*act), ops);
+		list_del(&table_act->node);
+		kfree(table_act);
+		WARN_ON(!refcount_dec_not_one(&act->a_ref));
+	}
 }
 
 static inline int _tcf_table_put(struct net *net,
@@ -366,6 +399,8 @@ static inline int _tcf_table_put(struct net *net,
 		tcf_action_destroy(table->tbl_postacts, TCA_ACT_UNBIND);
 		kfree(table->tbl_postacts);
 	}
+
+	tcf_table_acts_list_destroy(&table->tbl_acts_list);
 
 	rhltable_free_and_destroy(&table->tbl_entries,
 				  tcf_table_entry_destroy_hash,
@@ -534,9 +569,6 @@ tcf_table_init_default_act(struct net *net, struct nlattr **tb,
 {
 	int ret;
 
-	if (!tb[P4TC_TABLE_DEFAULT_ACTION] && !tb[P4TC_TABLE_DEFAULT_PERMISSIONS])
-		return 0;
-
 	*default_act = kzalloc(sizeof(**default_act), GFP_KERNEL);
 	if (!(*default_act))
 		return -ENOMEM;
@@ -603,11 +635,26 @@ default_act_free:
 	return ret;
 }
 
+static int tcf_table_check_defacts(struct tc_action *defact,
+				   struct list_head *acts_list)
+{
+	struct p4tc_table_act *table_act;
+
+	list_for_each_entry(table_act, acts_list, node) {
+		if (table_act->ops->id == defact->ops->id &&
+		    !(table_act->flags & BIT(P4TC_TABLE_ACTS_TABLE_ONLY)))
+			return true;
+	}
+
+	return false;
+}
+
 static int
 tcf_table_init_default_acts(struct net *net, struct nlattr **tb,
 			    struct p4tc_table *table,
 			    struct p4tc_table_defact **default_hitact,
 			    struct p4tc_table_defact **default_missact,
+			    struct list_head *acts_list,
 			    struct netlink_ext_ack *extack)
 {
 	struct nlattr *tb_default[P4TC_TABLE_DEFAULT_MAX + 1];
@@ -618,14 +665,12 @@ tcf_table_init_default_acts(struct net *net, struct nlattr **tb,
 	*default_hitact = NULL;
 
 	if (tb[P4TC_TABLE_DEFAULT_HIT]) {
-		rcu_read_lock();
-		if (table) {
-			struct p4tc_table_defact *defact;
+		struct p4tc_table_defact *defact;
 
-			defact = rcu_dereference(table->tbl_default_hitact);
-			if (defact)
-				permissions = defact->permissions;
-		}
+		rcu_read_lock();
+		defact = rcu_dereference(table->tbl_default_hitact);
+		if (defact)
+			permissions = defact->permissions;
 		rcu_read_unlock();
 
 		ret = nla_parse_nested(tb_default, P4TC_TABLE_DEFAULT_MAX,
@@ -634,29 +679,43 @@ tcf_table_init_default_acts(struct net *net, struct nlattr **tb,
 		if (ret < 0)
 			return ret;
 
+		if (!tb_default[P4TC_TABLE_DEFAULT_ACTION] &&
+		    !tb_default[P4TC_TABLE_DEFAULT_PERMISSIONS])
+			return 0;
+
 		ret = tcf_table_init_default_act(net, tb_default,
 						 default_hitact,
 						 table->common.p_id, permissions,
 						 extack);
 		if (ret < 0)
 			return ret;
+		if (!tcf_table_check_defacts((*default_hitact)->default_acts[0],
+					     acts_list)) {
+			ret = -EPERM;
+			NL_SET_ERR_MSG(extack,
+				       "Action is not allowed as default hit action");
+			goto default_hitacts_free;
+		}
 	}
 
 	if (tb[P4TC_TABLE_DEFAULT_MISS]) {
-		rcu_read_lock();
-		if (table) {
-			struct p4tc_table_defact *defact;
+		struct p4tc_table_defact *defact;
 
-			defact = rcu_dereference(table->tbl_default_missact);
-			if (defact)
-				permissions = defact->permissions;
-		}
+		rcu_read_lock();
+		defact = rcu_dereference(table->tbl_default_missact);
+		if (defact)
+			permissions = defact->permissions;
 		rcu_read_unlock();
+
 		ret = nla_parse_nested(tb_default, P4TC_TABLE_DEFAULT_MAX,
 				       tb[P4TC_TABLE_DEFAULT_MISS], NULL,
 				       extack);
 		if (ret < 0)
 			goto default_hitacts_free;
+
+		if (!tb_default[P4TC_TABLE_DEFAULT_ACTION] &&
+		    !tb_default[P4TC_TABLE_DEFAULT_PERMISSIONS])
+			return 0;
 
 		ret = tcf_table_init_default_act(net, tb_default,
 						 default_missact,
@@ -664,9 +723,24 @@ tcf_table_init_default_acts(struct net *net, struct nlattr **tb,
 						 extack);
 		if (ret < 0)
 			goto default_hitacts_free;
+		if (!tcf_table_check_defacts((*default_missact)->default_acts[0],
+					     acts_list)) {
+			ret = -EPERM;
+			NL_SET_ERR_MSG(extack,
+				       "Action is not allowed as default miss action");
+			goto default_missact_free;
+		}
 	}
 
 	return 0;
+
+default_missact_free:
+	if ((*default_missact)->default_acts) {
+		tcf_action_destroy((*default_missact)->default_acts,
+				   TCA_ACT_UNBIND);
+		kfree((*default_missact)->default_acts);
+	}
+	kfree(*default_missact);
 
 default_hitacts_free:
 	if (*default_hitact && (*default_hitact)->default_acts) {
@@ -676,6 +750,108 @@ default_hitacts_free:
 	}
 
 	kfree(*default_hitact);
+
+	return ret;
+}
+
+static const struct nla_policy p4tc_acts_list_policy[P4TC_TABLE_MAX + 1] = {
+	[P4TC_TABLE_ACT_FLAGS] =
+		NLA_POLICY_RANGE(NLA_U8, 0, BIT(P4TC_TABLE_ACTS_FLAGS_MAX)),
+	[P4TC_TABLE_ACT_NAME] = {
+		.type = NLA_STRING,
+		.len = ACTNAMSIZ
+	},
+};
+
+static struct p4tc_table_act *
+tcf_table_act_init(struct nlattr *nla, struct p4tc_pipeline *pipeline,
+		   struct netlink_ext_ack *extack)
+{
+	struct nlattr *tb[P4TC_TABLE_ACT_MAX + 1];
+	struct p4tc_table_act *table_act;
+	int ret;
+
+	ret = nla_parse_nested(tb, P4TC_TABLE_ACT_MAX, nla,
+			       p4tc_acts_list_policy, extack);
+	if (ret < 0)
+		return ERR_PTR(ret);
+
+	table_act = kzalloc(sizeof(*table_act), GFP_KERNEL);
+	if (!table_act)
+		return ERR_PTR(-ENOMEM);
+
+	if (tb[P4TC_TABLE_ACT_NAME]) {
+		const char *actname = nla_data(tb[P4TC_TABLE_ACT_NAME]);
+		char *act_name_clone, *act_name, *p_name;
+		struct p4tc_act *act;
+
+		act_name_clone = act_name = kstrdup(actname, GFP_KERNEL);
+		if (!act_name) {
+			ret = -ENOMEM;
+			goto free_table_act;
+		}
+
+		p_name = strsep(&act_name, "/");
+		act = tcf_action_find_byname(act_name, pipeline);
+		if (!act) {
+			NL_SET_ERR_MSG_FMT(extack, "Unable to find action %s/%s",
+					   p_name, act_name);
+			ret = -ENOENT;
+			kfree(act_name_clone);
+			goto free_table_act;
+		}
+
+		kfree(act_name_clone);
+
+		table_act->ops = &act->ops;
+		WARN_ON(!refcount_inc_not_zero(&act->a_ref));
+	} else {
+		NL_SET_ERR_MSG(extack,
+			       "Must specify allowed table action name");
+		ret = -EINVAL;
+		goto free_table_act;
+	}
+
+	if (tb[P4TC_TABLE_ACT_FLAGS]) {
+		u8 *flags = nla_data(tb[P4TC_TABLE_ACT_FLAGS]);
+
+		table_act->flags = *flags;
+	}
+
+	return table_act;
+
+free_table_act:
+	kfree(table_act);
+	return ERR_PTR(ret);
+}
+
+static int tcf_table_acts_list_init(struct nlattr *nla,
+				    struct p4tc_pipeline *pipeline,
+				    struct list_head *acts_list,
+				    struct netlink_ext_ack *extack)
+{
+	struct nlattr *tb[P4TC_MSGBATCH_SIZE + 1];
+	struct p4tc_table_act *table_act;
+	int ret;
+	int i;
+
+	ret = nla_parse_nested(tb, P4TC_MSGBATCH_SIZE, nla, NULL, extack);
+	if (ret < 0)
+		return ret;
+
+	for (i = 1; i < P4TC_MSGBATCH_SIZE + 1 && tb[i]; i++) {
+		table_act = tcf_table_act_init(tb[i], pipeline, extack);
+		if (IS_ERR(table_act)) {
+			ret = PTR_ERR(table_act);
+			goto free_acts_list_list;
+		}
+		list_add_tail(&table_act->node, acts_list);
+	}
+
+	return 0;
+
+free_acts_list_list:
+	tcf_table_acts_list_destroy(acts_list);
 
 	return ret;
 }
@@ -740,13 +916,12 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 		goto out;
 	}
 
-	table = kmalloc(sizeof(*table), GFP_KERNEL);
+	table = kzalloc(sizeof(*table), GFP_KERNEL);
 	if (!table) {
 		NL_SET_ERR_MSG(extack, "Unable to create table");
 		ret = -ENOMEM;
 		goto out;
 	}
-	table->tbl_const_entry = NULL;
 
 	table->common.p_id = pipeline->common.p_id;
 	strscpy(table->common.name, nla_data(tb[P4TC_TABLE_NAME]), TABLENAMSIZ);
@@ -873,13 +1048,23 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 		}
 	}
 
+	INIT_LIST_HEAD(&table->tbl_acts_list);
+	if (tb[P4TC_TABLE_ACTS_LIST]) {
+		ret = tcf_table_acts_list_init(tb[P4TC_TABLE_ACTS_LIST],
+						  pipeline,
+						  &table->tbl_acts_list,
+						  extack);
+		if (ret < 0)
+			goto idr_rm;
+	}
+
 	if (tb[P4TC_TABLE_PREACTIONS]) {
 		table->tbl_preacts = kcalloc(TCA_ACT_MAX_PRIO,
 					     sizeof(struct tc_action *),
 					     GFP_KERNEL);
 		if (!table->tbl_preacts) {
 			ret = -ENOMEM;
-			goto idr_rm;
+			goto table_acts_destroy;
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_TABLE_PREACTIONS],
@@ -887,7 +1072,7 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 				       0, extack);
 		if (ret < 0) {
 			kfree(table->tbl_preacts);
-			goto idr_rm;
+			goto table_acts_destroy;
 		}
 		table->tbl_num_preacts = ret;
 	} else {
@@ -924,9 +1109,10 @@ tcf_table_create(struct net *net, struct nlattr **tb,
 		}
 	}
 
-	ret = tcf_table_init_default_acts(net, tb, NULL,
+	ret = tcf_table_init_default_acts(net, tb, table,
 					  &table->tbl_default_hitact,
-					  &table->tbl_default_missact, extack);
+					  &table->tbl_default_missact,
+					  &table->tbl_acts_list, extack);
 	if (ret < 0)
 		goto key_put;
 
@@ -996,6 +1182,9 @@ idr_rm:
 free_permissions:
 	kfree(table->tbl_permissions);
 
+table_acts_destroy:
+	tcf_table_acts_list_destroy(&table->tbl_acts_list);
+
 free:
 	kfree(table);
 
@@ -1012,6 +1201,7 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 	int num_postacts = 0, num_preacts = 0;
 	struct p4tc_table_defact *default_hitact = NULL;
 	struct p4tc_table_defact *default_missact = NULL;
+	struct list_head *tbl_acts_list = NULL;
 	struct p4tc_table_perm *perm = NULL;
 	struct p4tc_table_parm *parm = NULL;
 	struct tc_action **postacts = NULL;
@@ -1024,20 +1214,34 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 	if (IS_ERR(table))
 		return table;
 
+	if (tb[P4TC_TABLE_ACTS_LIST]) {
+		tbl_acts_list = kzalloc(sizeof(*tbl_acts_list), GFP_KERNEL);
+		if (!tbl_acts_list) {
+			ret = -ENOMEM;
+			goto out;
+		}
+		INIT_LIST_HEAD(tbl_acts_list);
+		ret = tcf_table_acts_list_init(tb[P4TC_TABLE_ACTS_LIST],
+						  pipeline, tbl_acts_list,
+						  extack);
+		if (ret < 0)
+			goto table_acts_destroy;
+	}
+
 	if (tb[P4TC_TABLE_PREACTIONS]) {
 		preacts = kcalloc(TCA_ACT_MAX_PRIO,
 				  sizeof(struct tc_action *),
 				  GFP_KERNEL);
 		if (!preacts) {
 			ret = -ENOMEM;
-			goto out;
+			goto table_acts_destroy;
 		}
 
 		ret = p4tc_action_init(net, tb[P4TC_TABLE_PREACTIONS],
 				       preacts, table->common.p_id, 0, extack);
 		if (ret < 0) {
 			kfree(preacts);
-			goto out;
+			goto table_acts_destroy;
 		}
 		num_preacts = ret;
 	}
@@ -1060,8 +1264,14 @@ tcf_table_update(struct net *net, struct nlattr **tb,
 		num_postacts = ret;
 	}
 
-	ret = tcf_table_init_default_acts(net, tb, table, &default_hitact,
-					  &default_missact, extack);
+	if (tbl_acts_list)
+		ret = tcf_table_init_default_acts(net, tb, table, &default_hitact,
+						  &default_missact, tbl_acts_list,
+						  extack);
+	else
+		ret = tcf_table_init_default_acts(net, tb, table, &default_hitact,
+						  &default_missact, &table->tbl_acts_list,
+						  extack);
 	if (ret < 0)
 		goto postactions_destroy;
 
@@ -1257,6 +1467,12 @@ preactions_destroy:
 	if (preacts) {
 		tcf_action_destroy(preacts, TCA_ACT_UNBIND);
 		kfree(preacts);
+	}
+
+table_acts_destroy:
+	if (tbl_acts_list) {
+		tcf_table_acts_list_destroy(tbl_acts_list);
+		kfree(tbl_acts_list);
 	}
 
 out:

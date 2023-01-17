@@ -236,6 +236,21 @@ enum {
 };
 #define P4TC_TABLE_DEFAULT_MAX (__P4TC_TABLE_DEFAULT_MAX - 1)
 
+enum {
+	P4TC_TABLE_ACTS_DEFAULT_ONLY,
+	P4TC_TABLE_ACTS_TABLE_ONLY,
+	__P4TC_TABLE_ACTS_FLAGS_MAX,
+};
+#define P4TC_TABLE_ACTS_FLAGS_MAX (__P4TC_TABLE_ACTS_FLAGS_MAX - 1)
+
+enum {
+	P4TC_TABLE_ACT_UNSPEC,
+	P4TC_TABLE_ACT_FLAGS, /* u8 */
+	P4TC_TABLE_ACT_NAME, /* string */
+	__P4TC_TABLE_ACT_MAX
+};
+#define P4TC_TABLE_ACT_MAX (__P4TC_TABLE_ACT_MAX - 1)
+
 /* Table type attributes */
 enum {
 	P4TC_TABLE_UNSPEC,
@@ -247,6 +262,7 @@ enum {
 	P4TC_TABLE_DEFAULT_HIT, /* nested default hit action attributes */
 	P4TC_TABLE_DEFAULT_MISS, /* nested default miss action attributes */
 	P4TC_TABLE_OPT_ENTRY, /* nested const table entry*/
+	P4TC_TABLE_ACTS_LIST, /* nested table actions list */
 	__P4TC_TABLE_MAX
 };
 #define P4TC_TABLE_MAX __P4TC_TABLE_MAX
