@@ -1122,6 +1122,27 @@ out:
 	(P4TC_CTRL_PERM_R | P4TC_CTRL_PERM_U | P4TC_CTRL_PERM_D | \
 	 P4TC_DATA_PERM_R | P4TC_DATA_PERM_X)
 
+static bool tcf_table_check_entry_acts(struct p4tc_table *table,
+				       struct tc_action *entry_acts[],
+				       struct list_head *allowed_acts,
+				       int num_entry_acts)
+{
+	struct p4tc_table_act *table_act;
+	int i;
+
+	for (i = 0; i < num_entry_acts; i++) {
+		const struct tc_action *entry_act = entry_acts[i];
+
+		list_for_each_entry(table_act, allowed_acts, node) {
+			if (table_act->ops->id == entry_act->ops->id &&
+			    !(table_act->flags & BIT(P4TC_TABLE_ACTS_DEFAULT_ONLY)))
+				return true;
+		}
+	}
+
+	return false;
+}
+
 static int __tcf_table_entry_cu(struct net *net, u32 flags, struct nlattr **tb,
 				struct p4tc_table_entry *entry_cpy,
 				struct p4tc_pipeline *pipeline,
@@ -1272,6 +1293,13 @@ static int __tcf_table_entry_cu(struct net *net, u32 flags, struct nlattr **tb,
 			goto free_key_unmasked;
 		}
 		entry->num_acts = ret;
+
+		if (!tcf_table_check_entry_acts(table, entry->acts,
+						&table->tbl_acts_list, ret)) {
+			ret = -EPERM;
+			NL_SET_ERR_MSG(extack, "Action is not allowed as entry action");
+			goto free_key_unmasked;
+		}
 	}
 
 	INIT_WORK(&entry->work, tcf_table_entry_del_act_work);
