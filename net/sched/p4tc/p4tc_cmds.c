@@ -1456,6 +1456,9 @@ int validate_SET(struct net *net, struct p4tc_act *act,
 
 	Atype = A->oper_datatype;
 	Btype = B->oper_datatype;
+	if (A->oper_type == P4TC_OPER_KEY)
+		A->oper_datatype = Btype;
+
 	if ((Atype->typeid == P4T_DEV && Btype->typeid != P4T_DEV) ||
 	    (Atype->typeid != P4T_DEV && Btype->typeid == P4T_DEV)) {
 		NL_SET_ERR_MSG_MOD(extack, "Can only set dev to other dev");
