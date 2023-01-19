@@ -10,6 +10,7 @@
 #include <linux/rhashtable.h>
 #include <linux/slab.h>
 #include <linux/sort.h>
+#include <linux/netlink.h>
 
 #include "kparser.h"
 
@@ -43,7 +44,7 @@ static void kparser_release_ref(struct kref *kref)
 /* Consumer of this is datapath */
 void kparser_ref_get(struct kref *refcount)
 {
-	pr_debug("{%s:%d}:refcnt:%u\n", __func__, __LINE__, kref_read(refcount));
+	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "refcnt:%u\n", kref_read(refcount));
 
 	kref_get(refcount);
 }
@@ -54,12 +55,13 @@ void kparser_ref_put(struct kref *refcount)
 	unsigned int refcnt;
 
 	refcnt = kref_read(refcount);
-	pr_debug("{%s:%d}:refcnt:%u\n", __func__, __LINE__, refcnt);
+	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "refcnt:%u\n", refcnt);
 
 	if (refcnt > KREF_INIT_VALUE)
 		kref_put(refcount, kparser_release_ref);
 	else
-		pr_warn("refcount violation detected, val:%u", refcnt);
+		KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI,
+					 "refcount violation detected, val:%u", refcnt);
 }
 
 /* These are to track/bookkeep owner/owned relationships(both ways) when refcount is involved among
@@ -75,16 +77,17 @@ int kparser_link_attach(const void *owner_obj,
 			struct kref *owned_obj_refcount,
 			struct list_head *owned_list,
 			struct kparser_cmd_rsp_hdr *rsp,
-			const char *op)
+			const char *op,
+			void *extack, int *err)
 {
 	struct kparser_obj_link_ctx *reflist = NULL;
 
 	reflist = kzalloc(sizeof(*reflist), GFP_KERNEL);
 	if (!reflist) {
 		rsp->op_ret_code = ENOMEM;
-		(void)snprintf(rsp->err_str_buf,
-				sizeof(rsp->err_str_buf),
-				"%s: kzalloc failed", op);
+		NL_SET_ERR_MSG_FMT_MOD(extack,
+				       "%s: kzalloc failed, size: %lu",
+				       op, sizeof(*reflist));
 		return -ENOMEM;
 	}
 
@@ -109,8 +112,8 @@ int kparser_link_attach(const void *owner_obj,
 	if (reflist->owned_obj.refcount)
 		kref_get(reflist->owned_obj.refcount);
 
-	pr_debug("{%s:%d}:owner:%p owned:%p ref:%p\n",
-		 __func__, __LINE__, owner_obj, owned_obj, reflist);
+	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "owner:%p owned:%p ref:%p\n",
+				 owner_obj, owned_obj, reflist);
 
 	synchronize_rcu();
 
@@ -123,14 +126,14 @@ int kparser_link_attach(const void *owner_obj,
  */
 static inline int kparser_link_break(const void *owner, const void *owned,
 				     struct kparser_obj_link_ctx *ref,
-				     struct kparser_cmd_rsp_hdr *rsp)
+				     struct kparser_cmd_rsp_hdr *rsp,
+				     void *extack, int *err)
 {
 	if (!ref) {
 		if (rsp) {
 			rsp->op_ret_code = EFAULT;
-			(void)snprintf(rsp->err_str_buf,
-					sizeof(rsp->err_str_buf),
-					"link is NULL!");
+			NL_SET_ERR_MSG_FMT_MOD(extack,
+					       "link is NULL!");
 		}
 		return -EFAULT;
 	}
@@ -138,9 +141,8 @@ static inline int kparser_link_break(const void *owner, const void *owned,
 	if (ref->sig != KPARSER_LINK_OBJ_SIGNATURE) {
 		if (rsp) {
 			rsp->op_ret_code = EFAULT;
-			(void)snprintf(rsp->err_str_buf,
-					sizeof(rsp->err_str_buf),
-					"link is corrupt!");
+			NL_SET_ERR_MSG_FMT_MOD(extack,
+					       "link is corrupt!");
 		}
 		return -EFAULT;
 	}
@@ -148,9 +150,8 @@ static inline int kparser_link_break(const void *owner, const void *owned,
 	if (owner && ref->owner_obj.obj != owner) {
 		if (rsp) {
 			rsp->op_ret_code = EFAULT;
-			(void)snprintf(rsp->err_str_buf,
-					sizeof(rsp->err_str_buf),
-					"link owner corrupt!");
+			NL_SET_ERR_MSG_FMT_MOD(extack,
+					       "link owner corrupt!");
 		}
 		return -EFAULT;
 	}
@@ -158,9 +159,8 @@ static inline int kparser_link_break(const void *owner, const void *owned,
 	if (owned && ref->owned_obj.obj != owned) {
 		if (rsp) {
 			rsp->op_ret_code = EFAULT;
-			(void)snprintf(rsp->err_str_buf,
-					sizeof(rsp->err_str_buf),
-					"link owned corrupt!");
+			NL_SET_ERR_MSG_FMT_MOD(extack,
+					       "link owned corrupt!");
 		}
 		return -EFAULT;
 	}
@@ -184,12 +184,13 @@ static inline int kparser_link_break(const void *owner, const void *owned,
  */
 static inline int kparser_link_detach_owner(const void *obj,
 					    struct list_head *list,
-					    struct kparser_cmd_rsp_hdr *rsp)
+					    struct kparser_cmd_rsp_hdr *rsp,
+					    void *extack, int *err)
 {
 	struct kparser_obj_link_ctx *tmp_list_ref = NULL, *curr_ref = NULL;
 
 	list_for_each_entry_safe(curr_ref, tmp_list_ref, list, owner_obj.list_node) {
-		if (kparser_link_break(obj, NULL, curr_ref, rsp) != 0)
+		if (kparser_link_break(obj, NULL, curr_ref, rsp, extack, err) != 0)
 			return -EFAULT;
 		kparser_free(curr_ref);
 	}
@@ -202,7 +203,8 @@ static inline int kparser_link_detach_owner(const void *obj,
  */
 static inline int kparser_link_detach_owned(const void *obj,
 					    struct list_head *list,
-					    struct kparser_cmd_rsp_hdr *rsp)
+					    struct kparser_cmd_rsp_hdr *rsp,
+					    void *extack, int *err)
 {
 	struct kparser_obj_link_ctx *tmp_list_ref = NULL, *curr_ref = NULL;
 	const struct kparser_glue_glue_parse_node *kparsenode;
@@ -231,7 +233,7 @@ static inline int kparser_link_detach_owned(const void *obj,
 			}
 		}
 
-		if (kparser_link_break(NULL, obj, curr_ref, rsp) != 0)
+		if (kparser_link_break(NULL, obj, curr_ref, rsp, extack, err) != 0)
 			return -EFAULT;
 		kparser_free(curr_ref);
 	}
@@ -243,12 +245,13 @@ static inline int kparser_link_detach_owned(const void *obj,
 int kparser_link_detach(const void *obj,
 			struct list_head *owner_list,
 			struct list_head *owned_list,
-			struct kparser_cmd_rsp_hdr *rsp)
+			struct kparser_cmd_rsp_hdr *rsp,
+			void *extack, int *err)
 {
-	if (kparser_link_detach_owner(obj, owner_list, rsp) != 0)
+	if (kparser_link_detach_owner(obj, owner_list, rsp, extack, err) != 0)
 		return -EFAULT;
 
-	if (kparser_link_detach_owned(obj, owned_list, rsp) != 0)
+	if (kparser_link_detach_owned(obj, owned_list, rsp, extack, err) != 0)
 		return -EFAULT;
 
 	return 0;
@@ -490,13 +493,9 @@ static struct kparser_mod_namespaces *g_mod_namespaces[] = {
 /* Function to allocate autogen IDs for hash keys if user did not allocate themselves
  * TODO: free ids
  */
-static int d = 0;
-
 static inline __u16 allocate_id(__u16 id, unsigned long *bv, size_t bvsize)
 {
 	int i;
-
-	return d++;
 
 	if (id != KPARSER_INVALID_ID) {
 		/* try to allocate passed id */
@@ -511,19 +510,20 @@ static inline __u16 allocate_id(__u16 id, unsigned long *bv, size_t bvsize)
 	for (i = 0; i < bvsize; i++) {
 		/* avoid bit vectors which are already full */
 		if (bv[i]) {
-			id = __builtin_ffs(bv[i]);
+			id = __builtin_ffsl(bv[i]);
 			if (id) {
 				id--;
 				id += (i * BITS_PER_TYPE(unsigned long));
 				__clear_bit(id, bv);
 				return (id + KPARSER_KMOD_ID_MIN);
 			}
-			pr_alert("{%s:%d} ID alloc failed: {%d:%d}\n", __func__, __LINE__, id, i);
+			KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "ID alloc failed: {%d:%d}\n",
+						 id, i);
 			return KPARSER_INVALID_ID;
 		}
 	}
 
-	pr_alert("{%s:%d} ID alloc failed: {%d:%d}\n", __func__, __LINE__, id, i);
+	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "ID alloc failed: {%d:%d}\n", id, i);
 	return KPARSER_INVALID_ID;
 }
 
@@ -562,12 +562,13 @@ int kparser_conf_key_manager(enum kparser_global_namespace_ids ns_id,
 			     const struct kparser_hkey *key,
 			     struct kparser_hkey *new_key,
 			     struct kparser_cmd_rsp_hdr *rsp,
-			     const char *op)
+			     const char *op,
+			     void *extack, int *err)
 {
 	if (kparser_hkey_empty(key)) {
 		rsp->op_ret_code = -EINVAL;
-		(void)snprintf(rsp->err_str_buf, sizeof(rsp->err_str_buf),
-				"%s:HKey missing", op);
+			NL_SET_ERR_MSG_FMT_MOD(extack,
+					       "%s:HKey missing", op);
 		return -EINVAL;
 	}
 
@@ -576,9 +577,9 @@ int kparser_conf_key_manager(enum kparser_global_namespace_ids ns_id,
 
 	if (kparser_hkey_user_id_invalid(key)) {
 		rsp->op_ret_code = -EINVAL;
-		(void)snprintf(rsp->err_str_buf, sizeof(rsp->err_str_buf),
-				"%s:HKey id invalid:%u",
-				op, key->id);
+		NL_SET_ERR_MSG_FMT_MOD(extack,
+				       "%s:HKey id invalid:%u",
+				       op, key->id);
 		return -EINVAL;
 	}
 
@@ -674,7 +675,8 @@ int alloc_first_rsp(struct kparser_cmd_rsp_hdr **rsp, size_t *rsp_len, int nsid)
 
 	*rsp = kzalloc(sizeof(**rsp), GFP_KERNEL);
 	if (!(*rsp)) {
-		pr_alert("%s:kzalloc failed for rsp, size:%lu\n", __func__, sizeof(**rsp));
+		KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, ":kzalloc failed for rsp, size:%lu\n",
+					 sizeof(**rsp));
 		return -ENOMEM;
 	}
 
@@ -689,7 +691,7 @@ int kparser_init(void)
 {
 	int err, i, j;
 
-	pr_debug("IN: %s:%s:%d\n", __FILE__, __func__, __LINE__);
+	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "IN: ");
 
 	for (i = 0; i < (sizeof(g_mod_namespaces) /
 				sizeof(g_mod_namespaces[0])); i++) {
@@ -710,26 +712,28 @@ int kparser_init(void)
 			((KPARSER_KMOD_ID_MAX - KPARSER_KMOD_ID_MIN) /
 			 BITS_PER_TYPE(unsigned long)) + 1;
 
-		pr_debug("{%s:%d}:bv_len:%lu, total_bytes:%lu, range:[%d:%d]\n",
-			 __func__, __LINE__,
-			 g_mod_namespaces[i]->bv_len,
-			 sizeof(__u32) * g_mod_namespaces[i]->bv_len,
-			 KPARSER_KMOD_ID_MAX, KPARSER_KMOD_ID_MIN);
+		KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI,
+					 "bv_len:%lu, total_bytes:%lu, range:[%d:%d]\n",
+					 g_mod_namespaces[i]->bv_len,
+					 sizeof(unsigned long) * g_mod_namespaces[i]->bv_len,
+					 KPARSER_KMOD_ID_MAX, KPARSER_KMOD_ID_MIN);
 
-		g_mod_namespaces[i]->bv = kcalloc(g_mod_namespaces[i]->bv_len, sizeof(__u32),
+		g_mod_namespaces[i]->bv = kcalloc(g_mod_namespaces[i]->bv_len,
+						  sizeof(unsigned long),
 						  GFP_KERNEL);
 
 		if (!g_mod_namespaces[i]->bv) {
-			pr_alert("%s: kzalloc() failed\n", __func__);
+			KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "kzalloc() failed");
 			goto handle_error;
 		}
 
-		memset(g_mod_namespaces[i]->bv, 0xff, g_mod_namespaces[i]->bv_len * sizeof(__u32));
+		memset(g_mod_namespaces[i]->bv, 0xff,
+		       g_mod_namespaces[i]->bv_len * sizeof(unsigned long));
 	}
 
 	memset(kparser_fast_lookup_array, 0, sizeof(kparser_fast_lookup_array));
 
-	pr_debug("OUT: %s:%s:%d:err:%d\n", __FILE__, __func__, __LINE__, err);
+	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "OUT: ");
 
 	return 0;
 
@@ -745,7 +749,7 @@ handle_error:
 		g_mod_namespaces[j]->bv_len = 0;
 	}
 
-	pr_debug("OUT: %s() failed, err: %d\n", __func__, err);
+	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "OUT: ");
 
 	return err;
 }
@@ -755,7 +759,7 @@ int kparser_deinit(void)
 {
 	int i;
 
-	pr_debug("IN: %s:%s:%d\n", __FILE__, __func__, __LINE__);
+	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "IN: ");
 	for (i = 0; i < ARRAY_SIZE(g_mod_namespaces); i++) {
 		if (!g_mod_namespaces[i])
 			continue;
@@ -769,7 +773,7 @@ int kparser_deinit(void)
 		g_mod_namespaces[i]->bv_len = 0;
 	}
 
-	pr_debug("OUT: %s:%s:%d\n", __FILE__, __func__, __LINE__);
+	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "OUT: ");
 	return 0;
 }
 
@@ -783,16 +787,15 @@ static inline const struct kparser_conf_cmd
 	const struct kparser_conf_cmd *conf;
 	int rc;
 
-	pr_debug("IN: %s:%s:%d\n", __FILE__, __func__, __LINE__);
+	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "IN: ");
 
 	conf = cmdarg;
 	if (!conf || cmdarglen < sizeof(*conf) || !rsp || *rsp || !rsp_len ||
 	    (*rsp_len != 0) || conf->namespace_id <= KPARSER_NS_INVALID ||
 	    conf->namespace_id >= KPARSER_NS_MAX) {
-		pr_debug("{%s:%d}:[%p %lu %p %p %p %lu %d]\n",
-			 __func__, __LINE__,
-			 conf, cmdarglen, rsp, *rsp, rsp_len,
-			 *rsp_len, conf->namespace_id);
+		KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "[%p %lu %p %p %p %lu %d]\n",
+					 conf, cmdarglen, rsp, *rsp, rsp_len,
+					 *rsp_len, conf->namespace_id);
 		goto err_return;
 	}
 
@@ -806,34 +809,35 @@ static inline const struct kparser_conf_cmd
 
 	rc = alloc_first_rsp(rsp, rsp_len, conf->namespace_id);
 	if (rc) {
-		pr_debug("%s:alloc_first_rsp() failed, rc:%d\n",
-			 __func__, rc);
+		KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI,
+					 "alloc_first_rsp() failed, rc:%d\n", rc);
 		goto err_return;
 	}
 
-	pr_debug("OUT: %s:%s:%d\n", __FILE__, __func__, __LINE__);
+	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "OUT: ");
 	return cmdarg;
 
 err_return:
-	pr_debug("OUT: %s:%s:%d\n", __FILE__, __func__, __LINE__);
+	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "OUT: ");
 	return NULL;
 }
 
 #define KPARSER_CONFIG_HANDLER_PRE()					\
 do {									\
-	pr_debug("IN: %s:%s:%d\n", __FILE__, __func__, __LINE__);	\
+	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "IN: ");		\
 	conf = kparser_config_handler_preprocess(cmdarg, cmdarglen,	\
 			rsp, rsp_len);					\
 	if (!conf)							\
-		pr_debug("OUT: %s:%s:%d\n", __FILE__, __func__,		\
-				__LINE__);				\
-	pr_debug("OUT: %s:%s:%d\n", __FILE__, __func__, __LINE__);	\
+		KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "OUT: ");	\
+	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "OUT: ");		\
 }									\
 while (0)
 
 /* netlink msg processors for create */
 int kparser_config_handler_add(const void *cmdarg, size_t cmdarglen,
-			       struct kparser_cmd_rsp_hdr **rsp, size_t *rsp_len)
+			       struct kparser_cmd_rsp_hdr **rsp,
+			       size_t *rsp_len,
+			       void *extack, int *err)
 {
 	const struct kparser_conf_cmd *conf;
 
@@ -846,12 +850,16 @@ int kparser_config_handler_add(const void *cmdarg, size_t cmdarglen,
 		return KPARSER_ATTR_UNSPEC;
 
 	return g_mod_namespaces[conf->namespace_id]->create_handler(conf, cmdarglen,
-								    rsp, rsp_len, "create");
+								    rsp,
+								    rsp_len,
+								    "create",
+								    extack, err);
 }
 
 /* netlink msg processors for update */
 int kparser_config_handler_update(const void *cmdarg, size_t cmdarglen,
-				  struct kparser_cmd_rsp_hdr **rsp, size_t *rsp_len)
+				  struct kparser_cmd_rsp_hdr **rsp,
+				  size_t *rsp_len, void *extack, int *err)
 {
 	const struct kparser_conf_cmd *conf;
 
@@ -864,12 +872,16 @@ int kparser_config_handler_update(const void *cmdarg, size_t cmdarglen,
 		return KPARSER_ATTR_UNSPEC;
 
 	return g_mod_namespaces[conf->namespace_id]->update_handler(conf, cmdarglen,
-								    rsp, rsp_len, "update");
+								    rsp,
+								    rsp_len,
+								    "update",
+								    extack, err);
 }
 
 /* netlink msg processors for read */
 int kparser_config_handler_read(const void *cmdarg, size_t cmdarglen,
-				struct kparser_cmd_rsp_hdr **rsp, size_t *rsp_len)
+				struct kparser_cmd_rsp_hdr **rsp,
+				size_t *rsp_len, void *extack, int *err)
 {
 	const struct kparser_conf_cmd *conf;
 
@@ -882,12 +894,13 @@ int kparser_config_handler_read(const void *cmdarg, size_t cmdarglen,
 		return KPARSER_ATTR_UNSPEC;
 
 	return g_mod_namespaces[conf->namespace_id]->read_handler(&conf->obj_key, rsp, rsp_len,
-			conf->recursive_read_delete, "read");
+			conf->recursive_read_delete, "read", extack, err);
 }
 
 /* netlink msg processors for delete */
 int kparser_config_handler_delete(const void *cmdarg, size_t cmdarglen,
-				  struct kparser_cmd_rsp_hdr **rsp, size_t *rsp_len)
+				  struct kparser_cmd_rsp_hdr **rsp,
+				  size_t *rsp_len, void *extack, int *err)
 {
 	const struct kparser_conf_cmd *conf;
 
@@ -900,5 +913,5 @@ int kparser_config_handler_delete(const void *cmdarg, size_t cmdarglen,
 		return KPARSER_ATTR_UNSPEC;
 
 	return g_mod_namespaces[conf->namespace_id]->del_handler(&conf->obj_key, rsp, rsp_len,
-			conf->recursive_read_delete, "delete");
+			conf->recursive_read_delete, "delete", extack, err);
 }

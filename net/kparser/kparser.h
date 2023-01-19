@@ -279,16 +279,20 @@ int kparser_init(void);
 int kparser_deinit(void);
 int kparser_config_handler_add(const void *cmdarg, size_t cmdarglen,
 			       struct kparser_cmd_rsp_hdr **rsp,
-			       size_t *rsp_len);
+			       size_t *rsp_len,
+			       void *extack, int *err);
 int kparser_config_handler_update(const void *cmdarg, size_t cmdarglen,
 				  struct kparser_cmd_rsp_hdr **rsp,
-				  size_t *rsp_len);
+				  size_t *rsp_len,
+				  void *extack, int *err);
 int kparser_config_handler_read(const void *cmdarg, size_t cmdarglen,
 				struct kparser_cmd_rsp_hdr **rsp,
-				size_t *rsp_len);
+				size_t *rsp_len,
+				void *extack, int *err);
 int kparser_config_handler_delete(const void *cmdarg, size_t cmdarglen,
 				  struct kparser_cmd_rsp_hdr **rsp,
-				  size_t *rsp_len);
+				  size_t *rsp_len,
+				  void *extack, int *err);
 void *kparser_namespace_lookup(enum kparser_global_namespace_ids ns_id,
 			       const struct kparser_hkey *key);
 void kparser_ref_get(struct kref *refcount);
@@ -297,7 +301,8 @@ int kparser_conf_key_manager(enum kparser_global_namespace_ids ns_id,
 			     const struct kparser_hkey *key,
 			     struct kparser_hkey *new_key,
 			     struct kparser_cmd_rsp_hdr *rsp,
-			     const char *op);
+			     const char *op,
+			     void *extack, int *err);
 void kparser_free(void *ptr);
 int kparser_namespace_remove(enum kparser_global_namespace_ids ns_id,
 			     struct rhash_head *obj_id,
@@ -310,12 +315,13 @@ int kparser_namespace_insert(enum kparser_global_namespace_ids ns_id,
 typedef int kparser_obj_create_update(const struct kparser_conf_cmd *conf,
 				      size_t conf_len,
 				      struct kparser_cmd_rsp_hdr **rsp,
-				      size_t *rsp_len, const char *op);
+				      size_t *rsp_len, const char *op,
+				      void *extack, int *err);
 /* Generic kParser KMOD's netlink msg handler's definitions for read and delete */
 typedef int kparser_obj_read_del(const struct kparser_hkey *key,
 		struct kparser_cmd_rsp_hdr **rsp,
 		size_t *rsp_len, __u8 recursive_read,
-		const char *op);
+		const char *op, void *extack, int *err);
 /* Generic kParser KMOD's netlink msg handler's free callbacks */
 typedef void kparser_free_obj(void *ptr, void *arg);
 int kparser_link_attach(const void *owner_obj,
@@ -328,11 +334,13 @@ int kparser_link_attach(const void *owner_obj,
 			struct kref *owned_obj_refcount,
 			struct list_head *owned_list,
 			struct kparser_cmd_rsp_hdr *rsp,
-			const char *op);
+			const char *op,
+			void *extack, int *err);
 int kparser_link_detach(const void *obj,
 			struct list_head *owner_list,
 			struct list_head *owned_list,
-			struct kparser_cmd_rsp_hdr *rsp);
+			struct kparser_cmd_rsp_hdr *rsp,
+			void *extack, int *err);
 int alloc_first_rsp(struct kparser_cmd_rsp_hdr **rsp, size_t *rsp_len, int nsid);
 void kparser_start_new_tree_traversal(void);
 void kparser_dump_parser_tree(const struct kparser_parser *obj);
@@ -394,5 +402,16 @@ kparser_free_obj
 extern void __rcu
 	*kparser_fast_lookup_array[KPARSER_PARSER_FAST_LOOKUP_RSVD_ID_STOP -
 	KPARSER_PARSER_FAST_LOOKUP_RSVD_ID_START + 1];
+
+#define KPARSER_KMOD_DEBUG_PRINT(parser_flag, fmt, args...)			\
+do {										\
+	if (parser_flag & KPARSER_F_DEBUG_DATAPATH)				\
+		pr_alert("kParser:DATA:[%s:%d]" fmt, __func__, __LINE__, ## args);\
+	else if (parser_flag & KPARSER_F_DEBUG_CLI)				\
+		pr_alert("kParser:CLI:[%s:%d]" fmt, __func__, __LINE__, ## args);\
+	else									\
+		pr_debug("kParser:[%s:%d]" fmt, __func__, __LINE__, ## args);	\
+}										\
+while (0)
 
 #endif /* __KPARSER_H */

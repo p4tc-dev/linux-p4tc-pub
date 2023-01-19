@@ -10,7 +10,7 @@ GCOV_PROFILE := y
 #                   -Wno-format-security \
 #                   -fanalyzer           \
 #                   -std=gnu89
-ccflags-y := -DDEBUG -DKERNEL_MOD -Wall #-fanalyzer
+ccflags-y := -DDEBUG -DKERNEL_MOD -Wall
 
 obj-$(CONFIG_KPARSER) += kparser.o
 

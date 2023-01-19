@@ -18,7 +18,6 @@
 #define KPARSER_GENL_VERSION		0x1
 
 /* *********************** NETLINK CLI *********************** */
-#define KPARSER_ERR_STR_MAX_LEN		256
 /* *********************** Namespaces/objects *********************** */
 enum kparser_global_namespace_ids {
 	KPARSER_NS_INVALID,
@@ -199,7 +198,7 @@ struct kparser_conf_metadata {
 	enum kparser_metadata_counter_op_type cntr_op; // 3 bit
 	bool frame;
 	bool e_bit;
-	__u8 constant_value;
+	__u16 constant_value;
 	size_t soff;
 	size_t doff;
 	size_t len;
@@ -242,7 +241,7 @@ struct kparser_parameterized_len {
 
 struct kparser_parameterized_next_proto {
 	__u16 src_off;
-	__u16 mask;
+	__u32 mask;
 	__u8 size;
 	__u8 right_shift;
 };
@@ -442,7 +441,8 @@ struct kparser_conf_table {
 
 /* *********************** parser *********************** */
 /* Flags for parser configuration */
-#define KPARSER_F_DEBUG		(1 << 0)
+#define KPARSER_F_DEBUG_DATAPATH		(1 << 0)
+#define KPARSER_F_DEBUG_CLI			(1 << 1)
 
 #define KPARSER_MAX_NODES	10
 #define KPARSER_MAX_ENCAPS	1
@@ -450,7 +450,7 @@ struct kparser_conf_table {
 
 /* Configuration for a KPARSER parser
  *
- * flags: Flags KPARSER_F_* in parser.h
+ * flags: Flags KPARSER_F_*
  * max_nodes: Maximum number of nodes to parse
  * max_encaps: Maximum number of encapsulations to parse
  * max_frames: Maximum number of metadata frames
@@ -479,15 +479,12 @@ struct kparser_conf_parser {
 
 /* *********************** CLI config interface *********************** */
 
-/* TODO: remove macros and comment and use the values directly */
 /* NOTE: we can't use BITS_PER_TYPE from kernel header here and had to redefine BITS_IN_U32
  * since this is shared with user space code.
  */
-#define BITS_IN_BYTE	8
-#define BITS_IN_U32	(sizeof(__u32) * BITS_IN_BYTE)
-
 #define KPARSER_CONFIG_MAX_KEYS			128
-#define KPARSER_CONFIG_MAX_KEYS_BV_LEN ((KPARSER_CONFIG_MAX_KEYS / BITS_IN_U32) + 1)
+#define KPARSER_CONFIG_MAX_KEYS_BV_LEN ((KPARSER_CONFIG_MAX_KEYS /\
+					 (sizeof(__u32) * 8)) + 1)
 struct kparser_config_set_keys_bv {
 	__u32 ns_keys_bvs[KPARSER_CONFIG_MAX_KEYS_BV_LEN];
 };
@@ -541,7 +538,6 @@ struct kparser_conf_cmd {
 
 struct kparser_cmd_rsp_hdr {
 	int op_ret_code;
-	__u8 err_str_buf[KPARSER_ERR_STR_MAX_LEN];
 	struct kparser_hkey key;
 	struct kparser_conf_cmd object;
 	size_t objects_len;
