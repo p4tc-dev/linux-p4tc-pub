@@ -3054,13 +3054,11 @@ static void *p4tc_fetch_param(struct sk_buff *skb, struct p4tc_cmd_operand *op,
 static void *p4tc_fetch_key(struct sk_buff *skb, struct p4tc_cmd_operand *op,
 			    struct tcf_p4act *cmd, struct tcf_result *res)
 {
-	struct p4tc_skb_ext *p4tc_skb_ext;
+	struct p4tc_percpu_scratchpad *pad;
 
-	p4tc_skb_ext = skb_ext_find(skb, P4TC_SKB_EXT);
-	if (unlikely(!p4tc_skb_ext))
-		return NULL;
+	pad = this_cpu_ptr(&p4tc_percpu_scratchpad);
 
-	return p4tc_skb_ext->p4tc_ext->key;
+	return pad->key;
 }
 
 static void *p4tc_fetch_dev(struct sk_buff *skb, struct p4tc_cmd_operand *op,
