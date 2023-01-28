@@ -466,21 +466,6 @@ destroy_acts:
 	return ret;
 }
 
-static inline struct p4tc_skb_ext *p4tc_skb_ext_alloc(struct sk_buff *skb)
-{
-	struct p4tc_skb_ext *p4tc_skb_ext = skb_ext_add(skb, P4TC_SKB_EXT);
-
-	if (!p4tc_skb_ext)
-		return NULL;
-
-	p4tc_skb_ext->p4tc_ext =
-		kzalloc(sizeof(struct __p4tc_skb_ext), GFP_ATOMIC);
-	if (!p4tc_skb_ext->p4tc_ext)
-		return NULL;
-
-	return p4tc_skb_ext;
-}
-
 struct p4tc_act *tcf_action_find_byid(struct p4tc_pipeline *pipeline,
 				      const u32 a_id);
 struct p4tc_act *tcf_action_find_byname(const char *act_name,

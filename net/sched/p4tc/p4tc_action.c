@@ -98,7 +98,7 @@ static int __tcf_p4_dyna_init(struct net *net, struct nlattr *est,
 	if (!exists) {
 		struct tcf_p4act *p;
 
-		ret = tcf_idr_create(act->tn, index, est, a, a_o, bind, false,
+		ret = tcf_idr_create(act->tn, index, est, a, a_o, bind, true,
 				     flags);
 		if (ret) {
 			tcf_idr_cleanup(act->tn, index);
