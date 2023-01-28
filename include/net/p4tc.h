@@ -35,6 +35,14 @@
 
 #define P4TC_HDRFIELD_IS_VALIDITY_BIT 0x1
 
+struct p4tc_percpu_scratchpad {
+	u8 key[BITS_TO_BYTES(P4TC_MAX_KEYSZ)];
+	u8 hdrs[BITS_TO_BYTES(HEADER_MAX_LEN)];
+	u8 metadata[BITS_TO_BYTES(META_MAX_LEN)];
+};
+
+DECLARE_PER_CPU(struct p4tc_percpu_scratchpad, p4tc_percpu_scratchpad);
+
 struct p4tc_dump_ctx {
 	u32 ids[P4TC_PATH_MAX];
 	struct rhashtable_iter *iter;
