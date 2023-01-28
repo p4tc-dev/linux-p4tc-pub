@@ -127,17 +127,15 @@ struct p4tc_table_entry *p4tc_table_entry_lookup(struct sk_buff *skb,
 	u32 smallest_prio = U32_MAX;
 	struct p4tc_table_entry_mask *mask;
 	struct p4tc_table_entry *entry = NULL;
-	struct p4tc_skb_ext *p4tc_skb_ext;
+	struct p4tc_percpu_scratchpad *pad;
 	unsigned long tmp, mask_id;
 
-	p4tc_skb_ext = skb_ext_find(skb, P4TC_SKB_EXT);
-	if (unlikely(!p4tc_skb_ext))
-		return ERR_PTR(-ENOENT);
+	pad = this_cpu_ptr(&p4tc_percpu_scratchpad);
 
 	idr_for_each_entry_ul(&table->tbl_masks_idr, mask, tmp, mask_id) {
 		struct p4tc_table_entry_key key = {};
 
-		mask_key(mask, masked_key, p4tc_skb_ext->p4tc_ext->key);
+		mask_key(mask, masked_key, pad->key);
 
 		key.value = masked_key;
 		key.keysz = keysz + KEY_MASK_ID_SZ_BITS;
