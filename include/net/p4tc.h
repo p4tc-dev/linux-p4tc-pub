@@ -540,7 +540,7 @@ struct p4tc_parser *tcf_parser_find_byany(struct p4tc_pipeline *pipeline,
 int tcf_parser_del(struct net *net, struct p4tc_pipeline *pipeline,
 		   struct p4tc_parser *parser, struct netlink_ext_ack *extack);
 bool tcf_parser_is_callable(struct p4tc_parser *parser);
-int tcf_skb_parse(struct sk_buff *skb, struct p4tc_skb_ext *p4tc_ext,
+int tcf_skb_parse(struct sk_buff *skb, struct p4tc_percpu_scratchpad *pad,
 		  struct p4tc_parser *parser);
 
 struct p4tc_hdrfield *tcf_hdrfield_find_byid(struct p4tc_parser *parser,
