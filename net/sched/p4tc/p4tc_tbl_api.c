@@ -629,11 +629,10 @@ out:
 }
 
 /* Internal function which will be called by the data path */
-static int __tcf_table_entry_del(struct p4tc_pipeline *pipeline,
-				 struct p4tc_table *table,
-				 struct p4tc_table_entry_key *key,
-				 struct p4tc_table_entry_mask *mask, u32 prio,
-				 struct netlink_ext_ack *extack)
+int __tcf_table_entry_del(struct p4tc_pipeline *pipeline,
+			  struct p4tc_table *table,
+			  struct p4tc_table_entry_key *key,
+			  struct p4tc_table_entry_mask *mask, u32 prio)
 {
 	struct p4tc_table_entry *entry;
 	int ret;
@@ -641,11 +640,8 @@ static int __tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 	tcf_table_entry_build_key(key, mask);
 
 	entry = p4tc_entry_lookup(table, key, prio);
-	if (!entry) {
-		rcu_read_unlock();
-		NL_SET_ERR_MSG(extack, "Unable to find entry");
-		return -EINVAL;
-	}
+	if (!entry)
+		return -ENOENT;
 
 	entry->entry_work->defer_deletion = true;
 	ret = ___tcf_table_entry_del(pipeline, table, entry, false);
