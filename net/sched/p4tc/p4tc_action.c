@@ -741,11 +741,9 @@ static void tcf_p4_dyna_cleanup(struct tc_action *a)
 	if (refcount_read(&ops->dyn_ref) > 1)
 		refcount_dec(&ops->dyn_ref);
 
-	spin_lock_bh(&m->tcf_lock);
 	p4tc_cmds_release_ope_list(NULL, &m->cmd_operations, false);
 	if (params)
 		call_rcu(&params->rcu, tcf_p4_act_params_destroy_rcu);
-	spin_unlock_bh(&m->tcf_lock);
 }
 
 int generic_dump_param_value(struct sk_buff *skb, struct p4tc_type *type,
