@@ -577,13 +577,6 @@ static int tcf_p4_dyna_act(struct sk_buff *skb, const struct tc_action *a,
 	tcf_lastuse_update(&dynact->tcf_tm);
 	tcf_action_update_bstats(&dynact->common, skb);
 
-	/* We only need this lock because the operand's that are action
-	 * parameters will be assigned at run-time, and thus will cause a write
-	 * operation in the data path. If we had this structure as per-cpu, we'd
-	 * possibly be able to get rid of this lock.
-	 */
-	lockdep_off();
-	spin_lock(&dynact->tcf_lock);
 	list_for_each_entry(op, &dynact->cmd_operations, cmd_operations) {
 		if (jmp_cnt-- > 0)
 			continue;
@@ -601,8 +594,6 @@ static int tcf_p4_dyna_act(struct sk_buff *skb, const struct tc_action *a,
 			break;
 		}
 	}
-	spin_unlock(&dynact->tcf_lock);
-	lockdep_on();
 
 	if (ret == TC_ACT_SHOT)
 		tcf_action_inc_drop_qstats(&dynact->common);
@@ -741,11 +732,9 @@ static void tcf_p4_dyna_cleanup(struct tc_action *a)
 	if (refcount_read(&ops->dyn_ref) > 1)
 		refcount_dec(&ops->dyn_ref);
 
-	spin_lock_bh(&m->tcf_lock);
 	p4tc_cmds_release_ope_list(NULL, &m->cmd_operations, false);
 	if (params)
 		call_rcu(&params->rcu, tcf_p4_act_params_destroy_rcu);
-	spin_unlock_bh(&m->tcf_lock);
 }
 
 int generic_dump_param_value(struct sk_buff *skb, struct p4tc_type *type,

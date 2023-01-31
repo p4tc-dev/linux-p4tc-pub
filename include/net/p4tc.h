@@ -372,6 +372,10 @@ extern const struct nla_policy p4tc_policy[P4TC_MAX + 1];
 struct p4tc_table_entry *p4tc_table_entry_lookup(struct sk_buff *skb,
 						 struct p4tc_table *table,
 						 u32 keysz);
+int __tcf_table_entry_del(struct p4tc_pipeline *pipeline,
+			  struct p4tc_table *table,
+			  struct p4tc_table_entry_key *key,
+			  struct p4tc_table_entry_mask *mask, u32 prio);
 
 struct p4tc_parser {
 	char parser_name[PARSERNAMSIZ];

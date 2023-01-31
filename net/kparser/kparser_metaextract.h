@@ -20,7 +20,6 @@
 #define kparser_ntohll(X)						\
 	(((__u64)ntohl((X) & 0xffffffff) << 32) | ntohl((X) >> 32))
 #else
-#error "Cannot determine endianness"
 #define kparser_htonll(X) (X)
 #define kparser_ntohll(X) (X)
 #endif
