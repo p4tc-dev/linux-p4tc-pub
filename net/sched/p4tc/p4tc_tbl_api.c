@@ -105,7 +105,7 @@ __p4tc_entry_lookup(struct p4tc_table *table, struct p4tc_table_entry_key *key)
 	return entry;
 }
 
-static void mask_key(struct p4tc_table_entry_mask *mask, u8 *masked_key,
+static void mask_key(const struct p4tc_table_entry_mask *mask, u8 *masked_key,
 		     u8 *skb_key)
 {
 	int i;
@@ -122,17 +122,19 @@ struct p4tc_table_entry *p4tc_table_entry_lookup(struct sk_buff *skb,
 						 struct p4tc_table *table,
 						 u32 keysz)
 {
+	const struct p4tc_table_entry_mask **masks_array;
 	struct p4tc_table_entry *entry_curr = NULL;
 	u8 masked_key[KEY_MASK_ID_SZ + BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
 	u32 smallest_prio = U32_MAX;
-	struct p4tc_table_entry_mask *mask;
 	struct p4tc_table_entry *entry = NULL;
 	struct p4tc_percpu_scratchpad *pad;
-	unsigned long tmp, mask_id;
+	int i;
 
 	pad = this_cpu_ptr(&p4tc_percpu_scratchpad);
 
-	idr_for_each_entry_ul(&table->tbl_masks_idr, mask, tmp, mask_id) {
+	masks_array = (const struct p4tc_table_entry_mask **)rcu_dereference(table->tbl_masks_array);
+	for (i = 0; i < table->tbl_curr_num_masks; i++) {
+		const struct p4tc_table_entry_mask *mask = masks_array[i];
 		struct p4tc_table_entry_key key = {};
 
 		mask_key(mask, masked_key, pad->key);
@@ -317,12 +319,27 @@ static void tcf_table_entry_mask_del(struct p4tc_table *table,
 	if (refcount_dec_if_one(&mask_found->mask_ref)) {
 		spin_lock_bh(&table->tbl_masks_idr_lock);
 		idr_remove(&table->tbl_masks_idr, mask_found->mask_id);
+		table->tbl_masks_array[mask_found->mask_index] = NULL;
+		table->tbl_curr_num_masks--;
+		table->tbl_free_masks_bitmap[mask_found->mask_index] = 1;
 		spin_unlock_bh(&table->tbl_masks_idr_lock);
 		call_rcu(&mask_found->rcu, tcf_table_entry_mask_destroy);
 	} else {
 		if (!refcount_dec_not_one(&mask_found->mask_ref))
 			pr_warn("Mask was deleted in parallel");
 	}
+}
+
+static inline int find_nxt_mask_index(struct p4tc_table *table)
+{
+	int i;
+
+	for (i = 0; i < table->tbl_max_masks; i++) {
+		if (table->tbl_free_masks_bitmap[i])
+			return i;
+	}
+
+	return -1;
 }
 
 /* TODO: Ordering optimisation for LPM */
@@ -338,6 +355,10 @@ tcf_table_entry_mask_add(struct p4tc_table *table,
 	/* Only add mask if it was not already added */
 	if (!mask_found) {
 		struct p4tc_table_entry_mask *mask_allocated;
+		u32 free_mask_index;
+
+		if (table->tbl_max_masks < table->tbl_curr_num_masks + 1)
+			return ERR_PTR(-ENOSPC);
 
 		mask_allocated = kzalloc(sizeof(*mask_allocated), GFP_ATOMIC);
 		if (!mask_allocated)
@@ -360,6 +381,11 @@ tcf_table_entry_mask_add(struct p4tc_table *table,
 		ret = idr_alloc_u32(&table->tbl_masks_idr, mask_allocated,
 				    &mask_allocated->mask_id, UINT_MAX,
 				    GFP_ATOMIC);
+		free_mask_index = find_nxt_mask_index(table);
+		table->tbl_masks_array[free_mask_index] = mask_allocated;
+		table->tbl_free_masks_bitmap[free_mask_index] = 0;
+		mask_allocated->mask_index = table->tbl_curr_num_masks;
+		table->tbl_curr_num_masks++;
 		spin_unlock_bh(&table->tbl_masks_idr_lock);
 		if (ret < 0) {
 			kfree(mask_allocated->value);
