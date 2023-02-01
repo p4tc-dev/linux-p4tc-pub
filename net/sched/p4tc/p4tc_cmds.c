@@ -536,7 +536,7 @@ static int validate_param_operand(struct p4tc_act *act,
 
 	kopnd->pipeid = act->pipeline->common.p_id;
 	kopnd->immedv = act->a_id;
-	kopnd->immedv2 = param->id;
+	kopnd->immedv2 = param->index;
 
 	t = p4type_find_byid(param->type);
 	if (kopnd->oper_flags & DATA_HAS_TYPE_INFO) {
@@ -557,7 +557,6 @@ static int validate_param_operand(struct p4tc_act *act,
 	}
 	kopnd->pipeid = act->pipeline->common.p_id;
 	kopnd->immedv = act->a_id;
-	kopnd->immedv2 = param->id;
 	kopnd->oper_flags |= DATA_IS_READ_ONLY;
 
 	if (kopnd->oper_bitstart != 0) {
@@ -3040,7 +3039,7 @@ static void *p4tc_fetch_param(struct sk_buff *skb, struct p4tc_cmd_operand *op,
 	struct p4tc_act_param *param;
 
 	params = rcu_dereference(cmd->params);
-	param = idr_find(&params->params_idr, op->immedv2);
+	param = params->params_array[op->immedv2];
 
 	if (param->flags & P4TC_ACT_PARAM_FLAGS_ISDYN) {
 		struct p4tc_cmd_operand *intern_op = param->value;
