@@ -250,6 +250,8 @@ struct p4tc_table {
 	struct p4tc_table_defact __rcu      *tbl_default_hitact;
 	struct p4tc_table_defact __rcu      *tbl_default_missact;
 	struct p4tc_table_perm __rcu        *tbl_permissions;
+	struct p4tc_table_entry_mask __rcu  **tbl_masks_array;
+	u32 __rcu                           *tbl_free_masks_bitmap;
 	spinlock_t                          tbl_masks_idr_lock;
 	spinlock_t                          tbl_prio_idr_lock;
 	int                                 tbl_num_postacts;
@@ -261,6 +263,7 @@ struct p4tc_table {
 	u32                                 tbl_max_entries;
 	u32                                 tbl_max_masks;
 	u32                                 tbl_curr_used_entries;
+	u32                                 tbl_curr_num_masks;
 	refcount_t                          tbl_ctrl_ref;
 	refcount_t                          tbl_ref;
 	refcount_t                          tbl_entries_ref;
@@ -356,6 +359,7 @@ struct p4tc_table_entry_mask {
 	struct rcu_head	 rcu;
 	u32              sz;
 	u32              mask_id;
+	u32              mask_index;
 	refcount_t       mask_ref;
 	u8               *value;
 };
