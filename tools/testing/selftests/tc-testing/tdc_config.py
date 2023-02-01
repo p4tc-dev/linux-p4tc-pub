@@ -30,13 +30,13 @@ NAMES = {
         }
 
 
-ENVIR = { }
-
 # put customizations in tdc_config_local.py
 try:
     from tdc_config_local import *
 except ImportError as ie:
     pass
+
+ENVIR['INTROSPECTION'] = './introspection-examples'
 
 try:
     NAMES.update(EXTRA_NAMES)
