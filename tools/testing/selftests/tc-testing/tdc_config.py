@@ -20,6 +20,7 @@ NAMES = {
 	  'ETH': 'eth0',
           'BATCH_FILE': './batch.txt',
           'BATCH_DIR': 'tmp',
+          'INTROSPECTION': './introspection-examples',
           # Length of time in seconds to wait before terminating a command
           'TIMEOUT': 24,
           # Name of the namespace to use
