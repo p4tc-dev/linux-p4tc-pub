@@ -505,7 +505,7 @@
                             {
                                 "name": "param1",
                                 "type": "bit32",
-                                "raw value": 4294967295,
+                                "value": 4294967295,
                                 "id": 1
                             }
                         ],
@@ -671,7 +671,7 @@
                             {
                                 "name": "param1",
                                 "type": "bit8",
-                                "raw value": 255,
+                                "value": 255,
                                 "id": 1
                             }
                         ],
@@ -760,7 +760,7 @@
                             {
                                 "name": "param1",
                                 "type": "bit16",
-                                "raw value": 65535,
+                                "value": 65535,
                                 "id": 1
                             }
                         ],
@@ -849,7 +849,7 @@
                             {
                                 "name": "param1",
                                 "type": "bit64",
-                                "raw value": 4294967295,
+                                "value": 4294967295,
                                 "id": 1
                             }
                         ],
@@ -938,7 +938,7 @@
                             {
                                 "name": "param1",
                                 "type": "macaddr",
-                                "raw value": "aa:bb:cc:dd:ee:ff",
+                                "value": "aa:bb:cc:dd:ee:ff",
                                 "id": 1
                             }
                         ],
@@ -1027,7 +1027,7 @@
                             {
                                 "name": "param1",
                                 "type": "ipv4",
-                                "raw value": "10.10.10.0/24",
+                                "value": "10.10.10.0/24",
                                 "id": 1
                             }
                         ],
@@ -2393,7 +2393,7 @@
                             {
                                 "name": "param1",
                                 "type": "bit32",
-                                "raw value": 22,
+                                "value": 22,
                                 "id": 1
                             }
                         ],
@@ -2705,7 +2705,7 @@
                             {
                                 "name": "param1",
                                 "type": "bit32",
-                                "raw value": 4294967295,
+                                "value": 4294967295,
                                 "id": 1
                             }
                         ],
@@ -2721,7 +2721,7 @@
                             {
                                 "name": "param1",
                                 "type": "bit32",
-                                "raw value": 42,
+                                "value": 42,
                                 "id": 1
                             }
                         ],
@@ -3676,7 +3676,7 @@
                             {
                                 "name": "param1",
                                 "type": "bit32",
-                                "raw value": 4294967295,
+                                "value": 4294967295,
                                 "id": 1
                             }
                         ],
@@ -9811,52 +9811,6 @@
                         "order": 1,
                         "kind": "ptables/test",
                         "index": 1,
-                        "operations": [
-                            {
-                                "instruction": "concat",
-                                "control_action": {
-                                    "type": "pipe"
-                                },
-                                "operands": {
-                                    "OPA": {
-                                        "type": "metadata",
-                                        "container": "bit32",
-                                        "startbit": 0,
-                                        "endbit": 25,
-                                        "pname": "ptables",
-                                        "name": "mymd",
-                                        "id": 1
-                                    },
-                                    "OPB": {
-                                        "type": "metadata",
-                                        "container": "bit32",
-                                        "startbit": 0,
-                                        "endbit": 7,
-                                        "pname": "ptables",
-                                        "name": "mymd",
-                                        "id": 1
-                                    },
-                                    "OPC": {
-                                        "type": "metadata",
-                                        "container": "bit32",
-                                        "startbit": 8,
-                                        "endbit": 15,
-                                        "pname": "ptables",
-                                        "name": "mymd",
-                                        "id": 1
-                                    },
-                                    "OPD": {
-                                        "type": "metadata",
-                                        "container": "bit32",
-                                        "startbit": 16,
-                                        "endbit": 23,
-                                        "pname": "ptables",
-                                        "name": "mymd",
-                                        "id": 1
-                                    }
-                                }
-                            }
-                        ],
                         "ref": 1,
                         "bind": 0,
                         "not_in_hw": true
