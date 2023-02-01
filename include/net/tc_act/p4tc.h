@@ -9,7 +9,9 @@
 struct tcf_p4act_params {
 	struct tcf_exts exts;
 	struct idr params_idr;
+	struct p4tc_act_param **params_array;
 	struct rcu_head rcu;
+	u32 num_params;
 };
 
 struct tcf_p4act {

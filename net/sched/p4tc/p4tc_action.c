@@ -74,6 +74,18 @@ const struct rhashtable_params p4tc_label_ht_params = {
 	.automatic_shrinking = true,
 };
 
+static void set_param_indices(struct p4tc_act *act)
+{
+	struct p4tc_act_param *param;
+	unsigned long tmp, id;
+	int i = 0;
+
+	idr_for_each_entry_ul(&act->params_idr, param, tmp, id) {
+		param->index = i;
+		i++;
+	}
+}
+
 static int __tcf_p4_dyna_init(struct net *net, struct nlattr *est,
 			      struct p4tc_act *act, struct tc_act_dyna *parm,
 			      struct tc_action **a, struct tcf_proto *tp,
@@ -492,6 +504,7 @@ int tcf_p4_act_init_params_list(struct tcf_p4act_params *params,
 		if (err < 0)
 			return err;
 		list_del(&nparam->head);
+		params->num_params++;
 	}
 
 	return 0;
@@ -791,6 +804,7 @@ void tcf_p4_act_params_destroy(struct tcf_p4act_params *params)
 		kfree(param);
 	}
 
+	kfree(params->params_array);
 	idr_destroy(&params->params_idr);
 
 	kfree(params);
@@ -944,11 +958,14 @@ static int tcf_p4_act_init_param(struct net *net,
 		goto free;
 
 	nparam->id = param->id;
+	nparam->index = param->index;
 
 	err = idr_alloc_u32(&params->params_idr, nparam, &nparam->id,
 			    nparam->id, GFP_KERNEL);
 	if (err < 0)
 		goto free_val;
+
+	params->params_array[param->index] = nparam;
 
 	return 0;
 
@@ -974,6 +991,12 @@ int tcf_p4_act_init_params(struct net *net, struct tcf_p4act_params *params,
 	err = nla_parse_nested(tb, P4TC_MSGBATCH_SIZE, nla, NULL, NULL);
 	if (err < 0)
 		return err;
+
+	params->params_array = kcalloc(act->num_params,
+				       sizeof(struct p4tc_act_param *),
+				       GFP_KERNEL);
+	if (!params->params_array)
+		return -ENOMEM;
 
 	for (i = 1; i < P4TC_MSGBATCH_SIZE + 1 && tb[i]; i++) {
 		err = tcf_p4_act_init_param(net, params, act, tb[i], extack);
@@ -1657,6 +1680,9 @@ static struct p4tc_act *tcf_act_create(struct net *net, struct nlattr **tb,
 		ret = num_params;
 		goto unregister;
 	}
+	act->num_params = num_params;
+
+	set_param_indices(act);
 
 	INIT_LIST_HEAD(&act->cmd_operations);
 	act->pipeline = pipeline;
@@ -1756,6 +1782,7 @@ static struct p4tc_act *tcf_act_update(struct net *net, struct nlattr **tb,
 			ret = num_params;
 			goto out;
 		}
+		set_param_indices(act);
 	}
 
 	act->pipeline = pipeline;

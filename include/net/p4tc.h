@@ -283,6 +283,7 @@ struct p4tc_act_param {
 	void            *mask;
 	u32             type;
 	u32             id;
+	u32             index;
 	u8              flags;
 };
 
@@ -319,6 +320,7 @@ struct p4tc_act {
 	struct tcf_exts             exts;
 	struct list_head            head;
 	u32                         a_id;
+	u32                         num_params;
 	bool                        active;
 	refcount_t                  a_ref;
 };
