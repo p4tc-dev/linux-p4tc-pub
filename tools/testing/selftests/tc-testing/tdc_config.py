@@ -28,12 +28,14 @@ NAMES = {
           'EBPFDIR': './'
         }
 
+ENVIR= {}
 
 ENVIR = { }
 
 # put customizations in tdc_config_local.py
 try:
     from tdc_config_local import *
+
 except ImportError as ie:
     pass
 
