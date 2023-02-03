@@ -36,7 +36,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname2 keysz 32 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 2 keysz 32 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -56,10 +56,26 @@
             {
                 "entries": [
                     {
-                        "tblid": 1,
+                        "tblid": 2,
                         "prio": 16,
-                        "key": "0x1bb0050",
-                        "mask": "0xffffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcPort",
+                              "id": 1,
+                              "width": 16,
+                              "type": "bit16",
+                              "match_type": "exact",
+                              "fieldval": 80
+                            },
+                            {
+                              "keyfield": "dstPort",
+                              "id": 2,
+                              "width": 16,
+                              "type": "bit16",
+                              "match_type": "exact",
+                              "fieldval": 443
+                            }
+                        ],
                         "create_whodunnit": "tc",
                         "permissions": "-RUD--R--X"
                     }
@@ -118,7 +134,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname2 keysz 32 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 2 keysz 32 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -200,7 +216,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname keysz 64 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 1 keysz 64 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -222,8 +238,24 @@
                     {
                         "tblid": 1,
                         "prio": 17,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     }
                 ]
@@ -281,7 +313,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname3 keysz 104 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -301,12 +333,34 @@
             {
                 "entries": [
                     {
-                        "tblid": 1,
+                        "tblid": 3,
                         "prio": 1,
-                        "key1": "0x7f0000005cff",
-                        "key2": "0",
-                        "mask1": "0xffffffffffffffff",
-                        "mask2": "0xffffffffff"
+                        "key": [
+                            {
+                              "keyfield": "randomKey1",
+                              "id": 1,
+                              "width": 8,
+                              "type": "bit8",
+                              "match_type": "exact",
+                              "fieldval": 255
+                            },
+                            {
+                              "keyfield": "randomKey2",
+                              "id": 2,
+                              "width": 32,
+                              "type": "bit32",
+                              "match_type": "exact",
+                              "fieldval": 92
+                            },
+                            {
+                              "keyfield": "randomKey3",
+                              "id": 3,
+                              "width": 64,
+                              "type": "bit64",
+                              "match_type": "exact",
+                              "fieldval": 127
+                            }
+                        ]
                     }
                 ]
             }
@@ -363,7 +417,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname3 keysz 104 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -434,7 +488,7 @@
         ],
         "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3 prio 1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -495,7 +549,7 @@
         ],
         "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -507,10 +561,32 @@
                     {
                         "tblid": 3,
                         "prio": 1,
-                        "key1": "0x7f0000005cff",
-                        "key2": "0",
-                        "mask1": "0xffffffffffffffff",
-                        "mask2": "0xffffffffff",
+                        "key": [
+                            {
+                              "keyfield": "randomKey1",
+                              "id": 1,
+                              "width": 8,
+                              "type": "bit8",
+                              "match_type": "exact",
+                              "fieldval": 255
+                            },
+                            {
+                              "keyfield": "randomKey2",
+                              "id": 2,
+                              "width": 32,
+                              "type": "bit32",
+                              "match_type": "exact",
+                              "fieldval": 92
+                            },
+                            {
+                              "keyfield": "randomKey3",
+                              "id": 3,
+                              "width": 64,
+                              "type": "bit64",
+                              "match_type": "exact",
+                              "fieldval": 127
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     }
                 ]
@@ -518,7 +594,7 @@
         ],
         "teardown": [
             [
-                "$TC -j p4 del ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC -j p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ],
             [
@@ -590,11 +666,11 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action ptables/cb/reclassify",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action ptables/cb/reclassify",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 2  action ptables/cb/reclassify",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 2  action ptables/cb/reclassify",
         "expExitCode": "0",
         "verifyCmd": "$TC p4 get ptables/table/cb/tname3/ randomKey1  255 randomKey2  92 randomKey3  127",
         "matchCount": "1",
@@ -655,7 +731,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname keysz 64 tentries 1 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 1 keysz 64 tentries 1 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -724,7 +800,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname keysz 64 tentries 3 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 1 keysz 64 tentries 3 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -801,7 +877,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname keysz 64 tentries 1 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 1 keysz 64 tentries 1 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -878,7 +954,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname keysz 64 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 1 keysz 64 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -904,8 +980,24 @@
                     {
                         "tblid": 1,
                         "prio": 16,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     }
                 ]
@@ -963,7 +1055,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname keysz 64 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 1 keysz 64 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -989,8 +1081,24 @@
                     {
                         "tblid": 1,
                         "prio": 15,
-                        "key": "0x1a8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.1.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     }
                 ]
@@ -1048,7 +1156,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname keysz 64 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 1 keysz 64 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -1074,8 +1182,24 @@
                     {
                         "tblid": 1,
                         "prio": 16,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     }
                 ]
@@ -1133,7 +1257,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname keysz 64 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 1 keysz 64 key action gact index 3 postactions gact index 4",
                 0
             ]
         ],
@@ -1190,7 +1314,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname2 keysz 32 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 2 keysz 32 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -1251,7 +1375,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname2 keysz 32 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 2 keysz 32 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -1275,10 +1399,26 @@
             {
                 "entries": [
                     {
-                        "tblid": 1,
+                        "tblid": 2,
                         "prio": 16,
-                        "key": "0x1bb0050",
-                        "mask": "0xffffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcPort",
+                              "id": 1,
+                              "width": 16,
+                              "type": "bit16",
+                              "match_type": "exact",
+                              "fieldval": 80
+                            },
+                            {
+                              "keyfield": "dstPort",
+                              "id": 2,
+                              "width": 16,
+                              "type": "bit16",
+                              "match_type": "exact",
+                              "fieldval": 443
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     }
                 ]
@@ -1358,13 +1498,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action ptables/cb/reclassify",
+        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action ptables/cb/reclassify",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -1376,10 +1516,32 @@
                     {
                         "tblid": 3,
                         "prio": 1,
-                        "key1": "0x7f0000005cff",
-                        "key2": "0",
-                        "mask1": "0xffffffffffffffff",
-                        "mask2": "0xffffffffff",
+                        "key": [
+                            {
+                              "keyfield": "randomKey1",
+                              "id": 1,
+                              "width": 8,
+                              "type": "bit8",
+                              "match_type": "exact",
+                              "fieldval": 255
+                            },
+                            {
+                              "keyfield": "randomKey2",
+                              "id": 2,
+                              "width": 32,
+                              "type": "bit32",
+                              "match_type": "exact",
+                              "fieldval": 92
+                            },
+                            {
+                              "keyfield": "randomKey3",
+                              "id": 3,
+                              "width": 64,
+                              "type": "bit64",
+                              "match_type": "exact",
+                              "fieldval": 127
+                            }
+                        ],
                         "create_whodunnit": "tc",
                         "update_whodunnit": "tc",
                         "actions": {
@@ -1390,22 +1552,7 @@
                                     "index": 1,
                                     "ref": 1,
                                     "bind": 1,
-                                    "params": [],
-                                    "operations": [
-                                      {
-                                        "instruction": "act",
-                                        "control_action": {
-                                          "type": "pipe"
-                                        },
-                                        "operands": {
-                                          "OPA": {
-                                            "type": "action",
-                                            "pname": "kernel",
-                                            "id": "gact"
-                                          }
-                                        }
-                                      }
-                                    ]
+                                    "params": []
                                 }
                             ]
                         }
@@ -1487,13 +1634,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action ptables/cb/reclassify",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action ptables/cb/reclassify",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action ptables/cb/reclassify index 2",
+        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action ptables/cb/reclassify index 2",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -1505,10 +1652,32 @@
                     {
                         "tblid": 3,
                         "prio": 1,
-                        "key1": "0x7f0000005cff",
-                        "key2": "0",
-                        "mask1": "0xffffffffffffffff",
-                        "mask2": "0xffffffffff",
+                        "key": [
+                            {
+                              "keyfield": "randomKey1",
+                              "id": 1,
+                              "width": 8,
+                              "type": "bit8",
+                              "match_type": "exact",
+                              "fieldval": 255
+                            },
+                            {
+                              "keyfield": "randomKey2",
+                              "id": 2,
+                              "width": 32,
+                              "type": "bit32",
+                              "match_type": "exact",
+                              "fieldval": 92
+                            },
+                            {
+                              "keyfield": "randomKey3",
+                              "id": 3,
+                              "width": 64,
+                              "type": "bit64",
+                              "match_type": "exact",
+                              "fieldval": 127
+                            }
+                        ],
                         "create_whodunnit": "tc",
                         "update_whodunnit": "tc",
                         "actions": {
@@ -1519,22 +1688,7 @@
                                 "index": 2,
                                 "ref": 1,
                                 "bind": 1,
-                                "params": [],
-                                "operations": [
-                                  {
-                                    "instruction": "act",
-                                    "control_action": {
-                                      "type": "pipe"
-                                    },
-                                    "operands": {
-                                      "OPA": {
-                                        "type": "action",
-                                        "pname": "kernel",
-                                        "id": "gact"
-                                      }
-                                    }
-                                  }
-                                ]
+                                "params": []
                             }
                             ]
                         }
@@ -1622,11 +1776,11 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action ptables/cb/reclassify index 1",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action ptables/cb/reclassify index 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action ptables/cb/reclassify index 2; sleep 1;",
+        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action ptables/cb/reclassify index 2; sleep 1;",
         "expExitCode": "0",
         "verifyCmd": "$TC -j actions get action ptables/cb/reclassify index 1",
         "matchCount": "1",
@@ -1642,22 +1796,7 @@
                         "index": 1,
                         "ref": 1,
                         "bind": 0,
-                        "params": [],
-                        "operations": [
-                          {
-                            "instruction": "act",
-                            "control_action": {
-                              "type": "pipe"
-                            },
-                            "operands": {
-                              "OPA": {
-                                "type": "action",
-                                "pname": "kernel",
-                                "id": "gact"
-                              }
-                            }
-                          }
-                        ]
+                        "params": []
                     }
                 ]
             }
@@ -1722,13 +1861,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/ tblid 3 randomKey1  255 randomKey2  1 randomKey3  127 prio 1",
+        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname3 randomKey1  255 randomKey2  1 randomKey3  127 prio 1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -1740,10 +1879,32 @@
                     {
                         "tblid": 3,
                         "prio": 1,
-                        "key1": "0x7f0000005cff",
-                        "key2": "0",
-                        "mask1": "0xffffffffffffffff",
-                        "mask2": "0xffffffffff",
+                        "key": [
+                            {
+                              "keyfield": "randomKey1",
+                              "id": 1,
+                              "width": 8,
+                              "type": "bit8",
+                              "match_type": "exact",
+                              "fieldval": 255
+                            },
+                            {
+                              "keyfield": "randomKey2",
+                              "id": 2,
+                              "width": 32,
+                              "type": "bit32",
+                              "match_type": "exact",
+                              "fieldval": 92
+                            },
+                            {
+                              "keyfield": "randomKey3",
+                              "id": 3,
+                              "width": 64,
+                              "type": "bit64",
+                              "match_type": "exact",
+                              "fieldval": 127
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     }
                 ]
@@ -1823,13 +1984,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 action ptables/cb/reclassify",
+        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 action ptables/cb/reclassify",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -1841,10 +2002,32 @@
                     {
                         "tblid": 3,
                         "prio": 1,
-                        "key1": "0x7f0000005cff",
-                        "key2": "0",
-                        "mask1": "0xffffffffffffffff",
-                        "mask2": "0xffffffffff",
+                        "key": [
+                            {
+                              "keyfield": "randomKey1",
+                              "id": 1,
+                              "width": 8,
+                              "type": "bit8",
+                              "match_type": "exact",
+                              "fieldval": 255
+                            },
+                            {
+                              "keyfield": "randomKey2",
+                              "id": 2,
+                              "width": 32,
+                              "type": "bit32",
+                              "match_type": "exact",
+                              "fieldval": 92
+                            },
+                            {
+                              "keyfield": "randomKey3",
+                              "id": 3,
+                              "width": 64,
+                              "type": "bit64",
+                              "match_type": "exact",
+                              "fieldval": 127
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     }
                 ]
@@ -1867,7 +2050,7 @@
     },
     {
         "id": "339a",
-        "name": "Try update table entry without specifying table name or id",
+        "name": "Try to update table entry without specifying table name or id",
         "category": [
             "p4tc",
             "entries"
@@ -1910,13 +2093,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ]
         ],
         "cmdUnderTest": "$TC p4 update ptables/table/ randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 2",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -1928,10 +2111,32 @@
                     {
                         "tblid": 3,
                         "prio": 1,
-                        "key1": "0x7f0000005cff",
-                        "key2": "0",
-                        "mask1": "0xffffffffffffffff",
-                        "mask2": "0xffffffffff",
+                        "key": [
+                            {
+                              "keyfield": "randomKey1",
+                              "id": 1,
+                              "width": 8,
+                              "type": "bit8",
+                              "match_type": "exact",
+                              "fieldval": 255
+                            },
+                            {
+                              "keyfield": "randomKey2",
+                              "id": 2,
+                              "width": 32,
+                              "type": "bit32",
+                              "match_type": "exact",
+                              "fieldval": 92
+                            },
+                            {
+                              "keyfield": "randomKey3",
+                              "id": 3,
+                              "width": 64,
+                              "type": "bit64",
+                              "match_type": "exact",
+                              "fieldval": 127
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     }
                 ]
@@ -1997,78 +2202,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ]
         ],
         "cmdUnderTest": "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "expExitCode": "0",
         "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-        "matchCount": "1",
-        "matchPattern": "Error: Unable to find entry.*",
-        "teardown": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "9bb5",
-        "name": "Delete table entry specifying tblid",
-        "category": [
-            "p4tc",
-            "entries"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 key action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template update pipeline/ptables state ready",
-                0
-            ],
-            [
-                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4 del ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-        "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -2127,7 +2267,7 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ]
         ],
@@ -2145,10 +2285,32 @@
                     {
                         "tblid": 3,
                         "prio": 1,
-                        "key1": "0x7f0000005cff",
-                        "key2": "0",
-                        "mask1": "0xffffffffffffffff",
-                        "mask2": "0xffffffffff"
+                        "key": [
+                            {
+                              "keyfield": "randomKey1",
+                              "id": 1,
+                              "width": 8,
+                              "type": "bit8",
+                              "match_type": "exact",
+                              "fieldval": 255
+                            },
+                            {
+                              "keyfield": "randomKey2",
+                              "id": 2,
+                              "width": 32,
+                              "type": "bit32",
+                              "match_type": "exact",
+                              "fieldval": 92
+                            },
+                            {
+                              "keyfield": "randomKey3",
+                              "id": 3,
+                              "width": 64,
+                              "type": "bit64",
+                              "match_type": "exact",
+                              "fieldval": 127
+                            }
+                        ]
                     }
                 ]
             }
@@ -2213,11 +2375,11 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 2",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 2",
         "expExitCode": "0",
         "verifyCmd": "$TC p4 del ptables/table/cb/tname3/ randomKey1  255 randomKey2  92 randomKey3  127",
         "matchCount": "1",
@@ -2306,11 +2468,11 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action ptables/cb/reclassify",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action ptables/cb/reclassify",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 del ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1; sleep 1",
+        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1; sleep 1",
         "expExitCode": "0",
         "verifyCmd": "$TC -j actions get action ptables/cb/reclassify index 1",
         "matchCount": "1",
@@ -2326,22 +2488,7 @@
                         "index": 1,
                         "ref": 1,
                         "bind": 0,
-                        "params": [],
-                        "operations": [
-                          {
-                            "instruction": "act",
-                            "control_action": {
-                              "type": "pipe"
-                            },
-                            "operands": {
-                              "OPA": {
-                                "type": "action",
-                                "pname": "kernel",
-                                "id": "gact"
-                              }
-                            }
-                          }
-                        ]
+                        "params": []
                     }
                 ]
             }
@@ -2402,9 +2549,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 del ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -2455,7 +2602,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname keysz 64 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 1 keysz 64 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -2524,76 +2671,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname keysz 64 key action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template update pipeline/ptables state ready",
-                0
-            ],
-            [
-                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.0.0/16 prio 16",
-                0
-            ],
-            [
-                "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname",
-        "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
-        "matchCount": "1",
-        "matchPattern": "Error: Unable to find entry.*",
-        "teardown": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "5618",
-        "name": "Flush table entries using tblid",
-        "category": [
-            "p4tc",
-            "entries"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create table/ptables/cb/tname keysz 64 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 1 keysz 64 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -2662,7 +2740,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname keysz 64 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 1 keysz 64 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -2692,8 +2770,24 @@
                     {
                         "tblid": 1,
                         "prio": 1,
-                        "key": "0x38a8c0000a0a0a",
-                        "mask": "0xffffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.56.0/24"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     }
                 ]
@@ -2751,7 +2845,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname keysz 64 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 1 keysz 64 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -2773,89 +2867,24 @@
                     {
                         "tblid": 1,
                         "prio": 1,
-                        "key": "0x38a8c0000a0a0a",
-                        "mask": "0xffffff00ffffff",
-                        "create_whodunnit": "tc"
-                    }
-                ]
-            }
-        ],
-        "teardown": [
-            [
-                "$TC p4 del ptables/table/cb/tname",
-                0
-            ],
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "044c",
-        "name": "Dump table entries specifying tblid",
-        "category": [
-            "p4tc",
-            "entries"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 1 preactions action gact index 1 postactions action gact index 2",
-                0
-            ],
-            [
-                "$TC p4template create table/ptables/cb/tname keysz 64 key action gact index 3 postactions gact index 4",
-                0
-            ],
-            [
-                "$TC p4template update pipeline/ptables state ready",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname srcAddr 10.10.10.0/24 dstAddr 192.168.56.0/24 prio 1",
-        "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/ tblid 1",
-        "matchCount": "1",
-        "matchJSON": [
-            {
-                "pname": "ptables",
-                "pipeid": 22
-            },
-            {
-                "entries": [
-                    {
-                        "tblid": 1,
-                        "prio": 1,
-                        "key": "0x38a8c0000a0a0a",
-                        "mask": "0xffffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.56.0/24"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     }
                 ]
@@ -2913,7 +2942,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname keysz 64 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 1 keysz 64 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -2982,7 +3011,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname keysz 64 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 1 keysz 64 key action gact index 3 postactions gact index 4",
                 0
             ]
         ],
@@ -3039,7 +3068,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname keysz 64 key action gact index 3 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname tblid 1 keysz 64 key action gact index 3 postactions gact index 4",
                 0
             ],
             [
@@ -3124,113 +3153,369 @@
                 "entries": [
                     {
                         "tblid": 1,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     },
                     {
                         "tblid": 1,
                         "prio": 16,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     },
                     {
                         "tblid": 1,
                         "prio": 15,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     },
                     {
                         "tblid": 1,
                         "prio": 14,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     },
                     {
                         "tblid": 1,
                         "prio": 13,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     },
                     {
                         "tblid": 1,
                         "prio": 12,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     },
                     {
                         "tblid": 1,
                         "prio": 11,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     },
                     {
                         "tblid": 1,
                         "prio": 10,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     },
                     {
                         "tblid": 1,
                         "prio": 9,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     },
                     {
                         "tblid": 1,
                         "prio": 8,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     },
                     {
                         "tblid": 1,
                         "prio": 7,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     },
                     {
                         "tblid": 1,
                         "prio": 6,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     },
                     {
                         "tblid": 1,
                         "prio": 5,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     },
                     {
                         "tblid": 1,
                         "prio": 4,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     },
                     {
                         "tblid": 1,
                         "prio": 3,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     },
                     {
                         "tblid": 1,
                         "prio": 2,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     }
                 ]
@@ -3243,8 +3528,24 @@
                 "entries": [
                     {
                         "tblid": 1,
-                        "key": "0xa8c0000a0a0a",
-                        "mask": "0xffff00ffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcAddr",
+                              "id": 1,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "10.10.10.0/24"
+                            },
+                            {
+                              "keyfield": "dstAddr",
+                              "id": 2,
+                              "width": 32,
+                              "type": "ipv4",
+                              "match_type": "exact",
+                              "fieldval": "192.168.0.0/16"
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     }
                 ]
@@ -3315,7 +3616,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname2 tblid 22 keysz 32 permissions 0x1FF key action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 2 keysz 32 permissions 0x1FF key action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
@@ -3389,7 +3690,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname2 tblid 22 keysz 32 permissions 0x3C9 key action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 2 keysz 32 permissions 0x3C9 key action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
@@ -3463,7 +3764,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname2 tblid 22 keysz 32 permissions 0x3FF key action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 2 keysz 32 permissions 0x3FF key action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
@@ -3487,10 +3788,26 @@
             {
                 "entries": [
                     {
-                        "tblid": 22,
+                        "tblid": 2,
                         "prio": 16,
-                        "key": "0x1bb0050",
-                        "mask": "0xffffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcPort",
+                              "id": 1,
+                              "width": 16,
+                              "type": "bit16",
+                              "match_type": "exact",
+                              "fieldval": 80
+                            },
+                            {
+                              "keyfield": "dstPort",
+                              "id": 2,
+                              "width": 16,
+                              "type": "bit16",
+                              "match_type": "exact",
+                              "fieldval": 443
+                            }
+                        ],
                         "create_whodunnit": "tc",
                         "permissions": "-R-DX-RUDX"
                     }
@@ -3562,7 +3879,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname2 tblid 22 keysz 32 permissions 0x3FF key action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 2 keysz 32 permissions 0x3FF key action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
@@ -3586,10 +3903,26 @@
             {
                 "entries": [
                     {
-                        "tblid": 22,
+                        "tblid": 2,
                         "prio": 16,
-                        "key": "0x1bb0050",
-                        "mask": "0xffffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcPort",
+                              "id": 1,
+                              "width": 16,
+                              "type": "bit16",
+                              "match_type": "exact",
+                              "fieldval": 80
+                            },
+                            {
+                              "keyfield": "dstPort",
+                              "id": 2,
+                              "width": 16,
+                              "type": "bit16",
+                              "match_type": "exact",
+                              "fieldval": 443
+                            }
+                        ],
                         "create_whodunnit": "tc",
                         "permissions": "-RU-X-RUDX"
                     }
@@ -3665,7 +3998,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname2 tblid 22 keysz 32 permissions 0x3FF key action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 2 keysz 32 permissions 0x3FF key action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
@@ -3689,10 +4022,26 @@
             {
                 "entries": [
                     {
-                        "tblid": 22,
+                        "tblid": 2,
                         "prio": 16,
-                        "key": "0x1bb0050",
-                        "mask": "0xffffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcPort",
+                              "id": 1,
+                              "width": 16,
+                              "type": "bit16",
+                              "match_type": "exact",
+                              "fieldval": 80
+                            },
+                            {
+                              "keyfield": "dstPort",
+                              "id": 2,
+                              "width": 16,
+                              "type": "bit16",
+                              "match_type": "exact",
+                              "fieldval": 443
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     }
                 ]
@@ -3763,7 +4112,7 @@
                 0
             ],
             [
-                "$TC p4template create table/ptables/cb/tname2 tblid 22 keysz 32 permissions 0x3FF key action gact index 3 preactions gact index 4 postactions gact index 4",
+                "$TC p4template create table/ptables/cb/tname2 tblid 2 keysz 32 permissions 0x3FF key action gact index 3 preactions gact index 4 postactions gact index 4",
                 0
             ],
             [
@@ -3791,10 +4140,26 @@
             {
                 "entries": [
                     {
-                        "tblid": 22,
+                        "tblid": 2,
                         "prio": 16,
-                        "key": "0x1bb0050",
-                        "mask": "0xffffffff",
+                        "key": [
+                            {
+                              "keyfield": "srcPort",
+                              "id": 1,
+                              "width": 16,
+                              "type": "bit16",
+                              "match_type": "exact",
+                              "fieldval": 80
+                            },
+                            {
+                              "keyfield": "dstPort",
+                              "id": 2,
+                              "width": 16,
+                              "type": "bit16",
+                              "match_type": "exact",
+                              "fieldval": 443
+                            }
+                        ],
                         "create_whodunnit": "tc"
                     }
                 ]

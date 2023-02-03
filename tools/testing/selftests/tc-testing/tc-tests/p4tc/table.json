@@ -6787,22 +6787,7 @@
                                 "index": 1,
                                 "ref": 1,
                                 "bind": 1,
-                                "params": [],
-                                "operations": [
-                                  {
-                                    "instruction": "act",
-                                    "control_action": {
-                                      "type": "pipe"
-                                    },
-                                    "operands": {
-                                      "OPA": {
-                                        "type": "action",
-                                        "pname": "kernel",
-                                        "id": "gact"
-                                      }
-                                    }
-                                  }
-                                ]
+                                "params": []
                             }
                             ],
                             "permissions": "CRUDXCRUDX"
@@ -6977,22 +6962,7 @@
                                 "index": 1,
                                 "ref": 1,
                                 "bind": 1,
-                                "params": [],
-                                "operations": [
-                                  {
-                                    "instruction": "act",
-                                    "control_action": {
-                                      "type": "pipe"
-                                    },
-                                    "operands": {
-                                      "OPA": {
-                                        "type": "action",
-                                        "pname": "kernel",
-                                        "id": "gact"
-                                      }
-                                    }
-                                  }
-                                ]
+                                "params": []
                             }
                             ],
                             "permissions": "CR-DXCRUDX"
@@ -7479,22 +7449,7 @@
                                 "index": 1,
                                 "ref": 1,
                                 "bind": 1,
-                                "params": [],
-                                "operations": [
-                                  {
-                                    "instruction": "act",
-                                    "control_action": {
-                                      "type": "pipe"
-                                    },
-                                    "operands": {
-                                      "OPA": {
-                                        "type": "action",
-                                        "pname": "kernel",
-                                        "id": "gact"
-                                      }
-                                    }
-                                  }
-                                ]
+                                "params": []
                             }
                             ],
                             "permissions": "CR-DXCRUDX"
@@ -7673,22 +7628,7 @@
                                 "index": 1,
                                 "ref": 1,
                                 "bind": 1,
-                                "params": [],
-                                "operations": [
-                                  {
-                                    "instruction": "act",
-                                    "control_action": {
-                                      "type": "pipe"
-                                    },
-                                    "operands": {
-                                      "OPA": {
-                                        "type": "action",
-                                        "pname": "kernel",
-                                        "id": "gact"
-                                      }
-                                    }
-                                  }
-                                ]
+                                "params": []
                             }
                             ],
                             "permissions": "CR-DXCRUDX"

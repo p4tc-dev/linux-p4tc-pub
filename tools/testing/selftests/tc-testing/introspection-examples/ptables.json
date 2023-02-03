@@ -1,0 +1,92 @@
+{
+    "schema_version" : "1.0.0",
+    "pipeline_name" : "ptables",
+    "id" : 22,
+    "tables" : [
+        {
+            "name" : "cb/tname",
+            "id" : 1,
+            "tentries" : 2048,
+            "nummask" : 8,
+            "keysize" : 64,
+            "keyid" : 1,
+            "keyfields" : [
+                {
+                    "id" : 1,
+                    "name" : "srcAddr",
+                    "type" : "ipv4",
+                    "match_type" : "exact",
+                    "bitwidth" : 32
+                },
+                {
+                    "id" : 2,
+                    "name" : "dstAddr",
+                    "type" : "ipv4",
+                    "match_type" : "exact",
+                    "bitwidth" : 32
+                }
+            ],
+            "actions" : [
+            ]
+        },
+        {
+            "name" : "cb/tname2",
+            "id" : 2,
+            "tentries" : 2048,
+            "nummask" : 8,
+            "keysize" : 32,
+            "keyid" : 1,
+            "keyfields" : [
+                {
+                    "id" : 1,
+                    "name" : "srcPort",
+                    "type" : "bit16",
+                    "match_type" : "exact",
+                    "bitwidth" : 16
+                },
+                {
+                    "id" : 2,
+                    "name" : "dstPort",
+                    "type" : "bit16",
+                    "match_type" : "exact",
+                    "bitwidth" : 16
+                }
+            ],
+            "actions" : [
+            ]
+        },
+        {
+            "name" : "cb/tname3",
+            "id" : 3,
+            "tentries" : 2048,
+            "nummask" : 8,
+            "keysize" : 104,
+            "keyid" : 1,
+            "keyfields" : [
+                {
+                    "id" : 1,
+                    "name" : "randomKey1",
+                    "type" : "bit8",
+                    "match_type" : "exact",
+                    "bitwidth" : 8
+                },
+                {
+                    "id" : 2,
+                    "name" : "randomKey2",
+                    "type" : "bit32",
+                    "match_type" : "exact",
+                    "bitwidth" : 32
+                },
+                {
+                    "id" : 3,
+                    "name" : "randomKey3",
+                    "type" : "bit64",
+                    "match_type" : "exact",
+                    "bitwidth" : 64
+                }
+            ],
+            "actions" : [
+            ]
+        }
+    ]
+}
