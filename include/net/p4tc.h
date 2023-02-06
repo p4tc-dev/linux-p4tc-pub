@@ -616,6 +616,7 @@ struct p4tc_cmd_operate {
 	struct p4tc_cmd_s *cmd;
 	char *label1;
 	char *label2;
+	char *cmd_label;
 	u32 num_opnds;
 	u32 ctl1;
 	u32 ctl2;
