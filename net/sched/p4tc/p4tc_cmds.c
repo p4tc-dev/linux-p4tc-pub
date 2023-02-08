@@ -214,6 +214,10 @@ int p4tc_cmds_fillup(struct sk_buff *skb, struct list_head *cmd_operations)
 			nla_nest_end(skb, nest_opnds);
 		}
 
+		if (entry->cmd_label &&
+		    nla_put_string(skb, P4TC_CMD_OPER_CMD_LABEL, entry->cmd_label))
+			goto nla_put_failure;
+
 		nla_nest_end(skb, nest_op);
 		i++;
 	}
@@ -581,16 +585,6 @@ free_node:
 	return err;
 }
 
-static int validate_label_operand(struct p4tc_act *act,
-				  struct p4tc_cmd_operate *ope,
-				  struct p4tc_cmd_operand *kopnd,
-				  struct netlink_ext_ack *extack)
-{
-	kopnd->oper_datatype = p4type_find_byid(P4T_U32);
-	return register_label(act, (const char *)kopnd->path_or_value,
-			      ope->cmd_offset, extack);
-}
-
 static int cmd_find_label_offset(struct p4tc_act *act, const char *label,
 				 struct netlink_ext_ack *extack)
 {
@@ -921,7 +915,6 @@ static int validate_operand(struct net *net, struct p4tc_act *act,
 		err = validate_reg_operand(act, kopnd, extack);
 		break;
 	case P4TC_OPER_LABEL:
-		err = validate_label_operand(act, ope, kopnd, extack);
 		break;
 	case P4TC_OPER_RET:
 		err = validate_ret_operand(kopnd, extack);
@@ -1080,6 +1073,7 @@ static void _free_operation(struct net *net, struct p4tc_cmd_operate *ope,
 	else
 		_free_operand_list_instance(&ope->operands_list);
 
+	kfree(ope->cmd_label);
 	kfree(ope->label1);
 	kfree(ope->label2);
 	kfree(ope);
@@ -1820,24 +1814,14 @@ static int validate_LABEL(struct net *net, struct p4tc_act *act,
 			  struct p4tc_cmd_operate *ope, u32 cmd_num_opnds,
 			  struct netlink_ext_ack *extack)
 {
-	struct p4tc_cmd_operand *A;
 	int err;
 
 	err = validate_num_opnds(ope, cmd_num_opnds);
 	if (err < 0) {
-		NL_SET_ERR_MSG_MOD(extack, "label must have only 1 operands");
+		NL_SET_ERR_MSG_MOD(extack,
+				   "label command mustn't have operands");
 		return err;
 	}
-
-	A = GET_OPA(&ope->operands_list);
-	if (A->oper_type != P4TC_OPER_LABEL) {
-		NL_SET_ERR_MSG_MOD(extack, "Operand A must be a label\n");
-		return -EINVAL;
-	}
-
-	err = validate_operand(net, act, ope, A, extack);
-	if (err)
-		return err;
 
 	return 0;
 }
@@ -2179,7 +2163,7 @@ static struct p4tc_cmd_s cmds[] = {
 	{ P4TC_CMD_OP_BXOR, 3, validate_BINARITH, generic_free_op,
 	  p4tc_cmd_BXOR },
 	{ P4TC_CMD_OP_JUMP, 1, validate_JUMP, generic_free_op, p4tc_cmd_JUMP },
-	{ P4TC_CMD_OP_LABEL, 1, validate_LABEL, generic_free_op, NULL },
+	{ P4TC_CMD_OP_LABEL, 0, validate_LABEL, generic_free_op, NULL },
 	{ P4TC_CMD_OP_RET, 1, validate_RET, generic_free_op, p4tc_cmd_RET },
 };
 
@@ -2359,6 +2343,7 @@ static const struct nla_policy cmd_ops_policy[P4TC_CMD_OPER_MAX + 1] = {
 	[P4TC_CMD_OPER_LIST] = { .type = NLA_NESTED },
 	[P4TC_CMD_OPER_LABEL1] = { .type = NLA_STRING, .len = LABELNAMSIZ },
 	[P4TC_CMD_OPER_LABEL2] = { .type = NLA_STRING, .len = LABELNAMSIZ },
+	[P4TC_CMD_OPER_CMD_LABEL] = { .type = NLA_STRING, .len = LABELNAMSIZ },
 };
 
 static struct p4tc_cmd_operate *uope_to_kope(struct p4tc_u_operate *uope)
@@ -2465,6 +2450,20 @@ static int p4tc_cmd_process_ops(struct net *net, struct p4tc_act *act,
 			return P4TC_CMD_POLICY;
 
 		strscpy(ope->label2, label2, label2_sz);
+	}
+
+	if (tb[P4TC_CMD_OPER_CMD_LABEL]) {
+		const char *cmd_label = nla_data(tb[P4TC_CMD_OPER_CMD_LABEL]);
+		const u32 cmd_label_sz = nla_len(tb[P4TC_CMD_OPER_CMD_LABEL]);
+
+		ope->cmd_label = kzalloc(cmd_label_sz, GFP_KERNEL);
+		if (!ope->cmd_label)
+			return P4TC_CMD_POLICY;
+
+		err = register_label(act, cmd_label, ope->cmd_offset, extack);
+		if (err < 0)
+			return P4TC_CMD_POLICY;
+		strscpy(ope->cmd_label, cmd_label, cmd_label_sz);
 	}
 
 	if (tb[P4TC_CMD_OPER_LIST]) {
@@ -2574,7 +2573,8 @@ static int cmd_brn_validate(struct p4tc_act *act,
 								   extack);
 				if (cmd_offset < 0)
 					return -EINVAL;
-				jmp_cnt = cmd_offset - ope->cmd_offset;
+
+				jmp_cnt = cmd_offset - ope->cmd_offset - 1;
 
 				if (jmp_cnt <= 0) {
 					NL_SET_ERR_MSG_MOD(extack,
@@ -2601,7 +2601,8 @@ static int cmd_brn_validate(struct p4tc_act *act,
 								   extack);
 				if (cmd_offset < 0)
 					return -EINVAL;
-				jmp_cnt = cmd_offset - ope->cmd_offset;
+
+				jmp_cnt = cmd_offset - ope->cmd_offset - 1;
 
 				if (jmp_cnt <= 0) {
 					NL_SET_ERR_MSG_MOD(extack,
