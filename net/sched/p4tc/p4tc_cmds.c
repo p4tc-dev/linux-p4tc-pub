@@ -71,6 +71,7 @@ P4TC_CMD_DECLARE(p4tc_cmd_BAND);
 P4TC_CMD_DECLARE(p4tc_cmd_BOR);
 P4TC_CMD_DECLARE(p4tc_cmd_BXOR);
 P4TC_CMD_DECLARE(p4tc_cmd_JUMP);
+P4TC_CMD_DECLARE(p4tc_cmd_RET);
 
 static void kfree_opentry(struct net *net, struct p4tc_cmd_operate *ope,
 			  bool called_from_template)
@@ -838,6 +839,42 @@ static int validate_immediate_operand(struct p4tc_cmd_operand *kopnd,
 	return 0;
 }
 
+static bool check_gact_return(const u32 return_code)
+{
+	switch (return_code) {
+	case TC_ACT_OK:
+	case TC_ACT_RECLASSIFY:
+	case TC_ACT_SHOT:
+	case TC_ACT_PIPE:
+	case TC_ACT_STOLEN:
+	case TC_ACT_QUEUED:
+	case TC_ACT_REPEAT:
+	case TC_ACT_REDIRECT:
+	case TC_ACT_TRAP:
+		return true;
+	}
+
+	if (!TC_ACT_EXT_CMP(return_code, TC_ACT_GOTO_CHAIN) ||
+	    !TC_ACT_EXT_CMP(return_code, TC_ACT_JUMP))
+		return true;
+
+	return false;
+}
+
+static int validate_ret_operand(struct p4tc_cmd_operand *kopnd,
+				struct netlink_ext_ack *extack)
+{
+	const u32 return_code = kopnd->immedv;
+
+	if (!check_gact_return(return_code)) {
+		NL_SET_ERR_MSG_FMT_MOD(extack, "Unknown gact return code %u\n",
+				       return_code);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int validate_operand(struct net *net, struct p4tc_act *act,
 			    struct p4tc_cmd_operate *ope,
 			    struct p4tc_cmd_operand *kopnd,
@@ -885,6 +922,9 @@ static int validate_operand(struct net *net, struct p4tc_act *act,
 		break;
 	case P4TC_OPER_LABEL:
 		err = validate_label_operand(act, ope, kopnd, extack);
+		break;
+	case P4TC_OPER_RET:
+		err = validate_ret_operand(kopnd, extack);
 		break;
 	default:
 		NL_SET_ERR_MSG_MOD(extack, "Unknown operand type");
@@ -1802,6 +1842,32 @@ static int validate_LABEL(struct net *net, struct p4tc_act *act,
 	return 0;
 }
 
+static int validate_RET(struct net *net, struct p4tc_act *act,
+			struct p4tc_cmd_operate *ope, u32 cmd_num_opnds,
+			struct netlink_ext_ack *extack)
+{
+	struct p4tc_cmd_operand *A;
+	int err;
+
+	err = validate_num_opnds(ope, cmd_num_opnds);
+	if (err < 0) {
+		NL_SET_ERR_MSG_MOD(extack, "return must have only 1 operand");
+		return err;
+	}
+
+	A = GET_OPA(&ope->operands_list);
+	if (A->oper_type != P4TC_OPER_RET) {
+		NL_SET_ERR_MSG_MOD(extack, "Operand A must be a return code");
+		return -EINVAL;
+	}
+
+	err = validate_operand(net, act, ope, A, extack);
+	if (err)
+		return err;
+
+	return 0;
+}
+
 static void p4tc_reg_lock(struct p4tc_cmd_operand *A,
 			  struct p4tc_cmd_operand *B,
 			  struct p4tc_cmd_operand *C)
@@ -2114,6 +2180,7 @@ static struct p4tc_cmd_s cmds[] = {
 	  p4tc_cmd_BXOR },
 	{ P4TC_CMD_OP_JUMP, 1, validate_JUMP, generic_free_op, p4tc_cmd_JUMP },
 	{ P4TC_CMD_OP_LABEL, 1, validate_LABEL, generic_free_op, NULL },
+	{ P4TC_CMD_OP_RET, 1, validate_RET, generic_free_op, p4tc_cmd_RET },
 };
 
 static struct p4tc_cmd_s *p4tc_get_cmd_byid(u16 cmdid)
@@ -2191,7 +2258,8 @@ static int p4tc_cmds_process_opnd(struct nlattr *nla,
 		kopnd->fetch = p4tc_fetch_dev;
 	} else if (uopnd->oper_type == P4TC_OPER_REG) {
 		kopnd->fetch = p4tc_fetch_reg;
-	} else if (uopnd->oper_type == P4TC_OPER_LABEL) {
+	} else if (uopnd->oper_type == P4TC_OPER_LABEL ||
+		   uopnd->oper_type == P4TC_OPER_RET) {
 		kopnd->fetch = NULL;
 	} else {
 		NL_SET_ERR_MSG_MOD(extack, "Unknown operand type");
@@ -3487,6 +3555,16 @@ static int p4tc_cmd_CONCAT(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 
 static int p4tc_cmd_JUMP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 			 struct tcf_p4act *cmd, struct tcf_result *res)
+{
+	struct p4tc_cmd_operand *A;
+
+	A = GET_OPA(&op->operands_list);
+
+	return A->immedv;
+}
+
+static int p4tc_cmd_RET(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+			struct tcf_p4act *cmd, struct tcf_result *res)
 {
 	struct p4tc_cmd_operand *A;
 
