@@ -188,6 +188,10 @@ struct net {
 #if IS_ENABLED(CONFIG_SMC)
 	struct netns_smc	smc;
 #endif
+
+#if IS_ENABLED(CONFIG_KPARSER)
+	void			*kparser_ns;
+#endif
 } __randomize_layout;
 
 #include <linux/seq_file_net.h>

@@ -10,6 +10,7 @@
 #include <linux/rhashtable.h>
 #include <linux/skbuff.h>
 #include <net/kparser.h>
+#include <net/sock.h>
 
 #include "kparser.h"
 #include "kparser_condexpr.h"
@@ -1125,10 +1126,12 @@ int kparser_parse(struct sk_buff *skb,
 {
 	struct kparser_glue_parser *k_prsr;
 	struct kparser_parser *parser;
+	struct net *net = NULL;
+	void *netns = NULL;
 	void *data, *ptr;
+	__u32 dflags = 0;
 	size_t pktlen;
 	int err;
-	__u32 dflags = 0;
 
 	data = skb_mac_header(skb);
 	pktlen = skb_mac_header_len(skb) + skb->len;
@@ -1138,10 +1141,15 @@ int kparser_parse(struct sk_buff *skb,
 		pktlen = skb_mac_header_len(skb) + skb->len;
 	}
 
+
 	err = skb_linearize(skb);
 	if (err < 0)
 		return err;
 	WARN_ON(skb->data_len);
+
+	net = get_net(sock_net(skb->sk));
+	if (net)
+		netns = net->kparser_ns;
 
 	/* TODO: do this pullup inside the loop of ___kparser_parse(), when
 	 * parse_len < hdr_len
@@ -1161,6 +1169,8 @@ int kparser_parse(struct sk_buff *skb,
 		if (kparser_key)
 			KPARSER_KMOD_DEBUG_PRINT(dflags, "parser {%s:%u} is not found\n",
 						 kparser_key->name, kparser_key->id);
+		if (net)
+			put_net(net);
 		return -EINVAL;
 	}
 
@@ -1180,15 +1190,20 @@ int kparser_parse(struct sk_buff *skb,
 		rcu_read_unlock();
 		if (likely(!avoid_ref))
 			kparser_ref_put(&k_prsr->glue.refcount);
+		if (net)
+			put_net(net);
 		return -ENOENT;
 	}
 
-	err = __kparser_parse(parser, data, pktlen, _metadata, metadata_len);
+	err = __kparser_parse_ns(net, parser, data, pktlen, _metadata, metadata_len);
 
 	rcu_read_unlock();
 
 	if (likely(!avoid_ref))
 		kparser_ref_put(&k_prsr->glue.refcount);
+
+	if (net)
+		put_net(net);
 
 	return err;
 }
@@ -1264,3 +1279,391 @@ bool kparser_put_parser(const void *obj, bool avoid_ref)
 	return true;
 }
 EXPORT_SYMBOL(kparser_put_parser);
+
+/* These are namespace supported versions but otherwise identical APIs of the
+ * above
+ */
+int __kparser_parse_ns(struct net *net, const void *obj, void *_hdr,
+		       size_t parse_len, void *_metadata, size_t metadata_len)
+{
+	const struct kparser_parse_node *next_parse_node, *atencap_node;
+	const struct kparser_parse_node *parse_node, *wildcard_node;
+	struct kparser_ctrl_data ctrl = { .ret = KPARSER_OKAY };
+	const struct kparser_metadata_table *metadata_table;
+	const struct kparser_proto_table *proto_table;
+	const struct kparser_proto_node *proto_node;
+	const struct kparser_parser *parser = obj;
+	int type = -1, i, ret, framescnt;
+	struct kparser_counters *cntrs;
+	void *_frame, *_obj_ref = NULL;
+	const void *base_hdr = _hdr;
+	ssize_t hdr_offset = 0;
+	ssize_t hdr_len, res;
+	__u32 frame_num = 0;
+	__u32 dflags = 0;
+	bool currencap;
+
+	if (parser && parser->config.max_encaps > framescnt)
+		framescnt = parser->config.max_encaps;
+
+	if (!parser || !_metadata || metadata_len == 0 || !_hdr || parse_len == 0 ||
+	    (((framescnt * parser->config.frame_size) +
+	       parser->config.metameta_size) > metadata_len)) {
+		KPARSER_KMOD_DEBUG_PRINT(dflags,
+					 "one or more empty/invalid param(s)\n");
+		return -EINVAL;
+	}
+
+	if (parser->kparser_start_signature != KPARSERSTARTSIGNATURE ||
+	    parser->kparser_end_signature != KPARSERENDSIGNATURE) {
+		KPARSER_KMOD_DEBUG_PRINT(dflags,
+					 "%s:corrupted kparser signature:start:0x%02x, end:0x%02x\n",
+			 __func__, parser->kparser_start_signature, parser->kparser_end_signature);
+		return -EINVAL;
+	}
+
+	if (parse_len < parser->config.metameta_size) {
+		KPARSER_KMOD_DEBUG_PRINT(dflags,
+					 "parse buf err, parse_len:%lu, mmd_len:%lu\n",
+					 parse_len, parser->config.metameta_size);
+		return -EINVAL;
+	}
+
+	_frame = _metadata + parser->config.metameta_size;
+	dflags = parser->config.flags;
+
+	if (dflags & KPARSER_F_DEBUG_DATAPATH) {
+		/* This code is required for regression tests also */
+		pr_alert("kParserdump:len:%lu\n", parse_len);
+		print_hex_dump_bytes("kParserdump:rcvd_pkt:",
+				     DUMP_PREFIX_OFFSET, _hdr, parse_len);
+	}
+
+	ctrl.hdr_base = _hdr;
+	ctrl.node_cnt = 0;
+	ctrl.encap_levels = 0;
+
+	cntrs = rcu_dereference(parser->cntrs);
+	if (cntrs) {
+		/* Initialize parser counters */
+		memset(cntrs, 0, sizeof(parser->cntrs_len));
+	}
+
+	parse_node = rcu_dereference(parser->root_node);
+	if (!parse_node) {
+		KPARSER_KMOD_DEBUG_PRINT(dflags,
+					 "root node missing,parser:%s\n",
+					 parser->name);
+		return -ENOENT;
+	}
+
+	/* Main parsing loop. The loop normal teminates when we encounter a
+	 * leaf protocol node, an error condition, hitting limit on layers of
+	 * encapsulation, protocol condition to stop (i.e. flags that
+	 * indicate to stop at flow label or hitting fragment), or
+	 * unknown protocol result in table lookup for next node.
+	 */
+	do {
+		KPARSER_KMOD_DEBUG_PRINT(dflags,
+					 "Parsing node:%s\n",
+					 parse_node->name);
+		currencap = false;
+		proto_node = &parse_node->proto_node;
+		hdr_len = proto_node->min_len;
+
+		if (++ctrl.node_cnt > parser->config.max_nodes) {
+			ctrl.ret = KPARSER_STOP_MAX_NODES;
+			goto parser_out;
+		}
+		/* Protocol node length checks */
+		KPARSER_KMOD_DEBUG_PRINT(dflags,
+					 "kParser parsing %s\n",
+					 parse_node->name);
+		/* when SKB is passed, if parse_len < hdr_len, then
+		 * try to do skb_pullup(hdr_len) here. reset parse_len based on
+		 * new parse_len, reset data ptr. Do this inside this loop.
+		 */
+		if (parse_len < hdr_len) {
+			ctrl.ret = KPARSER_STOP_LENGTH;
+			goto parser_out;
+		}
+
+		do {
+			if (!proto_node->ops.len_parameterized)
+				break;
+
+			hdr_len = eval_parameterized_len(&proto_node->ops.pflen, _hdr);
+
+			KPARSER_KMOD_DEBUG_PRINT(dflags,
+						 "eval_hdr_len:%ld min_len:%lu\n",
+						 hdr_len, proto_node->min_len);
+
+			if (hdr_len < proto_node->min_len) {
+				ctrl.ret = hdr_len < 0 ? hdr_len : KPARSER_STOP_LENGTH;
+				goto parser_out;
+			}
+			if (parse_len < hdr_len) {
+				ctrl.ret = KPARSER_STOP_LENGTH;
+				goto parser_out;
+			}
+		} while (0);
+
+		hdr_offset = _hdr - base_hdr;
+		ctrl.pkt_len = parse_len;
+
+		/* Callback processing order
+		 *    1) Extract Metadata
+		 *    2) Process TLVs
+		 *	2.a) Extract metadata from TLVs
+		 *	2.b) Process TLVs
+		 *    3) Process protocol
+		 */
+
+		metadata_table = rcu_dereference(parse_node->metadata_table);
+		/* Extract metadata, per node processing */
+		if (metadata_table) {
+			ctrl.ret = extract_metadata_table(dflags,
+							  parser,
+							  metadata_table,
+							  _hdr, hdr_len, hdr_offset,
+							  _metadata, _frame, &ctrl);
+			if (ctrl.ret != KPARSER_OKAY)
+				goto parser_out;
+		}
+
+		/* Process node type */
+		switch (parse_node->node_type) {
+		case KPARSER_NODE_TYPE_PLAIN:
+		default:
+			break;
+		case KPARSER_NODE_TYPE_TLVS:
+			/* Process TLV nodes */
+			ctrl.ret = kparser_parse_tlvs(dflags, parser,
+						      parse_node,
+						      _obj_ref, _hdr, hdr_len,
+						      hdr_offset, _metadata,
+						      _frame, &ctrl);
+check_processing_return:
+			switch (ctrl.ret) {
+			case KPARSER_STOP_OKAY:
+				goto parser_out;
+			case KPARSER_OKAY:
+				break; /* Go to the next node */
+			case KPARSER_STOP_NODE_OKAY:
+				/* Note KPARSER_STOP_NODE_OKAY means that
+				 * post loop processing is not
+				 * performed
+				 */
+				ctrl.ret = KPARSER_OKAY;
+				goto after_post_processing;
+			case KPARSER_STOP_SUB_NODE_OKAY:
+				ctrl.ret = KPARSER_OKAY;
+				break; /* Just go to next node */
+			default:
+				goto parser_out;
+			}
+			break;
+		case KPARSER_NODE_TYPE_FLAG_FIELDS:
+			/* Process flag-fields */
+			res = kparser_parse_flag_fields(dflags, parser,
+							parse_node,
+							_obj_ref,
+							_hdr, hdr_len,
+							hdr_offset,
+							_metadata,
+							_frame,
+							&ctrl, parse_len);
+			if (res < 0) {
+				ctrl.ret = res;
+				goto check_processing_return;
+			}
+			hdr_len += res;
+		}
+
+after_post_processing:
+		/* Proceed to next protocol layer */
+
+		proto_table = rcu_dereference(parse_node->proto_table);
+		wildcard_node = rcu_dereference(parse_node->wildcard_node);
+		if (!proto_table && !wildcard_node) {
+			/* Leaf parse node */
+			KPARSER_KMOD_DEBUG_PRINT(dflags, "Leaf node");
+			goto parser_out;
+		}
+
+		if (proto_table) {
+			do {
+				if (proto_node->ops.cond_exprs_parameterized) {
+					ctrl.ret =
+						eval_cond_exprs(dflags,
+								&proto_node->ops.cond_exprs,
+								_hdr);
+					if (ctrl.ret != KPARSER_OKAY)
+						goto parser_out;
+				}
+
+				if (!proto_table)
+					break;
+				type =
+					eval_parameterized_next_proto(dflags,
+								      &proto_node->ops.pfnext_proto,
+								      _hdr);
+				KPARSER_KMOD_DEBUG_PRINT(dflags,
+							 "nxt_proto key:%x\n",
+							 type);
+				if (type < 0) {
+					ctrl.ret = type;
+					goto parser_out;
+				}
+
+				/* Get next node */
+				next_parse_node = lookup_node(dflags,
+							      type,
+							      proto_table,
+							      &currencap);
+
+				if (next_parse_node)
+					goto found_next;
+			} while (0);
+		}
+
+		/* Try wildcard node. Either table lookup failed to find a
+		 * node or there is only a wildcard
+		 */
+		if (wildcard_node) {
+			/* Perform default processing in a wildcard node */
+			next_parse_node = wildcard_node;
+		} else {
+			/* Return default code. Parsing will stop
+			 * with the inidicated code
+			 */
+			ctrl.ret = parse_node->unknown_ret;
+			goto parser_out;
+		}
+
+found_next:
+		/* Found next protocol node, set up to process */
+		if (!proto_node->overlay) {
+			/* Move over current header */
+			_hdr += hdr_len;
+			parse_len -= hdr_len;
+		}
+
+		parse_node = next_parse_node;
+		if (currencap || proto_node->encap) {
+			/* Check is there is an atencap_node configured for
+			 * the parser
+			 */
+			atencap_node = rcu_dereference(parser->atencap_node);
+			if (atencap_node) {
+				ret = __kparser_run_exit_node(dflags,
+							      parser,
+							      atencap_node,
+							      _obj_ref,
+							      _hdr, hdr_offset,
+							      hdr_len,
+							      _metadata, _frame,
+							      &ctrl);
+				if (ret != KPARSER_OKAY)
+					goto parser_out;
+			}
+
+			/* New encapsulation layer. Check against
+			 * number of encap layers allowed and also
+			 * if we need a new metadata frame.
+			 */
+			if (++ctrl.encap_levels > parser->config.max_encaps) {
+				ctrl.ret = KPARSER_STOP_ENCAP_DEPTH;
+				goto parser_out;
+			}
+
+			if (frame_num < parser->config.max_frames) {
+				_frame += parser->config.frame_size;
+				frame_num++;
+			}
+
+			/* Check if parser has counters that need to be reset
+			 * at encap
+			 */
+			if (parser->cntrs)
+				for (i = 0; i < KPARSER_CNTR_NUM_CNTRS; i++)
+					if (parser->cntrs_conf.cntrs[i].reset_on_encap)
+						cntrs->cntr[i] = 0;
+		}
+
+	} while (1);
+
+parser_out:
+	/* Convert PANDA_OKAY to PANDA_STOP_OKAY if parser is exiting normally.
+	 * This means that okay_node will see PANDA_STOP_OKAY in ctrl.ret
+	 */
+	ctrl.ret = ctrl.ret == KPARSER_OKAY ? KPARSER_STOP_OKAY : ctrl.ret;
+
+	parse_node = (ctrl.ret == KPARSER_OKAY || KPARSER_IS_OK_CODE(ctrl.ret)) ?
+		      rcu_dereference(parser->okay_node) : rcu_dereference(parser->fail_node);
+
+	if (!parse_node) {
+		if (dflags & KPARSER_F_DEBUG_DATAPATH) {
+			/* This code is required for regression tests also */
+			pr_alert("kParserdump:metadata_len:%lu\n", metadata_len);
+			print_hex_dump_bytes("kParserdump:md:",
+					     DUMP_PREFIX_OFFSET,
+					     _metadata, metadata_len);
+		}
+		return ctrl.ret;
+	}
+
+	/* Run an exit parse node. This is either the okay node or the fail
+	 * node that is set in parser config
+	 */
+	ret = __kparser_run_exit_node(dflags, parser, parse_node, _obj_ref,
+				      _hdr, hdr_offset, hdr_len,
+				      _metadata, _frame, &ctrl);
+	if (ret != KPARSER_OKAY)
+		ctrl.ret = (ctrl.ret == KPARSER_STOP_OKAY) ? ret : ctrl.ret;
+
+	if (dflags & KPARSER_F_DEBUG_DATAPATH) {
+		/* This code is required for regression tests also */
+		pr_alert("kParserdump:metadata_len:%lu\n", metadata_len);
+		print_hex_dump_bytes("kParserdump:md:", DUMP_PREFIX_OFFSET,
+				     _metadata, metadata_len);
+	}
+
+	return ctrl.ret;
+}
+EXPORT_SYMBOL(__kparser_parse_ns);
+
+const void *kparser_get_parser_ns(struct net *net,
+				  const struct kparser_hkey *kparser_key,
+				  bool avoid_ref)
+{
+	struct kparser_glue_parser *k_prsr;
+
+	k_prsr = kparser_get_parser_ctx(kparser_key);
+	if (!k_prsr)
+		return NULL;
+
+	if (likely(!avoid_ref))
+		kparser_ref_get(&k_prsr->glue.refcount);
+
+	return &k_prsr->parser;
+}
+EXPORT_SYMBOL(kparser_get_parser_ns);
+
+bool kparser_put_parser_ns(struct net *net, const void *obj, bool avoid_ref)
+{
+	const struct kparser_parser *parser = obj;
+	struct kparser_glue_parser *k_parser;
+
+	if (!parser)
+		return false;
+
+	if (likely(!avoid_ref)) {
+		k_parser = container_of(parser, struct kparser_glue_parser,
+					parser);
+		kparser_ref_put(&k_parser->glue.refcount);
+	}
+
+	return true;
+}
+EXPORT_SYMBOL(kparser_put_parser_ns);

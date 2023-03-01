@@ -277,19 +277,23 @@ static inline __u32 kparser_generic_obj_hashfn_id(const void *obj, __u32 key_len
 /* internal shared functions */
 int kparser_init(void);
 int kparser_deinit(void);
-int kparser_config_handler_add(const void *cmdarg, size_t cmdarglen,
+int kparser_config_handler_add(void *netns,
+			       const void *cmdarg, size_t cmdarglen,
 			       struct kparser_cmd_rsp_hdr **rsp,
 			       size_t *rsp_len,
 			       void *extack, int *err);
-int kparser_config_handler_update(const void *cmdarg, size_t cmdarglen,
+int kparser_config_handler_update(void *netns,
+				  const void *cmdarg, size_t cmdarglen,
 				  struct kparser_cmd_rsp_hdr **rsp,
 				  size_t *rsp_len,
 				  void *extack, int *err);
-int kparser_config_handler_read(const void *cmdarg, size_t cmdarglen,
+int kparser_config_handler_read(void *netns,
+				const void *cmdarg, size_t cmdarglen,
 				struct kparser_cmd_rsp_hdr **rsp,
 				size_t *rsp_len,
 				void *extack, int *err);
-int kparser_config_handler_delete(const void *cmdarg, size_t cmdarglen,
+int kparser_config_handler_delete(void *netns,
+				  const void *cmdarg, size_t cmdarglen,
 				  struct kparser_cmd_rsp_hdr **rsp,
 				  size_t *rsp_len,
 				  void *extack, int *err);
@@ -312,16 +316,17 @@ int kparser_namespace_insert(enum kparser_global_namespace_ids ns_id,
 			     struct rhash_head *obj_name);
 
 /* Generic kParser KMOD's netlink msg handler's definitions for create */
-typedef int kparser_obj_create_update(const struct kparser_conf_cmd *conf,
+typedef int kparser_obj_create_update(void *netns,
+				      const struct kparser_conf_cmd *conf,
 				      size_t conf_len,
 				      struct kparser_cmd_rsp_hdr **rsp,
 				      size_t *rsp_len, const char *op,
 				      void *extack, int *err);
 /* Generic kParser KMOD's netlink msg handler's definitions for read and delete */
-typedef int kparser_obj_read_del(const struct kparser_hkey *key,
-		struct kparser_cmd_rsp_hdr **rsp,
-		size_t *rsp_len, __u8 recursive_read,
-		const char *op, void *extack, int *err);
+typedef int kparser_obj_read_del(void *netns, const struct kparser_hkey *key,
+				 struct kparser_cmd_rsp_hdr **rsp,
+				 size_t *rsp_len, __u8 recursive_read,
+				 const char *op, void *extack, int *err);
 /* Generic kParser KMOD's netlink msg handler's free callbacks */
 typedef void kparser_free_obj(void *ptr, void *arg);
 int kparser_link_attach(const void *owner_obj,
@@ -414,5 +419,26 @@ do {										\
 		pr_debug("kParser:[%s:%d]" FMT, __func__, __LINE__, ## ARGS);	\
 }										\
 while (0)
+
+/* kParser KMOD's namespace definitions */
+struct kparser_mod_namespaces {
+	enum kparser_global_namespace_ids namespace_id;
+	const char *name;
+	struct kparser_htbl htbl_name;
+	struct kparser_htbl htbl_id;
+	kparser_obj_create_update *create_handler;
+	kparser_obj_create_update *update_handler;
+	kparser_obj_read_del *read_handler;
+	kparser_obj_read_del *del_handler;
+	kparser_free_obj *free_handler;
+	size_t bv_len;
+	unsigned long *bv;
+};
+
+struct kparser_ns_ds_ctx {
+	struct kparser_mod_namespaces **kparser_ns_ctx;
+};
+
+struct kparser_ns_ds_ctx * kparser_alloc_global_ns_ctx(void);
 
 #endif /* __KPARSER_H */

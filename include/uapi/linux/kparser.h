@@ -205,6 +205,8 @@ struct kparser_conf_metadata {
 	size_t add_off;
 	struct kparser_hkey counterkey;
 	struct kparser_hkey counter_data_key;
+	__u8 right_shift;
+	__u32 mask;
 };
 
 /* *********************** metadata list/table *********************** */
