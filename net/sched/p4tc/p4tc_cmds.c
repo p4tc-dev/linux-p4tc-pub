@@ -3305,7 +3305,7 @@ static int p4tc_cmd_SNDPORTEGR(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		return TC_ACT_SHOT;
 	}
 
-	if (unlikely(!(dev->flags & IFF_UP))) {
+	if (unlikely(!(dev->flags & IFF_UP)) || !netif_carrier_ok(dev)) {
 		net_notice_ratelimited("SNDPORTEGR: device %s is down\n",
 				       dev->name);
 		__this_cpu_dec(redirect_rec_level);
