@@ -352,37 +352,44 @@ struct p4tc_table_entry_work {
 };
 
 struct p4tc_table_entry_key {
-	u8  *value;
-	u8  *unmasked_key;
-	u16 keysz;
+	u32 keysz;
+	/* Key start */
+	u32 maskid;
+	unsigned char fa_key[] __aligned(8);
+};
+
+struct p4tc_table_entry_value {
+	u32                              prio;
+	int                              num_acts;
+	struct tc_action                 **acts;
+	refcount_t                       entries_ref;
+	u32                              permissions;
+	struct p4tc_table_entry_tm __rcu *tm;
+	struct p4tc_table_entry_work     *entry_work;
 };
 
 struct p4tc_table_entry_mask {
 	struct rcu_head	 rcu;
 	u32              sz;
-	u32              mask_id;
 	u32              mask_index;
 	refcount_t       mask_ref;
-	u8               *value;
+	u32              mask_id;
+	unsigned char fa_value[] __aligned(8);
 };
 
 struct p4tc_table_entry {
-	struct p4tc_table_entry_key      key;
-	struct work_struct               work;
-	struct p4tc_table_entry_tm __rcu *tm;
-	u32                              prio;
-	u32                              mask_id;
-	struct tc_action                 **acts;
-	struct p4tc_table_entry_work     *entry_work;
-	int                              num_acts;
-	struct rhlist_head               ht_node;
-	struct list_head                 list;
-	struct rcu_head                  rcu;
-	refcount_t                       entries_ref;
-	u16                              who_created;
-	u16                              who_updated;
-	u16                              permissions;
+	struct rcu_head rcu;
+	struct rhlist_head ht_node;
+	struct p4tc_table_entry_key key;
+	/* fallthrough: key data + value */
 };
+
+#define P4TC_KEYSZ_BYTES(bits) round_up(BITS_TO_BYTES(bits), 8)
+
+static inline void *p4tc_table_entry_value(struct p4tc_table_entry *entry)
+{
+	return entry->key.fa_key + P4TC_KEYSZ_BYTES(entry->key.keysz);
+}
 
 extern const struct nla_policy p4tc_root_policy[P4TC_ROOT_MAX + 1];
 extern const struct nla_policy p4tc_policy[P4TC_MAX + 1];
@@ -519,11 +526,11 @@ void tcf_table_put_ref(struct p4tc_table *table);
 
 void tcf_table_entry_destroy_hash(void *ptr, void *arg);
 
-int tcf_table_const_entry_cu(struct net *net, struct nlattr *arg,
-			     struct p4tc_table_entry *entry,
-			     struct p4tc_pipeline *pipeline,
-			     struct p4tc_table *table,
-			     struct netlink_ext_ack *extack);
+struct p4tc_table_entry *
+tcf_table_const_entry_cu(struct net *net, struct nlattr *arg,
+			 struct p4tc_pipeline *pipeline,
+			 struct p4tc_table *table,
+			 struct netlink_ext_ack *extack);
 int p4tca_table_get_entry_fill(struct sk_buff *skb, struct p4tc_table *table,
 			       struct p4tc_table_entry *entry, u32 tbl_id);
 

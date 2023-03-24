@@ -339,6 +339,9 @@ struct p4tc_table_entry_tm {
 	__u64 created;
 	__u64 lastused;
 	__u64 firstused;
+	__u16 who_created;
+	__u16 who_updated;
+	__u16 permissions;
 };
 
 /* Table entry attributes */
