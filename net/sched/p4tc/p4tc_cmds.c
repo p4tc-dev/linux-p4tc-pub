@@ -3421,6 +3421,7 @@ static int p4tc_cmd_TBLAPP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 {
 	struct p4tc_cmd_operand *A = GET_OPA(&op->operands_list);
 	struct p4tc_table *table = __p4tc_fetch(skb, A, cmd, res);
+	struct p4tc_table_entry_value *value;
 	struct p4tc_table_entry *entry;
 	struct p4tc_table_key *key;
 	int ret;
@@ -3445,8 +3446,8 @@ static int p4tc_cmd_TBLAPP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		return ret;
 
 	entry = p4tc_table_entry_lookup(skb, table, table->tbl_keysz);
-	if (IS_ERR(entry))
-		entry = NULL;
+	if (entry)
+		value = p4tc_table_entry_value(entry);
 
 	res->hit = entry ? true : false;
 	res->miss = !res->hit;
@@ -3456,8 +3457,8 @@ static int p4tc_cmd_TBLAPP(struct sk_buff *skb, struct p4tc_cmd_operate *op,
 		struct p4tc_table_defact *hitact;
 
 		hitact = rcu_dereference(table->tbl_default_hitact);
-		if (entry->acts)
-			ret = tcf_action_exec(skb, entry->acts, entry->num_acts,
+		if (value->acts)
+			ret = tcf_action_exec(skb, value->acts, value->num_acts,
 					      res);
 		else if (hitact)
 			ret = tcf_action_exec(skb, hitact->default_acts, 1,
