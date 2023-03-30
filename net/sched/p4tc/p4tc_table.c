@@ -896,6 +896,7 @@ static struct p4tc_table *tcf_table_create(struct net *net, struct nlattr **tb,
 					   struct p4tc_pipeline *pipeline,
 					   struct netlink_ext_ack *extack)
 {
+	struct rhashtable_params table_hlt_params = entry_hlt_params;
 	struct p4tc_table_key *key = NULL;
 	struct p4tc_table_parm *parm;
 	struct p4tc_table *table;
@@ -1156,7 +1157,13 @@ static struct p4tc_table *tcf_table_create(struct net *net, struct nlattr **tb,
 	spin_lock_init(&table->tbl_masks_idr_lock);
 	spin_lock_init(&table->tbl_prio_idr_lock);
 
-	if (rhltable_init(&table->tbl_entries, &entry_hlt_params) < 0) {
+	table_hlt_params.max_size = table->tbl_max_entries;
+	if (table->tbl_max_entries > U16_MAX)
+		table_hlt_params.nelem_hint = U16_MAX / 4 * 3;
+	else
+		table_hlt_params.nelem_hint = table->tbl_max_entries / 4 * 3;
+
+	if (rhltable_init(&table->tbl_entries, &table_hlt_params) < 0) {
 		ret = -EINVAL;
 		goto defaultacts_destroy;
 	}
