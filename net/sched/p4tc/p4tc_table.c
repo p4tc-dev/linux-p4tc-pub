@@ -1388,19 +1388,14 @@ static struct p4tc_table *tcf_table_update(struct net *net, struct nlattr **tb,
 	if (tb[P4TC_TABLE_OPT_ENTRY]) {
 		struct p4tc_table_entry *entry;
 
-		entry = kzalloc(GFP_KERNEL, sizeof(*entry));
-		if (!entry) {
-			ret = -ENOMEM;
+		/* Workaround to make this work */
+		entry = tcf_table_const_entry_cu(net, tb[P4TC_TABLE_OPT_ENTRY],
+						 pipeline, table, extack);
+		if (IS_ERR(entry)) {
+			ret = PTR_ERR(entry);
 			goto free_perm;
 		}
 
-		/* Workaround to make this work */
-		ret = tcf_table_const_entry_cu(net, tb[P4TC_TABLE_OPT_ENTRY],
-					       entry, pipeline, table, extack);
-		if (ret < 0) {
-			kfree(entry);
-			goto free_perm;
-		}
 		table->tbl_const_entry = entry;
 	}
 
