@@ -1047,6 +1047,17 @@ static struct p4tc_table *tcf_table_create(struct net *net, struct nlattr **tb,
 		table->tbl_permissions->permissions = P4TC_TABLE_PERMISSIONS;
 	}
 
+	if (parm->tbl_flags & P4TC_TABLE_FLAGS_TYPE) {
+		if (parm->tbl_type > P4TC_TABLE_TYPE_MAX) {
+			NL_SET_ERR_MSG(extack, "Table type can only be exact or LPM");
+			ret = -EINVAL;
+			goto free_permissions;
+		}
+		table->tbl_type = parm->tbl_type;
+	} else {
+		table->tbl_type = P4TC_TABLE_TYPE_EXACT;
+	}
+
 	refcount_set(&table->tbl_ref, 1);
 	refcount_set(&table->tbl_ctrl_ref, 1);
 
@@ -1355,6 +1366,15 @@ static struct p4tc_table *tcf_table_update(struct net *net, struct nlattr **tb,
 				goto key_destroy;
 			}
 			perm->permissions = parm->tbl_permissions;
+		}
+
+		if (parm->tbl_flags & P4TC_TABLE_FLAGS_TYPE) {
+			if (parm->tbl_type > P4TC_TABLE_TYPE_MAX) {
+				NL_SET_ERR_MSG(extack, "Table type can only be exact or LPM");
+				ret = -EINVAL;
+				goto free_perm;
+			}
+			table->tbl_type = parm->tbl_type;
 		}
 	}
 
