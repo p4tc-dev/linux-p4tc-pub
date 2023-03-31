@@ -108,6 +108,7 @@ __p4tc_entry_lookup(struct p4tc_table *table, struct p4tc_table_entry_key *key)
 static void mask_key(const struct p4tc_table_entry_mask *mask, u8 *masked_key,
 		     u8 *skb_key)
 {
+	u32 *mask_value = (u32 *)(mask->value + KEY_MASK_ID_SZ);
 	int i;
 	__u32 *mask_id;
 
@@ -135,6 +136,7 @@ struct p4tc_table_entry *p4tc_table_entry_lookup(struct sk_buff *skb,
 	masks_array = (const struct p4tc_table_entry_mask **)rcu_dereference(table->tbl_masks_array);
 	for (i = 0; i < table->tbl_curr_num_masks; i++) {
 		const struct p4tc_table_entry_mask *mask = masks_array[i];
+		u32 *real_key = (u32 *)&masked_key[KEY_MASK_ID_SZ];
 		struct p4tc_table_entry_key key = {};
 
 		mask_key(mask, masked_key, pad->key);
@@ -143,11 +145,15 @@ struct p4tc_table_entry *p4tc_table_entry_lookup(struct sk_buff *skb,
 		key.keysz = keysz + KEY_MASK_ID_SZ_BITS;
 
 		entry_curr = __p4tc_entry_lookup(table, &key);
+
 		if (entry_curr) {
+			return entry_curr;
+			/*
 			if (entry_curr->prio <= smallest_prio) {
 				smallest_prio = entry_curr->prio;
 				entry = entry_curr;
 			}
+			*/
 		}
 	}
 
@@ -306,6 +312,24 @@ tcf_table_entry_mask_find_byvalue(struct p4tc_table *table,
 	return NULL;
 }
 
+static void __tcf_table_entry_mask_del(struct p4tc_table *table,
+				       struct p4tc_table_entry_mask *mask)
+{
+	if (table->tbl_type == P4TC_TABLE_TYPE_EXACT) {
+		table->tbl_masks_array[mask->mask_index] = NULL;
+		table->tbl_free_masks_bitmap[mask->mask_index] = 1;
+	} else if (table->tbl_type == P4TC_TABLE_TYPE_LPM) {
+		int i;
+
+		for (i = mask->mask_index; i < table->tbl_curr_num_masks - 1; i++) {
+			table->tbl_masks_array[i] = table->tbl_masks_array[i + 1];
+		}
+		table->tbl_masks_array[table->tbl_curr_num_masks - 1] = NULL;
+	}
+
+	table->tbl_curr_num_masks--;
+}
+
 static void tcf_table_entry_mask_del(struct p4tc_table *table,
 				     struct p4tc_table_entry *entry)
 {
@@ -319,9 +343,7 @@ static void tcf_table_entry_mask_del(struct p4tc_table *table,
 	if (refcount_dec_if_one(&mask_found->mask_ref)) {
 		spin_lock_bh(&table->tbl_masks_idr_lock);
 		idr_remove(&table->tbl_masks_idr, mask_found->mask_id);
-		table->tbl_masks_array[mask_found->mask_index] = NULL;
-		table->tbl_curr_num_masks--;
-		table->tbl_free_masks_bitmap[mask_found->mask_index] = 1;
+		__tcf_table_entry_mask_del(table, mask_found);
 		spin_unlock_bh(&table->tbl_masks_idr_lock);
 		call_rcu(&mask_found->rcu, tcf_table_entry_mask_destroy);
 	} else {
@@ -330,16 +352,62 @@ static void tcf_table_entry_mask_del(struct p4tc_table *table,
 	}
 }
 
-static inline int find_nxt_mask_index(struct p4tc_table *table)
+static inline int insert_in_mask_array(struct p4tc_table *table,
+				       struct p4tc_table_entry_mask *mask)
 {
+	const u32 curr_num_masks = table->tbl_curr_num_masks ? table->tbl_curr_num_masks : 1;
 	int i;
 
-	for (i = 0; i < table->tbl_max_masks; i++) {
-		if (table->tbl_free_masks_bitmap[i])
-			return i;
+	if (table->tbl_type == P4TC_TABLE_TYPE_EXACT) {
+		for (i = 0; i < table->tbl_max_masks; i++) {
+			if (table->tbl_free_masks_bitmap[i]) {
+				table->tbl_free_masks_bitmap[i] = 0;
+				mask->mask_index = i;
+				table->tbl_masks_array[i] = mask;
+				return 0;
+			}
+		}
+	} else if (table->tbl_type == P4TC_TABLE_TYPE_LPM) {
+		for (i = 0; i < curr_num_masks; i++) {
+			u64 *mask_value_ptr = (u64 *)(mask->value + KEY_MASK_ID_SZ);
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+			u8 mask_value = fls(*mask_value_ptr);
+#else
+			u8 mask_value = ffs(*mask_value_ptr);
+#endif
+			int j;
+
+			if (table->tbl_masks_array[i]) {
+				u64 *array_mask_value_ptr = (u64 *)(table->tbl_masks_array[i]->value + KEY_MASK_ID_SZ);
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+				u8 array_mask_value = fls(*array_mask_value_ptr);
+#else
+				u8 array_mask_value = ffs(*array_mask_value_ptr);
+#endif
+
+				if (mask_value > array_mask_value) {
+					j = curr_num_masks;
+					while (j > i + 1) {
+						table->tbl_masks_array[j] = table->tbl_masks_array[j - 1];
+						j--;
+					}
+					table->tbl_masks_array[i + 1] = table->tbl_masks_array[i];
+					mask->mask_index = i;
+					table->tbl_masks_array[i] = mask;
+					return 0;
+				}
+			} else {
+				mask->mask_index = i;
+				table->tbl_masks_array[i] = mask;
+				return 0;
+			}
+		}
+		mask->mask_index = i;
+		table->tbl_masks_array[i] = mask;
+		return 0;
 	}
 
-	return -1;
+	return -ENOSPC;
 }
 
 /* TODO: Ordering optimisation for LPM */
@@ -355,7 +423,6 @@ tcf_table_entry_mask_add(struct p4tc_table *table,
 	/* Only add mask if it was not already added */
 	if (!mask_found) {
 		struct p4tc_table_entry_mask *mask_allocated;
-		u32 free_mask_index;
 
 		if (table->tbl_max_masks < table->tbl_curr_num_masks + 1)
 			return ERR_PTR(-ENOSPC);
@@ -381,11 +448,13 @@ tcf_table_entry_mask_add(struct p4tc_table *table,
 		ret = idr_alloc_u32(&table->tbl_masks_idr, mask_allocated,
 				    &mask_allocated->mask_id, UINT_MAX,
 				    GFP_ATOMIC);
-		free_mask_index = find_nxt_mask_index(table);
-		table->tbl_masks_array[free_mask_index] = mask_allocated;
-		table->tbl_free_masks_bitmap[free_mask_index] = 0;
-		mask_allocated->mask_index = table->tbl_curr_num_masks;
+		if (ret < 0)
+			goto unlock;
+		ret = insert_in_mask_array(table, mask_allocated);
+		if (ret < 0)
+			goto unlock;
 		table->tbl_curr_num_masks++;
+unlock:
 		spin_unlock_bh(&table->tbl_masks_idr_lock);
 		if (ret < 0) {
 			kfree(mask_allocated->value);

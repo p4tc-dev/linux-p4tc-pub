@@ -267,6 +267,8 @@ struct p4tc_table {
 	refcount_t                          tbl_ctrl_ref;
 	refcount_t                          tbl_ref;
 	refcount_t                          tbl_entries_ref;
+	u16                                 tbl_type;
+	u16                                 PAD0;
 };
 
 extern const struct p4tc_template_ops p4tc_table_ops;
