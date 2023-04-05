@@ -36,7 +36,7 @@ struct p4tc_type_ops {
 #define P4T_MAX_STR_SZ 32
 struct p4tc_type {
 	char name[P4T_MAX_STR_SZ];
-	struct p4tc_type_ops *ops;
+	const struct p4tc_type_ops *ops;
 	size_t container_bitsz;
 	size_t bitsz;
 	int typeid;
@@ -57,5 +57,31 @@ void p4t_release(struct p4tc_type_mask_shift *mask_shift);
 
 int p4tc_register_types(void);
 void p4tc_unregister_types(void);
+
+#ifdef CONFIG_RETPOLINE
+int __p4tc_type_host_read(const struct p4tc_type_ops *ops,
+			  struct p4tc_type *container,
+			  struct p4tc_type_mask_shift *mask_shift, void *sval,
+			  void *dval);
+int __p4tc_type_host_write(const struct p4tc_type_ops *ops,
+			   struct p4tc_type *container,
+			   struct p4tc_type_mask_shift *mask_shift, void *sval,
+			   void *dval);
+#else
+static inline int __p4tc_type_host_read(const struct p4tc_type_ops *ops,
+					struct p4tc_type *container,
+					struct p4tc_type_mask_shift *mask_shift,
+					void *sval, void *dval)
+{
+	return ops->host_read(container, mask_shift, sval, dval);
+}
+static inline int __p4tc_type_host_write(const struct p4tc_type_ops *ops,
+					struct p4tc_type *container,
+					struct p4tc_type_mask_shift *mask_shift,
+					void *sval, void *dval)
+{
+	return ops->host_write(container, mask_shift, sval, dval);
+}
+#endif
 
 #endif

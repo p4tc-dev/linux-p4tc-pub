@@ -27,14 +27,16 @@
 #include <net/netlink.h>
 #include <net/flow_offload.h>
 
-#define KEY_MASK_ID_SZ (sizeof(u32))
-#define KEY_MASK_ID_SZ_BITS (KEY_MASK_ID_SZ * BITS_PER_BYTE)
+#define SIZEOF_MASKID (sizeof(((struct p4tc_table_entry_key *)0)->maskid))
+
+#define STARTOF_KEY(key) (&((key)->maskid))
 
 static u32 p4tc_entry_hash_fn(const void *data, u32 len, u32 seed)
 {
 	const struct p4tc_table_entry_key *key = data;
+	u32 keysz = SIZEOF_MASKID + (key->keysz >> 3);
 
-	return jhash(key->value, key->keysz >> 3, seed);
+	return jhash(&key->maskid, keysz, seed);
 }
 
 static int p4tc_entry_hash_cmp(struct rhashtable_compare_arg *arg,
@@ -42,15 +44,16 @@ static int p4tc_entry_hash_cmp(struct rhashtable_compare_arg *arg,
 {
 	const struct p4tc_table_entry_key *key = arg->key;
 	const struct p4tc_table_entry *entry = ptr;
+	u32 keysz = SIZEOF_MASKID + (entry->key.keysz >> 3);
 
-	return memcmp(entry->key.value, key->value, entry->key.keysz >> 3);
+	return memcmp(STARTOF_KEY(&entry->key), STARTOF_KEY(key), keysz);
 }
 
 static u32 p4tc_entry_obj_hash_fn(const void *data, u32 len, u32 seed)
 {
 	const struct p4tc_table_entry *entry = data;
 
-	return p4tc_entry_hash_fn(&entry->key, 0, seed);
+	return p4tc_entry_hash_fn(&entry->key, len, seed);
 }
 
 const struct rhashtable_params entry_hlt_params = {
@@ -74,9 +77,13 @@ p4tc_entry_lookup(struct p4tc_table *table, struct p4tc_table_entry_key *key,
 	if (!bucket_list)
 		return NULL;
 
-	rhl_for_each_entry_rcu(entry, tmp, bucket_list, ht_node)
-		if (entry->prio == prio)
+	rhl_for_each_entry_rcu(entry, tmp, bucket_list, ht_node) {
+		struct p4tc_table_entry_value *value =
+			p4tc_table_entry_value(entry);
+
+		if (value->prio == prio)
 			return entry;
+	}
 
 	return NULL;
 }
@@ -96,8 +103,10 @@ __p4tc_entry_lookup(struct p4tc_table *table, struct p4tc_table_entry_key *key)
 		return NULL;
 
 	rhl_for_each_entry_rcu(entry_curr, tmp, bucket_list, ht_node) {
-		if (entry_curr->prio <= smallest_prio) {
-			smallest_prio = entry_curr->prio;
+		struct p4tc_table_entry_value *value =
+			p4tc_table_entry_value(entry_curr);
+		if (value->prio <= smallest_prio) {
+			smallest_prio = value->prio;
 			entry = entry_curr;
 		}
 	}
@@ -105,48 +114,98 @@ __p4tc_entry_lookup(struct p4tc_table *table, struct p4tc_table_entry_key *key)
 	return entry;
 }
 
-static void mask_key(struct p4tc_table_entry_mask *mask, u8 *masked_key,
+static struct p4tc_table_entry *
+__p4tc_entry_lookup_exact(struct p4tc_table *table, struct p4tc_table_entry_key *key)
+	__must_hold(RCU)
+{
+	struct rhlist_head *bucket_list;
+	struct p4tc_table_entry *entry_curr;
+
+	bucket_list =
+		rhltable_lookup(&table->tbl_entries, key, entry_hlt_params);
+	if (!bucket_list)
+		return NULL;
+
+	rht_entry(entry_curr, bucket_list, ht_node);
+
+	return entry_curr;
+}
+
+static struct p4tc_table_entry *
+__p4tc_entry_lookup_fast(struct p4tc_table *table, struct p4tc_table_entry_key *key)
+	__must_hold(RCU)
+{
+	struct rhlist_head *bucket_list;
+	struct p4tc_table_entry *entry_curr;
+
+	bucket_list =
+		rhltable_lookup(&table->tbl_entries, key, entry_hlt_params);
+	if (!bucket_list)
+		return NULL;
+
+	rht_entry(entry_curr, bucket_list, ht_node);
+
+	return entry_curr;
+}
+
+static void mask_key(const struct p4tc_table_entry_mask *mask, u8 *masked_key,
 		     u8 *skb_key)
 {
 	int i;
-	__u32 *mask_id;
 
-	mask_id = (u32 *)&masked_key[0];
-	*mask_id = mask->mask_id;
-
-	for (i = KEY_MASK_ID_SZ; i < BITS_TO_BYTES(mask->sz); i++)
-		masked_key[i] = skb_key[i - KEY_MASK_ID_SZ] & mask->value[i];
+	for (i = 0; i < BITS_TO_BYTES(mask->sz); i++)
+		masked_key[i] = skb_key[i] & mask->fa_value[i];
 }
 
 struct p4tc_table_entry *p4tc_table_entry_lookup(struct sk_buff *skb,
 						 struct p4tc_table *table,
 						 u32 keysz)
 {
-	struct p4tc_table_entry *entry_curr = NULL;
-	u8 masked_key[KEY_MASK_ID_SZ + BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
+	const struct p4tc_table_entry_mask **masks_array;
 	u32 smallest_prio = U32_MAX;
-	struct p4tc_table_entry_mask *mask;
 	struct p4tc_table_entry *entry = NULL;
-	struct p4tc_skb_ext *p4tc_skb_ext;
-	unsigned long tmp, mask_id;
+	struct p4tc_percpu_scratchpad *pad;
+	struct p4tc_table_entry_key *key;
+	int i;
 
-	p4tc_skb_ext = skb_ext_find(skb, P4TC_SKB_EXT);
-	if (unlikely(!p4tc_skb_ext))
-		return ERR_PTR(-ENOENT);
+	pad = this_cpu_ptr(&p4tc_percpu_scratchpad);
 
-	idr_for_each_entry_ul(&table->tbl_masks_idr, mask, tmp, mask_id) {
-		struct p4tc_table_entry_key key = {};
+	key = (struct p4tc_table_entry_key *)&pad->keysz;
+	key->keysz = keysz;
+	key->maskid = 0;
 
-		mask_key(mask, masked_key, p4tc_skb_ext->p4tc_ext->key);
+	if (table->tbl_type == P4TC_TABLE_TYPE_EXACT)
+		return __p4tc_entry_lookup_fast(table, key);
 
-		key.value = masked_key;
-		key.keysz = keysz + KEY_MASK_ID_SZ_BITS;
+	masks_array = (const struct p4tc_table_entry_mask **)rcu_dereference(table->tbl_masks_array);
+	for (i = 0; i < table->tbl_curr_num_masks; i++) {
+		const struct p4tc_table_entry_mask *mask = masks_array[i];
+		u8 masked_key[sizeof(struct p4tc_table_entry_key) +
+			      BITS_TO_BYTES(P4TC_MAX_KEYSZ)];
+		struct p4tc_table_entry_key *mkey = (void *)&masked_key;
+		struct p4tc_table_entry *entry_curr = NULL;
 
-		entry_curr = __p4tc_entry_lookup(table, &key);
-		if (entry_curr) {
-			if (entry_curr->prio <= smallest_prio) {
-				smallest_prio = entry_curr->prio;
-				entry = entry_curr;
+		// Not sure if this is needed since masks are always kzalloc'ed
+		// memset(mkey->fa_key + KEY_MASK_ID_SZ, 0, BITS_TO_BYTES(P4TC_MAX_KEYSZ));
+
+		mkey->keysz = keysz;
+		mkey->maskid = mask->mask_id;
+		mask_key(mask, mkey->fa_key, key->fa_key);
+
+		if (table->tbl_type == P4TC_TABLE_TYPE_LPM) {
+			entry_curr = __p4tc_entry_lookup_exact(table, mkey);
+			if (entry_curr)
+				return entry_curr;
+		} else {
+			entry_curr = __p4tc_entry_lookup(table, mkey);
+
+			if (entry_curr) {
+				struct p4tc_table_entry_value *value =
+					p4tc_table_entry_value(entry_curr);
+				if (value->prio <= smallest_prio) {
+					smallest_prio = value->prio;
+					entry = entry_curr;
+				}
 			}
 		}
 	}
@@ -157,6 +216,15 @@ struct p4tc_table_entry *p4tc_table_entry_lookup(struct sk_buff *skb,
 #define tcf_table_entry_mask_find_byid(table, id) \
 	(idr_find(&(table)->tbl_masks_idr, id))
 
+static void gen_exact_mask(u8 *mask, u32 mask_size)
+{
+	int i;
+
+	for (i = 0; i < mask_size; i++) {
+		mask[i] = 0xFF;
+	}
+}
+
 static int p4tca_table_get_entry_keys(struct sk_buff *skb,
 				      struct p4tc_table *table,
 				      struct p4tc_table_entry *entry)
@@ -166,15 +234,28 @@ static int p4tca_table_get_entry_keys(struct sk_buff *skb,
 	struct p4tc_table_entry_mask *mask;
 	u32 key_sz_bytes;
 
-	key_sz_bytes = (entry->key.keysz - KEY_MASK_ID_SZ_BITS) / BITS_PER_BYTE;
-	if (nla_put(skb, P4TC_ENTRY_KEY_BLOB, key_sz_bytes,
-		    entry->key.unmasked_key + KEY_MASK_ID_SZ))
-		goto out_nlmsg_trim;
+	if (table->tbl_type == P4TC_TABLE_TYPE_EXACT) {
+		u8 mask_value[BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
 
-	mask = tcf_table_entry_mask_find_byid(table, entry->mask_id);
-	if (nla_put(skb, P4TC_ENTRY_MASK_BLOB, key_sz_bytes,
-		    mask->value + KEY_MASK_ID_SZ))
-		goto out_nlmsg_trim;
+		key_sz_bytes = BITS_TO_BYTES(entry->key.keysz);
+		if (nla_put(skb, P4TC_ENTRY_KEY_BLOB, key_sz_bytes,
+			    entry->key.fa_key))
+			goto out_nlmsg_trim;
+
+		gen_exact_mask(mask_value, key_sz_bytes);
+		if (nla_put(skb, P4TC_ENTRY_MASK_BLOB, key_sz_bytes, mask_value))
+			goto out_nlmsg_trim;
+	} else {
+		key_sz_bytes = BITS_TO_BYTES(entry->key.keysz);
+		if (nla_put(skb, P4TC_ENTRY_KEY_BLOB, key_sz_bytes,
+			    entry->key.fa_key))
+			goto out_nlmsg_trim;
+
+		mask = tcf_table_entry_mask_find_byid(table, entry->key.maskid);
+		if (nla_put(skb, P4TC_ENTRY_MASK_BLOB, key_sz_bytes,
+			    mask->fa_value))
+			goto out_nlmsg_trim;
+	}
 
 	return 0;
 
@@ -203,6 +284,7 @@ int p4tca_table_get_entry_fill(struct sk_buff *skb, struct p4tc_table *table,
 {
 	unsigned char *b = nlmsg_get_pos(skb);
 	int ret = -ENOMEM;
+	struct p4tc_table_entry_value *value;
 	struct nlattr *nest, *nest_acts;
 	struct p4tc_table_entry_tm dtm, *tm;
 	u32 ids[P4TC_ENTRY_MAX_IDS];
@@ -216,32 +298,35 @@ int p4tca_table_get_entry_fill(struct sk_buff *skb, struct p4tc_table *table,
 	if (!nest)
 		goto out_nlmsg_trim;
 
-	if (nla_put_u32(skb, P4TC_ENTRY_PRIO, entry->prio))
+	value = p4tc_table_entry_value(entry);
+
+	if (nla_put_u32(skb, P4TC_ENTRY_PRIO, value->prio))
 		goto out_nlmsg_trim;
 
 	if (p4tca_table_get_entry_keys(skb, table, entry) < 0)
 		goto out_nlmsg_trim;
 
-	if (entry->acts) {
+	if (value->acts) {
 		nest_acts = nla_nest_start(skb, P4TC_ENTRY_ACT);
-		if (tcf_action_dump(skb, entry->acts, 0, 0, false) < 0)
+		if (tcf_action_dump(skb, value->acts, 0, 0, false) < 0)
 			goto out_nlmsg_trim;
 		nla_nest_end(skb, nest_acts);
 	}
 
-	if (nla_put_u8(skb, P4TC_ENTRY_CREATE_WHODUNNIT, entry->who_created))
+	if (nla_put_u16(skb, P4TC_ENTRY_PERMISSIONS, value->permissions))
 		goto out_nlmsg_trim;
 
-	if (entry->who_updated) {
+	tm = rtnl_dereference(value->tm);
+
+	if (nla_put_u8(skb, P4TC_ENTRY_CREATE_WHODUNNIT, tm->who_created))
+		goto out_nlmsg_trim;
+
+	if (tm->who_updated) {
 		if (nla_put_u8(skb, P4TC_ENTRY_UPDATE_WHODUNNIT,
-			       entry->who_updated))
+			       tm->who_updated))
 			goto out_nlmsg_trim;
 	}
 
-	if (nla_put_u16(skb, P4TC_ENTRY_PERMISSIONS, entry->permissions))
-		goto out_nlmsg_trim;
-
-	tm = rtnl_dereference(entry->tm);
 	p4tc_table_entry_tm_dump(&dtm, tm);
 	if (nla_put_64bit(skb, P4TC_ENTRY_TM, sizeof(dtm), &dtm,
 			  P4TC_ENTRY_PAD))
@@ -270,21 +355,6 @@ static const struct nla_policy p4tc_entry_policy[P4TC_ENTRY_MAX + 1] = {
 	[P4TC_ENTRY_PERMISSIONS] = { .type = NLA_U16 },
 };
 
-static void __tcf_table_entry_mask_destroy(struct p4tc_table_entry_mask *mask)
-{
-	kfree(mask->value);
-	kfree(mask);
-}
-
-static void tcf_table_entry_mask_destroy(struct rcu_head *rcu)
-{
-	struct p4tc_table_entry_mask *mask;
-
-	mask = container_of(rcu, struct p4tc_table_entry_mask, rcu);
-
-	__tcf_table_entry_mask_destroy(mask);
-}
-
 static struct p4tc_table_entry_mask *
 tcf_table_entry_mask_find_byvalue(struct p4tc_table *table,
 				  struct p4tc_table_entry_mask *mask)
@@ -294,9 +364,9 @@ tcf_table_entry_mask_find_byvalue(struct p4tc_table *table,
 
 	idr_for_each_entry_ul(&table->tbl_masks_idr, mask_cur, tmp, mask_id) {
 		if (mask_cur->sz == mask->sz) {
-			u32 mask_sz_bytes = mask->sz / BITS_PER_BYTE - KEY_MASK_ID_SZ;
-			void *curr_mask_value = mask_cur->value + KEY_MASK_ID_SZ;
-			void *mask_value = mask->value + KEY_MASK_ID_SZ;
+			u32 mask_sz_bytes = BITS_TO_BYTES(mask->sz);
+			void *curr_mask_value = mask_cur->fa_value;
+			void *mask_value = mask->fa_value;
 
 			if (memcmp(curr_mask_value, mask_value, mask_sz_bytes) == 0)
 				return mask_cur;
@@ -306,25 +376,137 @@ tcf_table_entry_mask_find_byvalue(struct p4tc_table *table,
 	return NULL;
 }
 
+static void __tcf_table_entry_mask_del(struct p4tc_table *table,
+				       struct p4tc_table_entry_mask *mask)
+{
+	if (table->tbl_type == P4TC_TABLE_TYPE_TERNARY) {
+		table->tbl_masks_array[mask->mask_index] = NULL;
+		table->tbl_free_masks_bitmap[mask->mask_index] = 1;
+	} else if (table->tbl_type == P4TC_TABLE_TYPE_LPM) {
+		int i;
+
+		for (i = mask->mask_index; i < table->tbl_curr_num_masks - 1; i++) {
+			table->tbl_masks_array[i] = table->tbl_masks_array[i + 1];
+		}
+		table->tbl_masks_array[table->tbl_curr_num_masks - 1] = NULL;
+	}
+
+	table->tbl_curr_num_masks--;
+}
+
 static void tcf_table_entry_mask_del(struct p4tc_table *table,
 				     struct p4tc_table_entry *entry)
 {
-	const u32 mask_id = entry->mask_id;
+	const u32 mask_id = entry->key.maskid;
 	struct p4tc_table_entry_mask *mask_found;
 
-	/* Will always be found*/
+	/* Will always be found */
 	mask_found = tcf_table_entry_mask_find_byid(table, mask_id);
 
-	/* Last reference, can delete*/
+	/* Last reference, can delete */
 	if (refcount_dec_if_one(&mask_found->mask_ref)) {
 		spin_lock_bh(&table->tbl_masks_idr_lock);
 		idr_remove(&table->tbl_masks_idr, mask_found->mask_id);
+		__tcf_table_entry_mask_del(table, mask_found);
 		spin_unlock_bh(&table->tbl_masks_idr_lock);
-		call_rcu(&mask_found->rcu, tcf_table_entry_mask_destroy);
+		kfree_rcu(mask_found, rcu);
 	} else {
 		if (!refcount_dec_not_one(&mask_found->mask_ref))
 			pr_warn("Mask was deleted in parallel");
 	}
+}
+
+static inline u8 p4tc_ffs(u8 *ptr, size_t len) {
+	int i, j;
+	u8 mask;
+
+	for (i = 0; i < len; i++) {
+		mask = 0x80;
+		for (j = 0; j < 7; j++) {
+			if (ptr[i] & mask)
+                                return (i * 8) + 8 - j;
+			mask >>= 1;
+		}
+	}
+
+	return (len << 3) - 1;
+}
+
+static inline uint8_t p4tc_fls(uint8_t *ptr, size_t len)
+{
+        int i, j;
+        uint8_t mask;
+
+        for (i = len - 1; i >= 0; i--) {
+                mask = 0x80;
+                for (j = 0; j < 7; j++) {
+                        if (ptr[i] & mask)
+                                return (i * 8) + 8 - j;
+                        mask >>= 1;
+                }
+        }
+
+        return 0;
+}
+
+static inline u8 find_lpm_mask(struct p4tc_table *table, u8 *ptr)
+{
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+	return p4tc_fls(ptr, BITS_TO_BYTES(table->tbl_keysz));
+#else
+	return p4tc_ffs(ptr, BITS_TO_BYTES(table->tbl_keysz));
+#endif
+}
+
+static inline int insert_in_mask_array(struct p4tc_table *table,
+				       struct p4tc_table_entry_mask *mask)
+{
+	const u32 curr_num_masks = table->tbl_curr_num_masks ? table->tbl_curr_num_masks : 1;
+	int i;
+
+	if (table->tbl_type == P4TC_TABLE_TYPE_TERNARY) {
+		for (i = 0; i < table->tbl_max_masks; i++) {
+			if (table->tbl_free_masks_bitmap[i]) {
+				table->tbl_free_masks_bitmap[i] = 0;
+				mask->mask_index = i;
+				table->tbl_masks_array[i] = mask;
+				return 0;
+			}
+		}
+	} else if (table->tbl_type == P4TC_TABLE_TYPE_LPM) {
+		for (i = 0; i < curr_num_masks; i++) {
+			u8 mask_value = find_lpm_mask(table, mask->fa_value);
+			int j;
+
+			if (table->tbl_masks_array[i]) {
+				u8 array_mask_value;
+
+				array_mask_value = find_lpm_mask(table,
+								 table->tbl_masks_array[i]->fa_value);
+
+				if (mask_value > array_mask_value) {
+					j = curr_num_masks;
+					while (j > i + 1) {
+						table->tbl_masks_array[j] = table->tbl_masks_array[j - 1];
+						j--;
+					}
+					table->tbl_masks_array[i + 1] = table->tbl_masks_array[i];
+					mask->mask_index = i;
+					table->tbl_masks_array[i] = mask;
+					return 0;
+				}
+			} else {
+				mask->mask_index = i;
+				table->tbl_masks_array[i] = mask;
+				return 0;
+			}
+		}
+		mask->mask_index = i;
+		table->tbl_masks_array[i] = mask;
+		return 0;
+	}
+
+	return -ENOSPC;
 }
 
 /* TODO: Ordering optimisation for LPM */
@@ -341,17 +523,14 @@ tcf_table_entry_mask_add(struct p4tc_table *table,
 	if (!mask_found) {
 		struct p4tc_table_entry_mask *mask_allocated;
 
-		mask_allocated = kzalloc(sizeof(*mask_allocated), GFP_ATOMIC);
+		if (table->tbl_max_masks < table->tbl_curr_num_masks + 1)
+			return ERR_PTR(-ENOSPC);
+
+		mask_allocated = kzalloc(struct_size(mask_found, fa_value, BITS_TO_BYTES(mask->sz)), GFP_ATOMIC);
 		if (!mask_allocated)
 			return ERR_PTR(-ENOMEM);
 
-		mask_allocated->value =
-			kzalloc(BITS_TO_BYTES(mask->sz), GFP_ATOMIC);
-		if (!mask_allocated->value) {
-			kfree(mask_allocated);
-			return ERR_PTR(-ENOMEM);
-		}
-		memcpy(mask_allocated->value, mask->value,
+		memcpy(mask_allocated->fa_value, mask->fa_value,
 		       BITS_TO_BYTES(mask->sz));
 
 		mask_allocated->mask_id = 1;
@@ -362,18 +541,24 @@ tcf_table_entry_mask_add(struct p4tc_table *table,
 		ret = idr_alloc_u32(&table->tbl_masks_idr, mask_allocated,
 				    &mask_allocated->mask_id, UINT_MAX,
 				    GFP_ATOMIC);
+		if (ret < 0)
+			goto unlock;
+		ret = insert_in_mask_array(table, mask_allocated);
+		if (ret < 0)
+			goto unlock;
+		table->tbl_curr_num_masks++;
+unlock:
 		spin_unlock_bh(&table->tbl_masks_idr_lock);
 		if (ret < 0) {
-			kfree(mask_allocated->value);
 			kfree(mask_allocated);
 			return ERR_PTR(ret);
 		}
-		entry->mask_id = mask_allocated->mask_id;
+		entry->key.maskid = mask_allocated->mask_id;
 		mask_found = mask_allocated;
 	} else {
 		if (!refcount_inc_not_zero(&mask_found->mask_ref))
 			return ERR_PTR(-EBUSY);
-		entry->mask_id = mask_found->mask_id;
+		entry->key.maskid = mask_found->mask_id;
 	}
 
 	return mask_found;
@@ -381,7 +566,8 @@ tcf_table_entry_mask_add(struct p4tc_table *table,
 
 static void tcf_table_entry_del_act(struct p4tc_table_entry *entry)
 {
-	p4tc_action_destroy(entry->acts);
+	struct p4tc_table_entry_value *value = p4tc_table_entry_value(entry);
+	p4tc_action_destroy(value->acts);
 	kfree(entry);
 }
 
@@ -401,16 +587,14 @@ static void tcf_table_entry_del_act_work(struct work_struct *work)
 
 static void tcf_table_entry_put(struct p4tc_table_entry *entry)
 {
+	struct p4tc_table_entry_value *value = p4tc_table_entry_value(entry);
 	struct p4tc_table_entry_tm *tm;
 
-	tm = rcu_dereference(entry->tm);
+	tm = rcu_dereference(value->tm);
 	kfree(tm);
 
-	kfree(entry->key.unmasked_key);
-	kfree(entry->key.value);
-
-	if (entry->acts) {
-		struct p4tc_table_entry_work *entry_work = entry->entry_work;
+	if (value->acts) {
+		struct p4tc_table_entry_work *entry_work = value->entry_work;
 		struct p4tc_pipeline *pipeline = entry_work->pipeline;
 		struct net *net;
 
@@ -423,7 +607,7 @@ static void tcf_table_entry_put(struct p4tc_table_entry *entry)
 			tcf_table_entry_del_act(entry);
 		}
 	} else {
-		kfree(entry->entry_work);
+		kfree(value->entry_work);
 		kfree(entry);
 	}
 }
@@ -441,16 +625,20 @@ static int tcf_table_entry_destroy(struct p4tc_table *table,
 				   struct p4tc_table_entry *entry,
 				   bool remove_from_hash)
 {
+	struct p4tc_table_entry_value *value = p4tc_table_entry_value(entry);
+
 	/* Entry was deleted in parallel */
-	if (!refcount_dec_if_one(&entry->entries_ref))
+	if (!refcount_dec_if_one(&value->entries_ref))
 		return -EBUSY;
 
 	if (remove_from_hash)
 		rhltable_remove(&table->tbl_entries, &entry->ht_node,
 				entry_hlt_params);
 
-	tcf_table_entry_mask_del(table, entry);
-	if (entry->entry_work->defer_deletion) {
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT)
+		tcf_table_entry_mask_del(table, entry);
+
+	if (value->entry_work->defer_deletion) {
 		call_rcu(&entry->rcu, tcf_table_entry_put_rcu);
 	} else {
 		synchronize_rcu();
@@ -467,10 +655,11 @@ void tcf_table_entry_destroy_hash(void *ptr, void *arg)
 {
 	struct p4tc_table *table = arg;
 	struct p4tc_table_entry *entry = ptr;
+	struct p4tc_table_entry_value *value = p4tc_table_entry_value(entry);
 
 	refcount_dec(&table->tbl_entries_ref);
 
-	entry->entry_work->defer_deletion = false;
+	value->entry_work->defer_deletion = false;
 	tcf_table_entry_destroy(table, entry, false);
 }
 
@@ -531,23 +720,41 @@ out:
 	return ret;
 }
 
-static void tcf_table_entry_assign_key(struct p4tc_table_entry_key *key,
-				       struct p4tc_table_entry_mask *mask,
-				       u8 *keyblob, u8 *maskblob, u32 keysz)
+static void tcf_table_entry_assign_key_exact(struct p4tc_table_entry_key *key,
+					     u8 *keyblob)
 {
-	/* Don't assign mask_id to key yet, because it has not been allocated */
-	memcpy(key->unmasked_key + KEY_MASK_ID_SZ, keyblob, keysz);
-
-	/* Don't assign mask_id to value yet, because it has not been allocated */
-	memcpy(mask->value + KEY_MASK_ID_SZ, maskblob, keysz);
+	memcpy(key->fa_key, keyblob, BITS_TO_BYTES(key->keysz));
 }
 
-static int tcf_table_entry_extract_key(struct nlattr **tb,
+static void
+tcf_table_entry_assign_key_generic(struct p4tc_table_entry_key *key,
+				   struct p4tc_table_entry_mask *mask,
+				   u8 *keyblob, u8 *maskblob)
+{
+	u32 keysz = BITS_TO_BYTES(key->keysz);
+
+	memcpy(key->fa_key, keyblob, keysz);
+	memcpy(mask->fa_value, maskblob, keysz);
+}
+
+static void tcf_table_entry_assign_key(struct p4tc_table *table,
+				       struct p4tc_table_entry_key *key,
+				       struct p4tc_table_entry_mask *mask,
+				       u8 *keyblob, u8 *maskblob)
+{
+	if (table->tbl_type == P4TC_TABLE_TYPE_EXACT)
+		tcf_table_entry_assign_key_exact(key, keyblob);
+	else
+		tcf_table_entry_assign_key_generic(key, mask, keyblob,
+						   maskblob);
+}
+
+static int tcf_table_entry_extract_key(struct p4tc_table *table,
+				       struct nlattr **tb,
 				       struct p4tc_table_entry_key *key,
 				       struct p4tc_table_entry_mask *mask,
 				       struct netlink_ext_ack *extack)
 {
-	u32 internal_keysz;
 	u32 keysz;
 
 	if (!tb[P4TC_ENTRY_KEY_BLOB] || !tb[P4TC_ENTRY_MASK_BLOB]) {
@@ -556,8 +763,7 @@ static int tcf_table_entry_extract_key(struct nlattr **tb,
 	}
 
 	keysz = nla_len(tb[P4TC_ENTRY_KEY_BLOB]);
-	internal_keysz = (keysz + KEY_MASK_ID_SZ) * BITS_PER_BYTE;
-	if (key->keysz != internal_keysz) {
+	if (BITS_TO_BYTES(key->keysz) != keysz) {
 		NL_SET_ERR_MSG(extack,
 			       "Key blob size and table key size differ");
 		return -EINVAL;
@@ -569,26 +775,26 @@ static int tcf_table_entry_extract_key(struct nlattr **tb,
 		return -EINVAL;
 	}
 
-	tcf_table_entry_assign_key(key, mask, nla_data(tb[P4TC_ENTRY_KEY_BLOB]),
-				   nla_data(tb[P4TC_ENTRY_MASK_BLOB]), keysz);
+	tcf_table_entry_assign_key(table, key, mask,
+				   nla_data(tb[P4TC_ENTRY_KEY_BLOB]),
+				   nla_data(tb[P4TC_ENTRY_MASK_BLOB]));
 
 	return 0;
 }
 
-static void tcf_table_entry_build_key(struct p4tc_table_entry_key *key,
+static void tcf_table_entry_build_key(struct p4tc_table *table,
+				      struct p4tc_table_entry_key *key,
 				      struct p4tc_table_entry_mask *mask)
 {
-	u32 *mask_id;
 	int i;
 
-	mask_id = (u32 *)&key->unmasked_key[0];
-	*mask_id = mask->mask_id;
+	if (table->tbl_type == P4TC_TABLE_TYPE_EXACT)
+		return;
 
-	mask_id = (u32 *)&mask->value[0];
-	*mask_id = mask->mask_id;
+	key->maskid = mask->mask_id;
 
 	for (i = 0; i < BITS_TO_BYTES(key->keysz); i++)
-		key->value[i] = key->unmasked_key[i] & mask->value[i];
+		key->fa_key[i] &= mask->fa_value[i];
 }
 
 static int ___tcf_table_entry_del(struct p4tc_pipeline *pipeline,
@@ -597,13 +803,14 @@ static int ___tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 				  bool from_control)
 	__must_hold(RCU)
 {
+	struct p4tc_table_entry_value *value = p4tc_table_entry_value(entry);
 	int ret = 0;
 
 	if (from_control) {
-		if (!p4tc_ctrl_delete_ok(entry->permissions))
+		if (!p4tc_ctrl_delete_ok(value->permissions))
 			return -EPERM;
 	} else {
-		if (!p4tc_data_delete_ok(entry->permissions))
+		if (!p4tc_data_delete_ok(value->permissions))
 			return -EPERM;
 	}
 
@@ -611,7 +818,7 @@ static int ___tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 		return -EBUSY;
 
 	spin_lock_bh(&table->tbl_prio_idr_lock);
-	idr_remove(&table->tbl_prio_idr, entry->prio);
+	idr_remove(&table->tbl_prio_idr, value->prio);
 	spin_unlock_bh(&table->tbl_prio_idr_lock);
 
 	if (tcf_table_entry_destroy(table, entry, true) < 0) {
@@ -634,16 +841,19 @@ int __tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 			  struct p4tc_table_entry_key *key,
 			  struct p4tc_table_entry_mask *mask, u32 prio)
 {
+	struct p4tc_table_entry_value *value;
 	struct p4tc_table_entry *entry;
 	int ret;
 
-	tcf_table_entry_build_key(key, mask);
+	tcf_table_entry_build_key(table, key, mask);
 
 	entry = p4tc_entry_lookup(table, key, prio);
 	if (!entry)
 		return -ENOENT;
 
-	entry->entry_work->defer_deletion = true;
+	value = p4tc_table_entry_value(entry);
+
+	value->entry_work->defer_deletion = true;
 	ret = ___tcf_table_entry_del(pipeline, table, entry, false);
 
 	return ret;
@@ -657,9 +867,11 @@ static int tcf_table_entry_gd(struct net *net, struct sk_buff *skb,
 	struct nlattr *tb[P4TC_ENTRY_MAX + 1] = { NULL };
 	struct p4tc_table_entry *entry = NULL;
 	struct p4tc_pipeline *pipeline = NULL;
-	struct p4tc_table_entry_mask *mask, *new_mask;
+	struct p4tc_table_entry_mask *mask = NULL, *new_mask;
+	struct p4tc_table_entry_value *value;
 	struct p4tc_table_entry_key *key;
 	struct p4tc_table *table;
+	u32 keysz_bits;
 	u32 keysz_bytes;
 	u32 prio;
 	int ret;
@@ -692,65 +904,50 @@ static int tcf_table_entry_gd(struct net *net, struct sk_buff *skb,
 		goto table_put;
 	}
 
-	key = kzalloc(sizeof(*key), GFP_KERNEL);
+	keysz_bits = table->tbl_keysz;
+	keysz_bytes = P4TC_KEYSZ_BYTES(table->tbl_keysz);
+
+	key = kzalloc(struct_size(key, fa_key, keysz_bytes), GFP_KERNEL);
 	if (!key) {
 		NL_SET_ERR_MSG(extack, "Unable to allocate key");
 		ret = -ENOMEM;
 		goto table_put;
 	}
-	key->keysz = table->tbl_keysz + KEY_MASK_ID_SZ_BITS;
-	keysz_bytes = (key->keysz / BITS_PER_BYTE);
 
-	mask = kzalloc(sizeof(*mask), GFP_KERNEL);
-	if (!mask) {
-		NL_SET_ERR_MSG(extack, "Failed to allocate mask");
-		ret = -ENOMEM;
-		goto free_key;
-	}
-	mask->value = kzalloc(keysz_bytes, GFP_KERNEL);
-	if (!mask->value) {
-		NL_SET_ERR_MSG(extack, "Failed to allocate mask value");
-		ret = -ENOMEM;
-		kfree(mask);
-		goto free_key;
-	}
-	mask->sz = key->keysz;
+	key->keysz = keysz_bits;
 
-	key->value = kzalloc(keysz_bytes, GFP_KERNEL);
-	if (!key->value) {
-		ret = -ENOMEM;
-		kfree(mask->value);
-		kfree(mask);
-		goto free_key;
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT) {
+		mask = kzalloc(struct_size(mask, fa_value, keysz_bytes),
+			       GFP_KERNEL);
+		if (!mask) {
+			NL_SET_ERR_MSG(extack, "Failed to allocate mask");
+			ret = -ENOMEM;
+			goto free_key;
+		}
+		mask->sz = key->keysz;
 	}
 
-	key->unmasked_key = kzalloc(keysz_bytes, GFP_KERNEL);
-	if (!key->unmasked_key) {
-		ret = -ENOMEM;
-		kfree(mask->value);
-		kfree(mask);
-		goto free_key_value;
-	}
-
-	ret = tcf_table_entry_extract_key(tb, key, mask, extack);
+	ret = tcf_table_entry_extract_key(table, tb, key, mask, extack);
 	if (ret < 0) {
-		kfree(mask->value);
+		if (table->tbl_type != P4TC_TABLE_TYPE_EXACT) {
+			kfree(mask);
+		}
+		goto free_key;
+	}
+
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT) {
+		new_mask = tcf_table_entry_mask_find_byvalue(table, mask);
 		kfree(mask);
-		goto free_key_unmasked;
+		if (!new_mask) {
+			NL_SET_ERR_MSG(extack, "Unable to find entry");
+			ret = -ENOENT;
+			goto free_key;
+		} else {
+			mask = new_mask;
+		}
 	}
 
-	new_mask = tcf_table_entry_mask_find_byvalue(table, mask);
-	kfree(mask->value);
-	kfree(mask);
-	if (!new_mask) {
-		NL_SET_ERR_MSG(extack, "Unable to find entry");
-		ret = -ENOENT;
-		goto free_key_unmasked;
-	} else {
-		mask = new_mask;
-	}
-
-	tcf_table_entry_build_key(key, mask);
+	tcf_table_entry_build_key(table, key, mask);
 
 	rcu_read_lock();
 	entry = p4tc_entry_lookup(table, key, prio);
@@ -760,8 +957,9 @@ static int tcf_table_entry_gd(struct net *net, struct sk_buff *skb,
 		goto unlock;
 	}
 
+	value = p4tc_table_entry_value(entry);
 	if (n->nlmsg_type == RTM_GETP4TBENT) {
-		if (!p4tc_ctrl_read_ok(entry->permissions)) {
+		if (!p4tc_ctrl_read_ok(value->permissions)) {
 			NL_SET_ERR_MSG(extack,
 				       "Permission denied: Unable to read table entry");
 			ret = -EINVAL;
@@ -776,7 +974,7 @@ static int tcf_table_entry_gd(struct net *net, struct sk_buff *skb,
 	}
 
 	if (n->nlmsg_type == RTM_DELP4TBENT) {
-		entry->entry_work->defer_deletion = true;
+		value->entry_work->defer_deletion = true;
 		ret = ___tcf_table_entry_del(pipeline, table, entry, true);
 		if (ret < 0)
 			goto unlock;
@@ -794,12 +992,6 @@ static int tcf_table_entry_gd(struct net *net, struct sk_buff *skb,
 
 unlock:
 	rcu_read_unlock();
-
-free_key_unmasked:
-	kfree(key->unmasked_key);
-
-free_key_value:
-	kfree(key->value);
 
 free_key:
 	kfree(key);
@@ -852,7 +1044,9 @@ static int tcf_table_entry_flush(struct net *net, struct sk_buff *skb,
 		rhashtable_walk_start(&iter);
 
 		while ((entry = rhashtable_walk_next(&iter)) && !IS_ERR(entry)) {
-			if (!p4tc_ctrl_delete_ok(entry->permissions)) {
+			struct p4tc_table_entry_value *value =
+				p4tc_table_entry_value(entry);
+			if (!p4tc_ctrl_delete_ok(value->permissions)) {
 				ret = -EPERM;
 				continue;
 			}
@@ -864,7 +1058,7 @@ static int tcf_table_entry_flush(struct net *net, struct sk_buff *skb,
 				goto walk_exit;
 			}
 
-			entry->entry_work->defer_deletion = true;
+			value->entry_work->defer_deletion = true;
 			if (tcf_table_entry_destroy(table, entry, true) < 0) {
 				ret = -EBUSY;
 				continue;
@@ -921,13 +1115,15 @@ static int __tcf_table_entry_create(struct p4tc_pipeline *pipeline,
 	__must_hold(RCU)
 {
 	struct p4tc_table_perm *tbl_perm;
-	struct p4tc_table_entry_mask *mask_found;
+	struct p4tc_table_entry_mask *mask_found = NULL;
 	struct p4tc_table_entry_work *entry_work;
+	struct p4tc_table_entry_value *value;
 	struct p4tc_table_entry_tm *dtm;
 	u16 permissions;
 	int ret;
 
-	refcount_set(&entry->entries_ref, 1);
+	value = p4tc_table_entry_value(entry);
+	refcount_set(&value->entries_ref, 1);
 
 	tbl_perm = rcu_dereference(table->tbl_permissions);
 	permissions = tbl_perm->permissions;
@@ -939,20 +1135,22 @@ static int __tcf_table_entry_create(struct p4tc_pipeline *pipeline,
 			return -EPERM;
 	}
 
-	mask_found = tcf_table_entry_mask_add(table, entry, mask);
-	if (IS_ERR(mask_found)) {
-		ret = PTR_ERR(mask_found);
-		goto out;
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT) {
+		mask_found = tcf_table_entry_mask_add(table, entry, mask);
+		if (IS_ERR(mask_found)) {
+			ret = PTR_ERR(mask_found);
+			goto out;
+		}
 	}
 
-	tcf_table_entry_build_key(&entry->key, mask_found);
+	tcf_table_entry_build_key(table, &entry->key, mask_found);
 
 	if (!refcount_inc_not_zero(&table->tbl_entries_ref)) {
 		ret = -EBUSY;
 		goto rm_masks_idr;
 	}
 
-	if (p4tc_entry_lookup(table, &entry->key, entry->prio)) {
+	if (p4tc_entry_lookup(table, &entry->key, value->prio)) {
 		ret = -EEXIST;
 		goto dec_entries_ref;
 	}
@@ -963,14 +1161,14 @@ static int __tcf_table_entry_create(struct p4tc_pipeline *pipeline,
 		goto dec_entries_ref;
 	}
 
-	entry->who_created = whodunnit;
-
+	dtm->who_created = whodunnit;
 	dtm->created = jiffies;
 	dtm->firstused = 0;
 	dtm->lastused = jiffies;
-	rcu_assign_pointer(entry->tm, dtm);
 
-	entry_work = kzalloc(sizeof(*(entry_work)), GFP_ATOMIC);
+	rcu_assign_pointer(value->tm, dtm);
+
+	entry_work = kzalloc(sizeof(*entry_work), GFP_ATOMIC);
 	if (!entry_work) {
 		ret = -ENOMEM;
 		goto free_tm;
@@ -978,7 +1176,7 @@ static int __tcf_table_entry_create(struct p4tc_pipeline *pipeline,
 
 	entry_work->pipeline = pipeline;
 	entry_work->entry = entry;
-	entry->entry_work = entry_work;
+	value->entry_work = entry_work;
 
 	INIT_WORK(&entry_work->work, tcf_table_entry_del_act_work);
 
@@ -1000,7 +1198,8 @@ dec_entries_ref:
 	WARN_ON(!refcount_dec_not_one(&table->tbl_entries_ref));
 
 rm_masks_idr:
-	tcf_table_entry_mask_del(table, entry);
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT)
+		tcf_table_entry_mask_del(table, entry);
 
 out:
 	return ret;
@@ -1014,42 +1213,49 @@ static int __tcf_table_entry_update(struct p4tc_pipeline *pipeline,
 				    u16 whodunnit, bool from_control)
 	__must_hold(RCU)
 {
-	struct p4tc_table_entry_mask *mask_found;
+	struct p4tc_table_entry_mask *mask_found = NULL;
 	struct p4tc_table_entry_work *entry_work;
+	struct p4tc_table_entry_value *value_old;
+	struct p4tc_table_entry_value *value;
 	struct p4tc_table_entry *entry_old;
 	struct p4tc_table_entry_tm *tm_old;
 	struct p4tc_table_entry_tm *tm;
 	int ret;
 
-	refcount_set(&entry->entries_ref, 1);
+	value = p4tc_table_entry_value(entry);
+	refcount_set(&value->entries_ref, 1);
 
-	mask_found = tcf_table_entry_mask_add(table, entry, mask);
-	if (IS_ERR(mask_found)) {
-		ret = PTR_ERR(mask_found);
-		goto out;
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT) {
+		mask_found = tcf_table_entry_mask_add(table, entry, mask);
+		if (IS_ERR(mask_found)) {
+			ret = PTR_ERR(mask_found);
+			goto out;
+		}
 	}
 
-	tcf_table_entry_build_key(&entry->key, mask_found);
+	tcf_table_entry_build_key(table, &entry->key, mask_found);
 
-	entry_old = p4tc_entry_lookup(table, &entry->key, entry->prio);
+	entry_old = p4tc_entry_lookup(table, &entry->key, value->prio);
 	if (!entry_old) {
 		ret = -ENOENT;
 		goto rm_masks_idr;
 	}
 
+	value_old = p4tc_table_entry_value(entry_old);
+
 	if (from_control) {
-		if (!p4tc_ctrl_update_ok(entry_old->permissions)) {
+		if (!p4tc_ctrl_update_ok(value_old->permissions)) {
 			ret = -EPERM;
 			goto rm_masks_idr;
 		}
 	} else {
-		if (!p4tc_data_update_ok(entry_old->permissions)) {
+		if (!p4tc_data_update_ok(value_old->permissions)) {
 			ret = -EPERM;
 			goto rm_masks_idr;
 		}
 	}
 
-	if (refcount_read(&entry_old->entries_ref) > 1) {
+	if (refcount_read(&value_old->entries_ref) > 1) {
 		ret = -EBUSY;
 		goto rm_masks_idr;
 	}
@@ -1060,19 +1266,16 @@ static int __tcf_table_entry_update(struct p4tc_pipeline *pipeline,
 		goto rm_masks_idr;
 	}
 
-	tm_old = rcu_dereference_protected(entry_old->tm, 1);
-	tm->created = tm_old->created;
-	tm->firstused = tm_old->firstused;
+	tm_old = rcu_dereference_protected(value_old->tm, 1);
+	*tm = *tm_old;
+
 	tm->lastused = jiffies;
+	tm->who_updated = whodunnit;
 
-	entry->who_updated = whodunnit;
+	if (value->permissions == P4TC_PERMISSIONS_UNINIT)
+		value->permissions = value_old->permissions;
 
-	entry->who_created = entry_old->who_created;
-
-	if (entry->permissions == P4TC_PERMISSIONS_UNINIT)
-		entry->permissions = entry_old->permissions;
-
-	rcu_assign_pointer(entry->tm, tm);
+	rcu_assign_pointer(value->tm, tm);
 
 	entry_work = kzalloc(sizeof(*(entry_work)), GFP_ATOMIC);
 	if (!entry_work) {
@@ -1082,7 +1285,7 @@ static int __tcf_table_entry_update(struct p4tc_pipeline *pipeline,
 
 	entry_work->pipeline = pipeline;
 	entry_work->entry = entry;
-	entry->entry_work = entry_work;
+	value->entry_work = entry_work;
 
 	INIT_WORK(&entry_work->work, tcf_table_entry_del_act_work);
 
@@ -1092,7 +1295,7 @@ static int __tcf_table_entry_update(struct p4tc_pipeline *pipeline,
 		goto free_entry_work;
 	}
 
-	entry_old->entry_work->defer_deletion = true;
+	value_old->entry_work->defer_deletion = true;
 	if (tcf_table_entry_destroy(table, entry_old, true) < 0) {
 		ret = -EBUSY;
 		goto out;
@@ -1107,7 +1310,8 @@ free_tm:
 	kfree(tm);
 
 rm_masks_idr:
-	tcf_table_entry_mask_del(table, entry);
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT)
+		tcf_table_entry_mask_del(table, entry);
 
 out:
 	return ret;
@@ -1138,25 +1342,29 @@ static bool tcf_table_check_entry_acts(struct p4tc_table *table,
 	return false;
 }
 
-static int __tcf_table_entry_cu(struct net *net, u32 flags, struct nlattr **tb,
-				struct p4tc_table_entry *entry_cpy,
-				struct p4tc_pipeline *pipeline,
-				struct p4tc_table *table,
-				struct netlink_ext_ack *extack)
+static struct p4tc_table_entry *__tcf_table_entry_cu(struct net *net, u32 flags,
+						     struct nlattr **tb,
+						     struct p4tc_pipeline *pipeline,
+						     struct p4tc_table *table,
+						     struct netlink_ext_ack *extack)
 {
-	u8 mask_value[KEY_MASK_ID_SZ + BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
-	struct p4tc_table_entry_mask mask = { 0 };
+	u8 __mask[sizeof(struct p4tc_table_entry_mask) +
+		  BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
+	struct p4tc_table_entry_mask *mask = (void *)&__mask;
 	u8 whodunnit = P4TC_ENTITY_UNSPEC;
 	int ret = 0;
+	struct p4tc_table_entry_value *value;
 	struct p4tc_table_entry *entry;
+	u32 keysz_bits;
 	u32 keysz_bytes;
+	u32 entrysz;
 	u32 prio;
 
 	prio = tb[P4TC_ENTRY_PRIO] ? *((u32 *)nla_data(tb[P4TC_ENTRY_PRIO])) : 0;
 	if (flags & NLM_F_REPLACE) {
 		if (!prio) {
 			NL_SET_ERR_MSG(extack, "Must specify entry priority");
-			return -EINVAL;
+			return ERR_PTR(-EINVAL);
 		}
 	} else {
 		if (!prio) {
@@ -1169,7 +1377,7 @@ static int __tcf_table_entry_cu(struct net *net, u32 flags, struct nlattr **tb,
 			if (ret < 0) {
 				NL_SET_ERR_MSG(extack,
 					       "Unable to allocate priority");
-				return ret;
+				return ERR_PTR(ret);
 			}
 		} else {
 			rcu_read_lock();
@@ -1177,7 +1385,7 @@ static int __tcf_table_entry_cu(struct net *net, u32 flags, struct nlattr **tb,
 				rcu_read_unlock();
 				NL_SET_ERR_MSG(extack,
 					       "Priority already in use");
-				return -EBUSY;
+				return ERR_PTR(-EBUSY);
 			}
 			rcu_read_unlock();
 		}
@@ -1185,9 +1393,10 @@ static int __tcf_table_entry_cu(struct net *net, u32 flags, struct nlattr **tb,
 		if (refcount_read(&table->tbl_entries_ref) > table->tbl_max_entries) {
 			NL_SET_ERR_MSG(extack,
 				       "Table instance max entries reached");
-			return -EINVAL;
+			return ERR_PTR(-EINVAL);
 		}
 	}
+
 	if (tb[P4TC_ENTRY_WHODUNNIT]) {
 		whodunnit = *((u8 *)nla_data(tb[P4TC_ENTRY_WHODUNNIT]));
 	} else {
@@ -1196,35 +1405,31 @@ static int __tcf_table_entry_cu(struct net *net, u32 flags, struct nlattr **tb,
 		goto idr_rm;
 	}
 
-	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+	keysz_bits = table->tbl_keysz;
+	keysz_bytes = P4TC_KEYSZ_BYTES(keysz_bits);
+
+	/* Entry memory layout:
+	 * { entry | key __aligned(8) | value }
+	 */
+	entrysz = sizeof(*entry) + keysz_bytes +
+		  sizeof(struct p4tc_table_entry_value);
+
+	entry = kzalloc(entrysz, GFP_KERNEL);
 	if (!entry) {
 		NL_SET_ERR_MSG(extack, "Unable to allocate table entry");
 		ret = -ENOMEM;
 		goto idr_rm;
 	}
-	entry->prio = prio;
 
-	entry->key.keysz = table->tbl_keysz + KEY_MASK_ID_SZ_BITS;
-	keysz_bytes = entry->key.keysz / BITS_PER_BYTE;
+	entry->key.keysz = keysz_bits;
+	mask->sz = keysz_bits;
 
-	mask.sz = entry->key.keysz;
-	mask.value = mask_value;
-
-	entry->key.value = kzalloc(keysz_bytes, GFP_KERNEL);
-	if (!entry->key.value) {
-		ret = -ENOMEM;
-		goto free_entry;
-	}
-
-	entry->key.unmasked_key = kzalloc(keysz_bytes, GFP_KERNEL);
-	if (!entry->key.unmasked_key) {
-		ret = -ENOMEM;
-		goto free_key_value;
-	}
-
-	ret = tcf_table_entry_extract_key(tb, &entry->key, &mask, extack);
+	ret = tcf_table_entry_extract_key(table, tb, &entry->key, mask, extack);
 	if (ret < 0)
-		goto free_key_unmasked;
+		goto free_entry;
+
+	value = p4tc_table_entry_value(entry);
+	value->prio = prio;
 
 	if (tb[P4TC_ENTRY_PERMISSIONS]) {
 		const u16 tblperm =
@@ -1236,61 +1441,63 @@ static int __tcf_table_entry_cu(struct net *net, u32 flags, struct nlattr **tb,
 			NL_SET_ERR_MSG(extack,
 				       "Permission may only have 10 bits turned on");
 			ret = -EINVAL;
-			goto free_key_unmasked;
+			goto free_entry;
 		}
 		if (p4tc_ctrl_create_ok(nlperm) ||
 		    p4tc_data_create_ok(nlperm)) {
 			NL_SET_ERR_MSG(extack,
 				       "Create permission for table entry doesn't make sense");
 			ret = -EINVAL;
-			goto free_key_unmasked;
+			goto free_entry;
 		}
 		if (!p4tc_data_read_ok(nlperm)) {
 			NL_SET_ERR_MSG(extack,
 				       "Data path read permission must be set");
 			ret = -EINVAL;
-			goto free_key_unmasked;
+			goto free_entry;
 		}
 		if (!p4tc_data_exec_ok(nlperm)) {
 			NL_SET_ERR_MSG(extack,
 				       "Data path execute permissions for entry must be set");
 			ret = -EINVAL;
-			goto free_key_unmasked;
+			goto free_entry;
 		}
 
 		if (~tblperm & nlperm) {
 			NL_SET_ERR_MSG(extack,
 				       "Trying to set permission bits which aren't allowed by table");
 			ret = -EINVAL;
-			goto free_key_unmasked;
+			goto free_entry;
 		}
-		entry->permissions = nlperm;
+		value->permissions = nlperm;
 	} else {
 		if (flags & NLM_F_REPLACE)
-			entry->permissions = P4TC_PERMISSIONS_UNINIT;
+			value->permissions = P4TC_PERMISSIONS_UNINIT;
 		else
-			entry->permissions = P4TC_DEFAULT_TENTRY_PERMISSIONS;
+			value->permissions = P4TC_DEFAULT_TENTRY_PERMISSIONS;
 	}
 
 	if (tb[P4TC_ENTRY_ACT]) {
-		entry->acts = kcalloc(TCA_ACT_MAX_PRIO,
+
+		value->acts = kcalloc(TCA_ACT_MAX_PRIO,
 				      sizeof(struct tc_action *), GFP_KERNEL);
-		if (!entry->acts) {
+		if (!value->acts) {
 			ret = -ENOMEM;
-			goto free_key_unmasked;
+			goto free_entry;
 		}
 
-		ret = p4tc_action_init(net, tb[P4TC_ENTRY_ACT], entry->acts,
+		ret = p4tc_action_init(net, tb[P4TC_ENTRY_ACT], value->acts,
 				       table->common.p_id,
 				       TCA_ACT_FLAGS_NO_RTNL, extack);
 		if (ret < 0) {
-			kfree(entry->acts);
-			entry->acts = NULL;
-			goto free_key_unmasked;
+			kfree(value->acts);
+			value->acts = NULL;
+			goto free_entry;
 		}
-		entry->num_acts = ret;
 
-		if (!tcf_table_check_entry_acts(table, entry->acts,
+		value->num_acts = ret;
+
+		if (!tcf_table_check_entry_acts(table, value->acts,
 						&table->tbl_acts_list, ret)) {
 			ret = -EPERM;
 			NL_SET_ERR_MSG(extack,
@@ -1301,30 +1508,21 @@ static int __tcf_table_entry_cu(struct net *net, u32 flags, struct nlattr **tb,
 
 	rcu_read_lock();
 	if (flags & NLM_F_REPLACE)
-		ret = __tcf_table_entry_update(pipeline, table, entry, &mask,
+		ret = __tcf_table_entry_update(pipeline, table, entry, mask,
 					       whodunnit, true);
 	else
-		ret = __tcf_table_entry_create(pipeline, table, entry, &mask,
+		ret = __tcf_table_entry_create(pipeline, table, entry, mask,
 					       whodunnit, true);
 	if (ret < 0) {
 		rcu_read_unlock();
 		goto free_acts;
 	}
-
-	memcpy(entry_cpy, entry, sizeof(*entry));
-
 	rcu_read_unlock();
 
-	return 0;
+	return entry;
 
 free_acts:
-	p4tc_action_destroy(entry->acts);
-
-free_key_unmasked:
-	kfree(entry->key.unmasked_key);
-
-free_key_value:
-	kfree(entry->key.value);
+	p4tc_action_destroy(value->acts);
 
 free_entry:
 	kfree(entry);
@@ -1336,7 +1534,7 @@ idr_rm:
 		spin_unlock(&table->tbl_prio_idr_lock);
 	}
 
-	return ret;
+	return ERR_PTR(ret);
 }
 
 static int tcf_table_entry_cu(struct sk_buff *skb, struct net *net, u32 flags,
@@ -1345,8 +1543,8 @@ static int tcf_table_entry_cu(struct sk_buff *skb, struct net *net, u32 flags,
 			      struct netlink_ext_ack *extack)
 {
 	struct nlattr *tb[P4TC_ENTRY_MAX + 1] = { NULL };
-	struct p4tc_table_entry entry = { 0 };
 	struct p4tc_pipeline *pipeline;
+	struct p4tc_table_entry *entry;
 	struct p4tc_table *table;
 	int ret;
 
@@ -1369,12 +1567,13 @@ static int tcf_table_entry_cu(struct sk_buff *skb, struct net *net, u32 flags,
 		goto table_put;
 	}
 
-	ret = __tcf_table_entry_cu(net, flags, tb, &entry, pipeline, table,
-				   extack);
-	if (ret < 0)
+	entry = __tcf_table_entry_cu(net, flags, tb, pipeline, table, extack);
+	if (IS_ERR(entry)) {
+		ret = PTR_ERR(entry);
 		goto table_put;
+	}
 
-	if (p4tca_table_get_entry_fill(skb, table, &entry, table->tbl_id) <= 0)
+	if (p4tca_table_get_entry_fill(skb, table, entry, table->tbl_id) <= 0)
 		NL_SET_ERR_MSG(extack, "Unable to fill table entry attributes");
 
 	if (!nl_pname->passed)
@@ -1388,11 +1587,12 @@ table_put:
 	return ret;
 }
 
-int tcf_table_const_entry_cu(struct net *net, struct nlattr *arg,
-			     struct p4tc_table_entry *entry,
-			     struct p4tc_pipeline *pipeline,
-			     struct p4tc_table *table,
-			     struct netlink_ext_ack *extack)
+struct p4tc_table_entry *
+tcf_table_const_entry_cu(struct net *net,
+			 struct nlattr *arg,
+			 struct p4tc_pipeline *pipeline,
+			 struct p4tc_table *table,
+			 struct netlink_ext_ack *extack)
 {
 	struct nlattr *tb[P4TC_ENTRY_MAX + 1] = { NULL };
 	int ret;
@@ -1400,9 +1600,9 @@ int tcf_table_const_entry_cu(struct net *net, struct nlattr *arg,
 	ret = nla_parse_nested(tb, P4TC_ENTRY_MAX, arg, p4tc_entry_policy,
 			       extack);
 	if (ret < 0)
-		return ret;
+		return ERR_PTR(ret);
 
-	return __tcf_table_entry_cu(net, 0, tb, entry, pipeline, table, extack);
+	return __tcf_table_entry_cu(net, 0, tb, pipeline, table, extack);
 }
 
 static int tc_ctl_p4_get_1(struct net *net, struct sk_buff *skb,
@@ -1723,9 +1923,11 @@ static int tcf_table_entry_dump(struct sk_buff *skb, struct nlattr *arg,
 		for (i = 0; i < P4TC_MSGBATCH_SIZE &&
 		     (entry = rhashtable_walk_next(ctx->iter)) &&
 		     !IS_ERR(entry); i++) {
+			struct p4tc_table_entry_value *value =
+				p4tc_table_entry_value(entry);
 			struct nlattr *count;
 
-			if (!p4tc_ctrl_read_ok(entry->permissions)) {
+			if (!p4tc_ctrl_read_ok(value->permissions)) {
 				i--;
 				continue;
 			}

@@ -40,6 +40,15 @@ struct p4tcmsg {
 #define P4TC_TABLE_FLAGS_MAX_MASKS 0x04
 #define P4TC_TABLE_FLAGS_DEFAULT_KEY 0x08
 #define P4TC_TABLE_FLAGS_PERMISSIONS 0x10
+#define P4TC_TABLE_FLAGS_TYPE 0x20
+
+enum {
+	P4TC_TABLE_TYPE_EXACT=1,
+	P4TC_TABLE_TYPE_LPM=2,
+	P4TC_TABLE_TYPE_TERNARY=3,
+	__P4TC_TABLE_TYPE_MAX,
+};
+#define P4TC_TABLE_TYPE_MAX __P4TC_TABLE_TYPE_MAX - 1
 
 #define P4TC_CTRL_PERM_C_BIT 9
 #define P4TC_CTRL_PERM_R_BIT 8
@@ -86,7 +95,8 @@ struct p4tc_table_parm {
 	__u32 tbl_flags;
 	__u32 tbl_num_entries;
 	__u16 tbl_permissions;
-	__u16 PAD0;
+	__u8  tbl_type;
+	__u8  PAD0;
 };
 
 #define LABELNAMSIZ 32
@@ -329,6 +339,9 @@ struct p4tc_table_entry_tm {
 	__u64 created;
 	__u64 lastused;
 	__u64 firstused;
+	__u16 who_created;
+	__u16 who_updated;
+	__u16 permissions;
 };
 
 /* Table entry attributes */

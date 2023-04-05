@@ -1013,6 +1013,8 @@ static void tcf_pipeline_init(void)
 	__tcf_pipeline_init();
 }
 
+DEFINE_PER_CPU(struct p4tc_percpu_scratchpad, p4tc_percpu_scratchpad);
+
 const struct p4tc_template_ops p4tc_pipeline_ops = {
 	.init = tcf_pipeline_init,
 	.cu = tcf_pipeline_cu,

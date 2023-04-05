@@ -75,14 +75,16 @@ int p4t_copy(struct p4tc_type_mask_shift *dst_mask_shift,
 	     struct p4tc_type_mask_shift *src_mask_shift,
 	     struct p4tc_type *src_t, void *srcv)
 {
-	u64 readval[BITS_TO_U64(P4TC_MAX_KEYSZ)] = { 0 };
-	struct p4tc_type_ops *srco, *dsto;
+	u64 readval[BITS_TO_U64(P4TC_MAX_KEYSZ)] = {0};
+	const struct p4tc_type_ops *srco, *dsto;
 
 	dsto = dst_t->ops;
 	srco = src_t->ops;
 
-	srco->host_read(src_t, src_mask_shift, srcv, &readval);
-	dsto->host_write(dst_t, dst_mask_shift, &readval, dstv);
+	__p4tc_type_host_read(srco, src_t, src_mask_shift, srcv,
+			      &readval);
+	__p4tc_type_host_write(dsto, dst_t, dst_mask_shift, &readval,
+			       dstv);
 
 	return 0;
 }
@@ -92,15 +94,15 @@ int p4t_cmp(struct p4tc_type_mask_shift *dst_mask_shift,
 	    struct p4tc_type_mask_shift *src_mask_shift,
 	    struct p4tc_type *src_t, void *srcv)
 {
-	u64 a[BITS_TO_U64(P4TC_MAX_KEYSZ)] = { 0 };
-	u64 b[BITS_TO_U64(P4TC_MAX_KEYSZ)] = { 0 };
-	struct p4tc_type_ops *srco, *dsto;
+	u64 a[BITS_TO_U64(P4TC_MAX_KEYSZ)] = {0};
+        u64 b[BITS_TO_U64(P4TC_MAX_KEYSZ)] = {0};
+	const struct p4tc_type_ops *srco, *dsto;
 
 	dsto = dst_t->ops;
 	srco = src_t->ops;
 
-	dsto->host_read(dst_t, dst_mask_shift, dstv, a);
-	srco->host_read(src_t, src_mask_shift, srcv, b);
+	__p4tc_type_host_read(dsto, dst_t, dst_mask_shift, dstv, a);
+	__p4tc_type_host_read(srco, src_t, src_mask_shift, srcv, b);
 
 	return memcmp(a, b, sizeof(a));
 }
@@ -1070,7 +1072,7 @@ static void p4t_bool_print(struct net *net, struct p4tc_type *container,
 	pr_info("%s %s", prefix, *v ? "true" : "false");
 }
 
-static struct p4tc_type_ops u8_ops = {
+static const struct p4tc_type_ops u8_ops = {
 	.validate_p4t = p4t_u8_validate,
 	.create_bitops = p4t_u8_bitops,
 	.host_read = p4t_u8_hread,
@@ -1078,7 +1080,7 @@ static struct p4tc_type_ops u8_ops = {
 	.print = p4t_u8_print,
 };
 
-static struct p4tc_type_ops u16_ops = {
+static const struct p4tc_type_ops u16_ops = {
 	.validate_p4t = p4t_u16_validate,
 	.create_bitops = p4t_u16_bitops,
 	.host_read = p4t_u16_hread,
@@ -1086,7 +1088,7 @@ static struct p4tc_type_ops u16_ops = {
 	.print = p4t_u16_print,
 };
 
-static struct p4tc_type_ops u32_ops = {
+static const struct p4tc_type_ops u32_ops = {
 	.validate_p4t = p4t_u32_validate,
 	.create_bitops = p4t_u32_bitops,
 	.host_read = p4t_u32_hread,
@@ -1094,7 +1096,7 @@ static struct p4tc_type_ops u32_ops = {
 	.print = p4t_u32_print,
 };
 
-static struct p4tc_type_ops u64_ops = {
+static const struct p4tc_type_ops u64_ops = {
 	.validate_p4t = p4t_u64_validate,
 	.create_bitops = p4t_u64_bitops,
 	.host_read = p4t_u64_hread,
@@ -1102,40 +1104,40 @@ static struct p4tc_type_ops u64_ops = {
 	.print = p4t_u64_print,
 };
 
-static struct p4tc_type_ops u128_ops = {
+static const struct p4tc_type_ops u128_ops = {
 	.validate_p4t = p4t_u128_validate,
 	.host_read = p4t_u128_hread,
 	.host_write = p4t_u128_write,
 	.print = p4t_u128_print,
 };
 
-static struct p4tc_type_ops s8_ops = {
+static const struct p4tc_type_ops s8_ops = {
 	.validate_p4t = p4t_s8_validate,
 	.host_read = p4t_s8_hread,
 	.print = p4t_s8_print,
 };
 
-static struct p4tc_type_ops s16_ops = {
+static const struct p4tc_type_ops s16_ops = {
 	.validate_p4t = p4t_s16_validate,
 	.host_read = p4t_s16_hread,
 	.host_write = p4t_s16_write,
 	.print = p4t_s16_print,
 };
 
-static struct p4tc_type_ops s32_ops = {
+static const struct p4tc_type_ops s32_ops = {
 	.validate_p4t = p4t_s32_validate,
 	.host_read = p4t_s32_hread,
 	.host_write = p4t_s32_write,
 	.print = p4t_s32_print,
 };
 
-static struct p4tc_type_ops s64_ops = {
+static const struct p4tc_type_ops s64_ops = {
 	.print = p4t_s64_print,
 };
 
-static struct p4tc_type_ops s128_ops = {};
+static const struct p4tc_type_ops s128_ops = {};
 
-static struct p4tc_type_ops be16_ops = {
+static const struct p4tc_type_ops be16_ops = {
 	.validate_p4t = p4t_be16_validate,
 	.create_bitops = p4t_u16_bitops,
 	.host_read = p4t_be16_hread,
@@ -1143,7 +1145,7 @@ static struct p4tc_type_ops be16_ops = {
 	.print = p4t_be16_print,
 };
 
-static struct p4tc_type_ops be32_ops = {
+static const struct p4tc_type_ops be32_ops = {
 	.validate_p4t = p4t_be32_validate,
 	.create_bitops = p4t_u32_bitops,
 	.host_read = p4t_be32_hread,
@@ -1151,20 +1153,20 @@ static struct p4tc_type_ops be32_ops = {
 	.print = p4t_be32_print,
 };
 
-static struct p4tc_type_ops be64_ops = {
+static const struct p4tc_type_ops be64_ops = {
 	.validate_p4t = p4t_u64_validate,
 	.host_read = p4t_be64_hread,
 	.host_write = p4t_be64_write,
 	.print = p4t_be64_print,
 };
 
-static struct p4tc_type_ops string_ops = {};
-static struct p4tc_type_ops nullstring_ops = {};
+static const struct p4tc_type_ops string_ops = {};
+static const struct p4tc_type_ops nullstring_ops = {};
 
-static struct p4tc_type_ops flag_ops = {};
-static struct p4tc_type_ops path_ops = {};
-static struct p4tc_type_ops msecs_ops = {};
-static struct p4tc_type_ops mac_ops = {
+static const struct p4tc_type_ops flag_ops = {};
+static const struct p4tc_type_ops path_ops = {};
+static const struct p4tc_type_ops msecs_ops = {};
+static const struct p4tc_type_ops mac_ops = {
 	.validate_p4t = p4t_mac_validate,
 	.create_bitops = p4t_u64_bitops,
 	.host_read = p4t_u64_hread,
@@ -1172,36 +1174,94 @@ static struct p4tc_type_ops mac_ops = {
 	.print = p4t_mac_print,
 };
 
-static struct p4tc_type_ops ipv4_ops = {
+static const struct p4tc_type_ops ipv4_ops = {
 	.validate_p4t = p4t_ipv4_validate,
 	.host_read = p4t_be32_hread,
 	.host_write = p4t_be32_write,
 	.print = p4t_ipv4_print,
 };
-
-static struct p4tc_type_ops bool_ops = {
+static const struct p4tc_type_ops bool_ops = {
 	.validate_p4t = p4t_bool_validate,
 	.host_read = p4t_bool_hread,
 	.host_write = p4t_bool_write,
 	.print = p4t_bool_print,
 };
 
-static struct p4tc_type_ops dev_ops = {
+static const struct p4tc_type_ops dev_ops = {
 	.validate_p4t = p4t_dev_validate,
 	.host_read = p4t_dev_hread,
 	.host_write = p4t_dev_write,
 	.print = p4t_dev_print,
 };
 
-static struct p4tc_type_ops key_ops = {
+static const struct p4tc_type_ops key_ops = {
 	.validate_p4t = p4t_key_validate,
 	.host_read = p4t_key_hread,
 	.host_write = p4t_key_write,
 	.print = p4t_key_print,
 };
 
+#ifdef CONFIG_RETPOLINE
+int __p4tc_type_host_read(const struct p4tc_type_ops *ops,
+			  struct p4tc_type *container,
+			  struct p4tc_type_mask_shift *mask_shift, void *sval,
+			  void *dval)
+{
+	#define HREAD(cops) \
+		if (ops == &cops) \
+			return cops.host_read(container, mask_shift, sval, dval)
+
+	HREAD(u8_ops);
+	HREAD(u16_ops);
+	HREAD(u32_ops);
+	HREAD(u64_ops);
+	HREAD(u128_ops);
+	HREAD(s8_ops);
+	HREAD(s16_ops);
+	HREAD(s32_ops);
+	HREAD(be16_ops);
+	HREAD(be32_ops);
+	HREAD(mac_ops);
+	HREAD(ipv4_ops);
+	HREAD(bool_ops);
+	HREAD(dev_ops);
+	HREAD(key_ops);
+
+	return ops->host_read(container, mask_shift, sval, dval);
+}
+
+int __p4tc_type_host_write(const struct p4tc_type_ops *ops,
+			  struct p4tc_type *container,
+			  struct p4tc_type_mask_shift *mask_shift, void *sval,
+			  void *dval)
+{
+
+	#define HWRITE(cops) \
+		if (ops == &cops) \
+			return cops.host_write(container, mask_shift, sval, dval)
+
+	HWRITE(u8_ops);
+	HWRITE(u16_ops);
+	HWRITE(u32_ops);
+	HWRITE(u64_ops);
+	HWRITE(u128_ops);
+	HWRITE(s16_ops);
+	HWRITE(s32_ops);
+	HWRITE(be16_ops);
+	HWRITE(be32_ops);
+	HWRITE(mac_ops);
+	HWRITE(ipv4_ops);
+	HWRITE(bool_ops);
+	HWRITE(dev_ops);
+	HWRITE(key_ops);
+
+	return ops->host_write(container, mask_shift, sval, dval);
+}
+#endif
+
 static int __p4tc_do_regtype(int typeid, size_t bitsz, size_t container_bitsz,
-			     const char *t_name, struct p4tc_type_ops *ops)
+			     const char *t_name,
+			     const struct p4tc_type_ops *ops)
 {
 	struct p4tc_type *type;
 	int err;
@@ -1238,7 +1298,7 @@ static int __p4tc_do_regtype(int typeid, size_t bitsz, size_t container_bitsz,
 static inline int __p4tc_register_type(int typeid, size_t bitsz,
 				       size_t container_bitsz,
 				       const char *t_name,
-				       struct p4tc_type_ops *ops)
+				       const struct p4tc_type_ops *ops)
 {
 	if (__p4tc_do_regtype(typeid, bitsz, container_bitsz, t_name, ops) <
 	    0) {

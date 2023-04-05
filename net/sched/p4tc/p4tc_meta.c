@@ -248,15 +248,11 @@ static inline void *tcf_meta_fetch_kernel(struct sk_buff *skb,
 
 static inline void *tcf_meta_fetch_user(struct sk_buff *skb, const u32 skb_off)
 {
-	struct p4tc_skb_ext *p4tc_skb_ext;
+	struct p4tc_percpu_scratchpad *pad;
 
-	p4tc_skb_ext = skb_ext_find(skb, P4TC_SKB_EXT);
-	if (!p4tc_skb_ext) {
-		pr_err("Unable to find P4TC_SKB_EXT\n");
-		return NULL;
-	}
+	pad = this_cpu_ptr(&p4tc_percpu_scratchpad);
 
-	return &p4tc_skb_ext->p4tc_ext->metadata[skb_off];
+	return &pad->metadata[skb_off];
 }
 
 void *tcf_meta_fetch(struct sk_buff *skb, struct p4tc_metadata *meta)

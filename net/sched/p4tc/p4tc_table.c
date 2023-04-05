@@ -45,6 +45,9 @@ static int tcf_key_try_set_state_ready(struct p4tc_table_key *key,
 static int __tcf_table_try_set_state_ready(struct p4tc_table *table,
 					   struct netlink_ext_ack *extack)
 {
+	int i;
+	int ret;
+
 	if (!table->tbl_postacts) {
 		NL_SET_ERR_MSG(extack,
 			       "All tables must have postactions before sealing pipelline");
@@ -57,23 +60,73 @@ static int __tcf_table_try_set_state_ready(struct p4tc_table *table,
 		return -EINVAL;
 	}
 
-	return tcf_key_try_set_state_ready(table->tbl_key, extack);
+	ret = tcf_key_try_set_state_ready(table->tbl_key, extack);
+	if (ret < 0)
+		return ret;
+
+	table->tbl_masks_array = kcalloc(table->tbl_max_masks,
+					 sizeof(*(table->tbl_masks_array)),
+					 GFP_KERNEL);
+	if (!table->tbl_masks_array)
+		return -ENOMEM;
+
+	table->tbl_free_masks_bitmap = kcalloc(table->tbl_max_masks,
+					       sizeof(u32 *), GFP_KERNEL);
+
+	if (!table->tbl_free_masks_bitmap) {
+		kfree(table->tbl_masks_array);
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < table->tbl_max_masks; i++)
+		table->tbl_free_masks_bitmap[i] = 1;
+
+	return 0;
+}
+
+void free_table_cache_array(struct p4tc_table **set_tables,
+			    int num_tables)
+{
+
+	int i;
+
+	for (i = 0; i < num_tables; i++) {
+		struct p4tc_table *table = set_tables[i];
+
+		kfree(table->tbl_masks_array);
+		kfree(table->tbl_free_masks_bitmap);
+	}
 }
 
 int tcf_table_try_set_state_ready(struct p4tc_pipeline *pipeline,
 				  struct netlink_ext_ack *extack)
 {
+	int i = 0;
+	struct p4tc_table **set_tables;
 	struct p4tc_table *table;
 	unsigned long tmp, id;
 	int ret;
 
+	set_tables = kcalloc(pipeline->num_tables, sizeof(*set_tables),
+			     GFP_KERNEL);
+	if (!set_tables)
+		return -ENOMEM;
+
 	idr_for_each_entry_ul(&pipeline->p_tbl_idr, table, tmp, id) {
 		ret = __tcf_table_try_set_state_ready(table, extack);
 		if (ret < 0)
-			return ret;
+			goto free_set_tables;
+		set_tables[i] = table;
+		i++;
 	}
+	kfree(set_tables);
 
 	return 0;
+
+free_set_tables:
+	free_table_cache_array(set_tables, i);
+	kfree(set_tables);
+	return ret;
 }
 
 static const struct nla_policy p4tc_table_policy[P4TC_TABLE_MAX + 1] = {
@@ -403,6 +456,9 @@ static inline int _tcf_table_put(struct net *net, struct nlattr **tb,
 
 	idr_remove(&pipeline->p_tbl_idr, table->tbl_id);
 	pipeline->curr_tables -= 1;
+
+	kfree(table->tbl_masks_array);
+	kfree(table->tbl_free_masks_bitmap);
 
 	kfree(table);
 
@@ -840,6 +896,7 @@ static struct p4tc_table *tcf_table_create(struct net *net, struct nlattr **tb,
 					   struct p4tc_pipeline *pipeline,
 					   struct netlink_ext_ack *extack)
 {
+	struct rhashtable_params table_hlt_params = entry_hlt_params;
 	struct p4tc_table_key *key = NULL;
 	struct p4tc_table_parm *parm;
 	struct p4tc_table *table;
@@ -991,6 +1048,17 @@ static struct p4tc_table *tcf_table_create(struct net *net, struct nlattr **tb,
 		table->tbl_permissions->permissions = P4TC_TABLE_PERMISSIONS;
 	}
 
+	if (parm->tbl_flags & P4TC_TABLE_FLAGS_TYPE) {
+		if (parm->tbl_type > P4TC_TABLE_TYPE_MAX) {
+			NL_SET_ERR_MSG(extack, "Table type can only be exact or LPM");
+			ret = -EINVAL;
+			goto free_permissions;
+		}
+		table->tbl_type = parm->tbl_type;
+	} else {
+		table->tbl_type = P4TC_TABLE_TYPE_EXACT;
+	}
+
 	refcount_set(&table->tbl_ref, 1);
 	refcount_set(&table->tbl_ctrl_ref, 1);
 
@@ -1089,7 +1157,13 @@ static struct p4tc_table *tcf_table_create(struct net *net, struct nlattr **tb,
 	spin_lock_init(&table->tbl_masks_idr_lock);
 	spin_lock_init(&table->tbl_prio_idr_lock);
 
-	if (rhltable_init(&table->tbl_entries, &entry_hlt_params) < 0) {
+	table_hlt_params.max_size = table->tbl_max_entries;
+	if (table->tbl_max_entries > U16_MAX)
+		table_hlt_params.nelem_hint = U16_MAX / 4 * 3;
+	else
+		table_hlt_params.nelem_hint = table->tbl_max_entries / 4 * 3;
+
+	if (rhltable_init(&table->tbl_entries, &table_hlt_params) < 0) {
 		ret = -EINVAL;
 		goto defaultacts_destroy;
 	}
@@ -1300,24 +1374,28 @@ static struct p4tc_table *tcf_table_update(struct net *net, struct nlattr **tb,
 			}
 			perm->permissions = parm->tbl_permissions;
 		}
+
+		if (parm->tbl_flags & P4TC_TABLE_FLAGS_TYPE) {
+			if (parm->tbl_type > P4TC_TABLE_TYPE_MAX) {
+				NL_SET_ERR_MSG(extack, "Table type can only be exact or LPM");
+				ret = -EINVAL;
+				goto free_perm;
+			}
+			table->tbl_type = parm->tbl_type;
+		}
 	}
 
 	if (tb[P4TC_TABLE_OPT_ENTRY]) {
 		struct p4tc_table_entry *entry;
 
-		entry = kzalloc(GFP_KERNEL, sizeof(*entry));
-		if (!entry) {
-			ret = -ENOMEM;
+		/* Workaround to make this work */
+		entry = tcf_table_const_entry_cu(net, tb[P4TC_TABLE_OPT_ENTRY],
+						 pipeline, table, extack);
+		if (IS_ERR(entry)) {
+			ret = PTR_ERR(entry);
 			goto free_perm;
 		}
 
-		/* Workaround to make this work */
-		ret = tcf_table_const_entry_cu(net, tb[P4TC_TABLE_OPT_ENTRY],
-					       entry, pipeline, table, extack);
-		if (ret < 0) {
-			kfree(entry);
-			goto free_perm;
-		}
 		table->tbl_const_entry = entry;
 	}
 

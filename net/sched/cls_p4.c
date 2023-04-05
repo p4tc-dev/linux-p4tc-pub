@@ -34,8 +34,8 @@ static int p4_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 	struct cls_p4_head *head = rcu_dereference_bh(tp->root);
 	struct tcf_result p4res = {};
 	int rc = 0;
+	struct p4tc_percpu_scratchpad *pad;
 	struct p4tc_pipeline *pipeline;
-	struct p4tc_skb_ext *p4tc_ext;
 
 	if (unlikely(!head)) {
 		pr_err("P4 classifier not found\n");
@@ -45,15 +45,11 @@ static int p4_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 	pipeline = head->pipeline;
 	trace_p4_classify(skb, pipeline);
 
-	p4tc_ext = skb_ext_find(skb, P4TC_SKB_EXT);
-	if (!p4tc_ext) {
-		p4tc_ext = p4tc_skb_ext_alloc(skb);
-		if (WARN_ON_ONCE(!p4tc_ext))
-			return TC_ACT_SHOT;
-	}
+	pad = this_cpu_ptr(&p4tc_percpu_scratchpad);
+	memset(pad, 0, sizeof(*pad));
 
 	if (refcount_read(&pipeline->p_hdrs_used) > 1)
-		rc = tcf_skb_parse(skb, p4tc_ext, pipeline->parser);
+		rc = tcf_skb_parse(skb, pad, pipeline->parser);
 
 	if (rc > 0) {
 		pr_warn("P4 parser error %d\n", rc);

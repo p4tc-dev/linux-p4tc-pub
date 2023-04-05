@@ -98,14 +98,14 @@ struct p4tc_parser *tcf_parser_find_byany(struct p4tc_pipeline *pipeline,
 }
 
 #ifdef CONFIG_KPARSER
-int tcf_skb_parse(struct sk_buff *skb, struct p4tc_skb_ext *p4tc_skb_ext,
+int tcf_skb_parse(struct sk_buff *skb, struct p4tc_percpu_scratchpad *pad,
 		  struct p4tc_parser *parser)
 {
 	void *hdr = skb_mac_header(skb);
 	size_t pktlen = skb_mac_header_len(skb) + skb->len;
 
 	return __kparser_parse(parser->kparser, hdr, pktlen,
-			       p4tc_skb_ext->p4tc_ext->hdrs, HEADER_MAX_LEN);
+			       pad->hdrs, HEADER_MAX_LEN);
 }
 
 static int __tcf_parser_fill(struct p4tc_parser *parser,
@@ -135,7 +135,7 @@ bool tcf_parser_is_callable(struct p4tc_parser *parser)
 	return parser && parser->kparser;
 }
 #else
-int tcf_skb_parse(struct sk_buff *skb, struct p4tc_skb_ext *p4tc_skb_ext,
+int tcf_skb_parse(struct sk_buff *skb, struct p4tc_percpu_scratchpad *pad,
 		  struct p4tc_parser *parser)
 {
 	return 0;

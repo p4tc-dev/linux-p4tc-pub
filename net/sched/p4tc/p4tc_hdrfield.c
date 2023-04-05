@@ -168,22 +168,17 @@ tcf_hdrfield_find_byanyattr(struct p4tc_parser *parser,
 void *tcf_hdrfield_fetch(struct sk_buff *skb, struct p4tc_hdrfield *hdrfield)
 {
 	size_t hdr_offset_len = sizeof(u16);
+	struct p4tc_percpu_scratchpad *pad;
 	u16 *hdr_offset_bits, hdr_offset;
-	struct p4tc_skb_ext *p4tc_skb_ext;
 	u16 hdr_offset_index;
 
-	p4tc_skb_ext = skb_ext_find(skb, P4TC_SKB_EXT);
-	if (!p4tc_skb_ext) {
-		pr_err("Unable to find P4TC_SKB_EXT\n");
-		return NULL;
-	}
+	pad = this_cpu_ptr(&p4tc_percpu_scratchpad);
 
 	hdr_offset_index = (hdrfield->hdrfield_id - 1) * hdr_offset_len;
 	if (hdrfield->flags & P4TC_HDRFIELD_IS_VALIDITY_BIT)
-		return &p4tc_skb_ext->p4tc_ext->hdrs[hdr_offset_index];
+		return &pad->hdrs[hdr_offset_index];
 
-	hdr_offset_bits =
-		(u16 *)&p4tc_skb_ext->p4tc_ext->hdrs[hdr_offset_index];
+	hdr_offset_bits = (u16 *)&pad->hdrs[hdr_offset_index];
 	hdr_offset = BITS_TO_BYTES(*hdr_offset_bits);
 
 	return skb_mac_header(skb) + hdr_offset;
