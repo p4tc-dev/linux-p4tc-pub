@@ -257,21 +257,6 @@ int kparser_link_detach(const void *obj,
 	return 0;
 }
 
-/* kParser KMOD's namespace definitions */
-struct kparser_mod_namespaces {
-	enum kparser_global_namespace_ids namespace_id;
-	const char *name;
-	struct kparser_htbl htbl_name;
-	struct kparser_htbl htbl_id;
-	kparser_obj_create_update *create_handler;
-	kparser_obj_create_update *update_handler;
-	kparser_obj_read_del *read_handler;
-	kparser_obj_read_del *del_handler;
-	kparser_free_obj *free_handler;
-	size_t bv_len;
-	unsigned long *bv;
-};
-
 /* Statically define kParser KMOD's namespaces with all the parameters */
 #define KPARSER_DEFINE_MOD_NAMESPACE(g_ns_obj, NSID, OBJ_NAME, FIELD, CREATE,	\
 				     READ, UPDATE, DELETE, FREE)		\
@@ -489,6 +474,282 @@ static struct kparser_mod_namespaces *g_mod_namespaces[] = {
 		&kparser_mod_namespace_parser_lock_unlock,
 	[KPARSER_NS_MAX] = NULL,
 };
+
+/* runtime define kParser KMOD's namespaces with all the parameters */
+#define KPARSER_DEFINE_NS_MOD_NAMESPACE(ns_namespaces, ns_obj, NSID, OBJ_NAME,	\
+					FIELD, CREATE, READ, UPDATE, DELETE,	\
+					FREE)					\
+do{										\
+	ns_obj = kzalloc(sizeof(*ns_obj), GFP_KERNEL);				\
+	if (!ns_obj) {								\
+		KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI,			\
+					 ":kzalloc failed for size:%lu\n",	\
+					 sizeof(*ns_obj));			\
+		KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "OUT: ");		\
+		return NULL;							\
+	}									\
+	ns_namespaces[NSID] = ns_obj;						\
+	ns_obj->namespace_id = NSID;						\
+	ns_obj->name = #NSID;							\
+	ns_obj->htbl_name.tbl_params.head_offset = offsetof(struct OBJ_NAME,	\
+							     FIELD.ht_node_name);\
+	ns_obj->htbl_name.tbl_params.key_offset = offsetof(struct OBJ_NAME,	\
+							     FIELD.key.name);	\
+	ns_obj->htbl_name.tbl_params.key_len = sizeof(((struct kparser_hkey	\
+							 *)0)->name);		\
+	ns_obj->htbl_name.tbl_params.automatic_shrinking = true;		\
+	ns_obj->htbl_name.tbl_params.hashfn = kparser_generic_hash_fn_name;	\
+	ns_obj->htbl_name.tbl_params.obj_hashfn =				\
+					kparser_generic_obj_hashfn_name;	\
+	ns_obj->htbl_name.tbl_params.obj_cmpfn = kparser_cmp_fn_name;		\
+										\
+	ns_obj->htbl_id.tbl_params.head_offset = offsetof(struct OBJ_NAME,	\
+							     FIELD.ht_node_id);	\
+	ns_obj->htbl_id.tbl_params.key_offset = offsetof(struct OBJ_NAME,	\
+							     FIELD.key.id);	\
+	ns_obj->htbl_id.tbl_params.key_len = sizeof(((struct kparser_hkey	\
+							 *)0)->id);		\
+	ns_obj->htbl_id.tbl_params.automatic_shrinking = true;			\
+	ns_obj->htbl_id.tbl_params.hashfn = kparser_generic_hash_fn_id;	\
+	ns_obj->htbl_id.tbl_params.obj_hashfn =				\
+					kparser_generic_obj_hashfn_id;		\
+	ns_obj->htbl_id.tbl_params.obj_cmpfn = kparser_cmp_fn_id;		\
+	ns_obj->create_handler = CREATE;					\
+	ns_obj->read_handler = READ;						\
+	ns_obj->update_handler = UPDATE;					\
+	ns_obj->del_handler = DELETE;						\
+	ns_obj->free_handler = FREE;						\
+} while(0)
+
+struct kparser_ns_ds_ctx * kparser_alloc_global_ns_ctx(void)
+{
+	struct kparser_mod_namespaces **kparser_ns_namespaces;
+	struct kparser_mod_namespaces *kparser_ns_obj;
+	struct kparser_ns_ds_ctx *ctx_ret;
+	int i, err;
+
+	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "IN: ");
+
+	ctx_ret = kzalloc(sizeof(*ctx_ret), GFP_KERNEL);
+	if (!ctx_ret) {
+		KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI,
+					 ":kzalloc failed for ctx_ret");
+		KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "OUT: ");
+		return NULL;
+	}
+
+	kparser_ns_namespaces = kzalloc(sizeof(struct kparser_mod_namespaces *)
+					*
+					(KPARSER_NS_MAX - KPARSER_NS_INVALID + 1),
+					GFP_KERNEL);
+	if (!kparser_ns_namespaces) {
+		KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI,
+					 ":kzalloc failed for"
+					 " kparser_ns_namespaces");
+		KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "OUT: ");
+		return NULL;
+	}
+
+	ctx_ret->kparser_ns_ctx = kparser_ns_namespaces;
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_CONDEXPRS,
+					kparser_glue_condexpr_expr,
+					glue,
+					kparser_create_cond_exprs,
+					kparser_read_cond_exprs,
+					NULL, NULL, NULL);
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_CONDEXPRS_TABLE,
+					kparser_glue_condexpr_table,
+					glue,
+					kparser_create_cond_table,
+					kparser_read_cond_table,
+					NULL, NULL, NULL);
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_CONDEXPRS_TABLES,
+					kparser_glue_condexpr_tables,
+					glue,
+					kparser_create_cond_tables,
+					kparser_read_cond_tables,
+					NULL, NULL, NULL);
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_COUNTER,
+					kparser_glue_counter,
+					glue,
+					kparser_create_counter,
+					kparser_read_counter,
+					NULL, NULL, NULL);
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_COUNTER_TABLE,
+					kparser_glue_counter_table,
+					glue,
+					kparser_create_counter_table,
+					kparser_read_counter_table,
+					NULL, NULL, NULL);
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_METADATA,
+					kparser_glue_metadata_extract,
+					glue,
+					kparser_create_metadata,
+					kparser_read_metadata,
+					NULL,
+					kparser_del_metadata,
+					kparser_free_metadata);
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_METALIST,
+					kparser_glue_metadata_table,
+					glue,
+					kparser_create_metalist,
+					kparser_read_metalist,
+					NULL,
+					kparser_del_metalist,
+					kparser_free_metalist);
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_NODE_PARSE,
+					kparser_glue_glue_parse_node,
+					glue.glue,
+					kparser_create_parse_node,
+					kparser_read_parse_node,
+					NULL,
+					kparser_del_parse_node,
+					kparser_free_node);
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_PROTO_TABLE,
+					kparser_glue_protocol_table,
+					glue,
+					kparser_create_proto_table,
+					kparser_read_proto_table,
+					NULL,
+					kparser_del_proto_table,
+					kparser_free_proto_tbl);
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_TLV_NODE_PARSE,
+					kparser_glue_parse_tlv_node,
+					glue.glue,
+					kparser_create_parse_tlv_node,
+					kparser_read_parse_tlv_node,
+					NULL, NULL, NULL);
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_TLV_PROTO_TABLE,
+					kparser_glue_proto_tlvs_table,
+					glue,
+					kparser_create_tlv_proto_table,
+					kparser_read_tlv_proto_table,
+					NULL, NULL, NULL);
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_FLAG_FIELD,
+					kparser_glue_flag_field,
+					glue,
+					kparser_create_flag_field,
+					kparser_read_flag_field,
+					NULL, NULL, NULL);
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_FLAG_FIELD_TABLE,
+					kparser_glue_flag_fields,
+					glue,
+					kparser_create_flag_field_table,
+					kparser_read_flag_field_table,
+					NULL, NULL, NULL);
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_FLAG_FIELD_NODE_PARSE,
+					kparser_glue_flag_field_node,
+					glue.glue,
+					kparser_create_parse_flag_field_node,
+					kparser_read_parse_flag_field_node,
+					NULL, NULL, NULL);
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_FLAG_FIELD_PROTO_TABLE,
+					kparser_glue_proto_flag_fields_table,
+					glue,
+					kparser_create_flag_field_proto_table,
+					kparser_read_flag_field_proto_table,
+					NULL, NULL, NULL);
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_PARSER,
+					kparser_glue_parser,
+					glue,
+					kparser_create_parser,
+					kparser_read_parser,
+					NULL,
+					kparser_del_parser,
+					kparser_free_parser);
+
+	KPARSER_DEFINE_NS_MOD_NAMESPACE(kparser_ns_namespaces, kparser_ns_obj,
+					KPARSER_NS_OP_PARSER_LOCK_UNLOCK,
+					kparser_glue_parser,
+					glue,
+					kparser_parser_lock,
+					NULL, NULL,
+					kparser_parser_unlock,
+					NULL);
+
+	for (i = 0; i < (sizeof(g_mod_namespaces) /
+				sizeof(g_mod_namespaces[0])); i++) {
+		if (!kparser_ns_namespaces[i])
+			continue;
+
+		err = rhashtable_init(&kparser_ns_namespaces[i]->htbl_name.tbl,
+				      &kparser_ns_namespaces[i]->htbl_name.tbl_params);
+		if (err) {
+			KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI,
+						 "rhashtable_init() failed");
+			KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "OUT: ");
+			return NULL;
+		}
+
+		err = rhashtable_init(&kparser_ns_namespaces[i]->htbl_id.tbl,
+				      &kparser_ns_namespaces[i]->htbl_id.tbl_params);
+		if (err) {
+			KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI,
+						 "rhashtable_init() failed");
+			KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "OUT: ");
+			return NULL;
+		}
+
+		kparser_ns_namespaces[i]->bv_len =
+			((KPARSER_KMOD_ID_MAX - KPARSER_KMOD_ID_MIN) /
+			 BITS_PER_TYPE(unsigned long)) + 1;
+
+		KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI,
+					 "bv_len:%lu, total_bytes:%lu, range:[%d:%d]\n",
+					 kparser_ns_namespaces[i]->bv_len,
+					 sizeof(unsigned long) *
+					 kparser_ns_namespaces[i]->bv_len,
+					 KPARSER_KMOD_ID_MAX, KPARSER_KMOD_ID_MIN);
+
+		kparser_ns_namespaces[i]->bv = kcalloc(kparser_ns_namespaces[i]->bv_len,
+						       sizeof(unsigned long),
+						       GFP_KERNEL);
+
+		if (!kparser_ns_namespaces[i]->bv) {
+			KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "kzalloc() failed");
+			KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "OUT: ");
+			return NULL;
+		}
+
+		memset(kparser_ns_namespaces[i]->bv, 0xff,
+		       kparser_ns_namespaces[i]->bv_len * sizeof(unsigned long));
+	}
+
+	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "OUT: ");
+	return ctx_ret;
+}
 
 /* Function to allocate autogen IDs for hash keys if user did not allocate themselves
  * TODO: free ids
@@ -834,7 +1095,8 @@ do {									\
 while (0)
 
 /* netlink msg processors for create */
-int kparser_config_handler_add(const void *cmdarg, size_t cmdarglen,
+int kparser_config_handler_add(void *netns,
+			       const void *cmdarg, size_t cmdarglen,
 			       struct kparser_cmd_rsp_hdr **rsp,
 			       size_t *rsp_len,
 			       void *extack, int *err)
@@ -849,7 +1111,7 @@ int kparser_config_handler_add(const void *cmdarg, size_t cmdarglen,
 	if (!g_mod_namespaces[conf->namespace_id]->create_handler)
 		return KPARSER_ATTR_UNSPEC;
 
-	return g_mod_namespaces[conf->namespace_id]->create_handler(conf, cmdarglen,
+	return g_mod_namespaces[conf->namespace_id]->create_handler(netns, conf, cmdarglen,
 								    rsp,
 								    rsp_len,
 								    "create",
@@ -857,7 +1119,8 @@ int kparser_config_handler_add(const void *cmdarg, size_t cmdarglen,
 }
 
 /* netlink msg processors for update */
-int kparser_config_handler_update(const void *cmdarg, size_t cmdarglen,
+int kparser_config_handler_update(void *netns,
+				  const void *cmdarg, size_t cmdarglen,
 				  struct kparser_cmd_rsp_hdr **rsp,
 				  size_t *rsp_len, void *extack, int *err)
 {
@@ -871,7 +1134,7 @@ int kparser_config_handler_update(const void *cmdarg, size_t cmdarglen,
 	if (!g_mod_namespaces[conf->namespace_id]->update_handler)
 		return KPARSER_ATTR_UNSPEC;
 
-	return g_mod_namespaces[conf->namespace_id]->update_handler(conf, cmdarglen,
+	return g_mod_namespaces[conf->namespace_id]->update_handler(netns, conf, cmdarglen,
 								    rsp,
 								    rsp_len,
 								    "update",
@@ -879,7 +1142,8 @@ int kparser_config_handler_update(const void *cmdarg, size_t cmdarglen,
 }
 
 /* netlink msg processors for read */
-int kparser_config_handler_read(const void *cmdarg, size_t cmdarglen,
+int kparser_config_handler_read(void *netns,
+				const void *cmdarg, size_t cmdarglen,
 				struct kparser_cmd_rsp_hdr **rsp,
 				size_t *rsp_len, void *extack, int *err)
 {
@@ -893,12 +1157,15 @@ int kparser_config_handler_read(const void *cmdarg, size_t cmdarglen,
 	if (!g_mod_namespaces[conf->namespace_id]->read_handler)
 		return KPARSER_ATTR_UNSPEC;
 
-	return g_mod_namespaces[conf->namespace_id]->read_handler(&conf->obj_key, rsp, rsp_len,
-			conf->recursive_read_delete, "read", extack, err);
+	return g_mod_namespaces[conf->namespace_id]->read_handler(netns,
+								  &conf->obj_key, rsp, rsp_len,
+								  conf->recursive_read_delete,
+								  "read", extack, err);
 }
 
 /* netlink msg processors for delete */
-int kparser_config_handler_delete(const void *cmdarg, size_t cmdarglen,
+int kparser_config_handler_delete(void *netns,
+				  const void *cmdarg, size_t cmdarglen,
 				  struct kparser_cmd_rsp_hdr **rsp,
 				  size_t *rsp_len, void *extack, int *err)
 {
@@ -912,6 +1179,8 @@ int kparser_config_handler_delete(const void *cmdarg, size_t cmdarglen,
 	if (!g_mod_namespaces[conf->namespace_id]->del_handler)
 		return KPARSER_ATTR_UNSPEC;
 
-	return g_mod_namespaces[conf->namespace_id]->del_handler(&conf->obj_key, rsp, rsp_len,
-			conf->recursive_read_delete, "delete", extack, err);
+	return g_mod_namespaces[conf->namespace_id]->del_handler(netns,
+								 &conf->obj_key, rsp, rsp_len,
+								 conf->recursive_read_delete,
+								 "delete", extack, err);
 }

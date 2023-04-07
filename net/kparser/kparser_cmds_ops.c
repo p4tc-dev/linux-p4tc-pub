@@ -27,7 +27,7 @@ void *kparser_fast_lookup_array[KPARSER_PARSER_FAST_LOOKUP_RSVD_ID_STOP -
 
 /* common pre-process code for create handlers */
 static inline bool
-kparser_cmd_create_pre_process(const char *op,
+kparser_cmd_create_pre_process(void *netns, const char *op,
 			       const struct kparser_conf_cmd *conf,
 			       const struct kparser_hkey *argkey, struct kparser_hkey *newkey,
 			       void **kobj, size_t kobjsize, struct kparser_cmd_rsp_hdr *rsp,
@@ -90,7 +90,8 @@ kparser_cmd_create_pre_process(const char *op,
  * NOTE: All handlers startting from here must hold mutex kparser_config_lock
  * before any work can be done and must release that mutex before return.
  */
-int kparser_create_cond_exprs(const struct kparser_conf_cmd *conf,
+int kparser_create_cond_exprs(void *netns,
+			      const struct kparser_conf_cmd *conf,
 			      size_t conf_len,
 			      struct kparser_cmd_rsp_hdr **rsp,
 			      size_t *rsp_len, const char *op,
@@ -106,7 +107,8 @@ int kparser_create_cond_exprs(const struct kparser_conf_cmd *conf,
 
 	arg = &conf->cond_conf;
 
-	if (!kparser_cmd_create_pre_process(op, conf, &arg->key, &key,
+	if (!kparser_cmd_create_pre_process(netns,
+					    op, conf, &arg->key, &key,
 					    (void **)&kobj, sizeof(*kobj), *rsp,
 					    offsetof(struct
 						     kparser_glue_condexpr_expr,
@@ -131,7 +133,7 @@ done:
 }
 
 /* read handler for object conditionals */
-int kparser_read_cond_exprs(const struct kparser_hkey *key,
+int kparser_read_cond_exprs(void *netns, const struct kparser_hkey *key,
 			    struct kparser_cmd_rsp_hdr **rsp,
 			    size_t *rsp_len, __u8 recursive_read,
 			    const char *op,
@@ -167,7 +169,7 @@ done:
 }
 
 /* create handler for object conditionals table entry */
-static bool kparser_create_cond_table_ent(const struct kparser_conf_table *arg,
+static bool kparser_create_cond_table_ent(void *netns, const struct kparser_conf_table *arg,
 					  struct kparser_glue_condexpr_table **proto_table,
 					  struct kparser_cmd_rsp_hdr *rsp,
 					  const char *op,
@@ -221,7 +223,7 @@ static bool kparser_create_cond_table_ent(const struct kparser_conf_table *arg,
 }
 
 /* create handler for object conditionals table */
-int kparser_create_cond_table(const struct kparser_conf_cmd *conf,
+int kparser_create_cond_table(void *netns, const struct kparser_conf_cmd *conf,
 			      size_t conf_len,
 			      struct kparser_cmd_rsp_hdr **rsp,
 			      size_t *rsp_len, const char *op,
@@ -239,13 +241,14 @@ int kparser_create_cond_table(const struct kparser_conf_cmd *conf,
 
 	/* create a table entry */
 	if (arg->add_entry) {
-		if (kparser_create_cond_table_ent(arg, &proto_table, *rsp, op,
+		if (kparser_create_cond_table_ent(netns, arg, &proto_table, *rsp, op,
 						  extack, err) == false)
 			goto done;
 		goto skip_table_create;
 	}
 
-	if (!kparser_cmd_create_pre_process(op, conf, &arg->key, &key,
+	if (!kparser_cmd_create_pre_process(netns,
+					    op, conf, &arg->key, &key,
 					    (void **)&proto_table, sizeof(*proto_table), *rsp,
 					    offsetof(struct
 						     kparser_glue_condexpr_table,
@@ -279,7 +282,7 @@ done:
 }
 
 /* read handler for object conditionals table */
-int kparser_read_cond_table(const struct kparser_hkey *key,
+int kparser_read_cond_table(void *netns, const struct kparser_hkey *key,
 			    struct kparser_cmd_rsp_hdr **rsp,
 			    size_t *rsp_len, __u8 recursive_read,
 			    const char *op,
@@ -344,7 +347,7 @@ done:
 }
 
 /* create handler for object conditionals table's list entry */
-static bool kparser_create_cond_tables_ent(const struct kparser_conf_table *arg,
+static bool kparser_create_cond_tables_ent(void *netns, const struct kparser_conf_table *arg,
 					   struct kparser_glue_condexpr_tables **proto_table,
 					   struct kparser_cmd_rsp_hdr *rsp,
 					   const char *op,
@@ -396,7 +399,7 @@ static bool kparser_create_cond_tables_ent(const struct kparser_conf_table *arg,
 }
 
 /* create handler for object conditionals table's list */
-int kparser_create_cond_tables(const struct kparser_conf_cmd *conf,
+int kparser_create_cond_tables(void *netns, const struct kparser_conf_cmd *conf,
 			       size_t conf_len,
 			       struct kparser_cmd_rsp_hdr **rsp,
 			       size_t *rsp_len, const char *op,
@@ -414,13 +417,14 @@ int kparser_create_cond_tables(const struct kparser_conf_cmd *conf,
 
 	/* create a table entry */
 	if (arg->add_entry) {
-		if (kparser_create_cond_tables_ent(arg, &proto_table, *rsp, op,
+		if (kparser_create_cond_tables_ent(netns, arg, &proto_table, *rsp, op,
 						   extack, err) == false)
 			goto done;
 		goto skip_table_create;
 	}
 
-	if (!kparser_cmd_create_pre_process(op, conf, &arg->key, &key,
+	if (!kparser_cmd_create_pre_process(netns,
+					    op, conf, &arg->key, &key,
 					    (void **)&proto_table, sizeof(*proto_table), *rsp,
 					    offsetof(struct
 						     kparser_glue_condexpr_tables,
@@ -452,7 +456,7 @@ done:
 }
 
 /* read handler for object conditionals table's list */
-int kparser_read_cond_tables(const struct kparser_hkey *key,
+int kparser_read_cond_tables(void *netns, const struct kparser_hkey *key,
 			     struct kparser_cmd_rsp_hdr **rsp,
 			     size_t *rsp_len, __u8 recursive_read,
 			     const char *op,
@@ -516,7 +520,7 @@ done:
 }
 
 /* create handler for object counter */
-int kparser_create_counter(const struct kparser_conf_cmd *conf,
+int kparser_create_counter(void *netns, const struct kparser_conf_cmd *conf,
 			   size_t conf_len,
 			   struct kparser_cmd_rsp_hdr **rsp,
 			   size_t *rsp_len, const char *op,
@@ -616,7 +620,7 @@ done:
 }
 
 /* read handler for object counter */
-int kparser_read_counter(const struct kparser_hkey *key,
+int kparser_read_counter(void *netns, const struct kparser_hkey *key,
 			 struct kparser_cmd_rsp_hdr **rsp,
 			 size_t *rsp_len, __u8 recursive_read,
 			 const char *op,
@@ -651,7 +655,7 @@ done:
 }
 
 /* create handler for object counter table */
-int kparser_create_counter_table(const struct kparser_conf_cmd *conf,
+int kparser_create_counter_table(void *netns, const struct kparser_conf_cmd *conf,
 				 size_t conf_len,
 				 struct kparser_cmd_rsp_hdr **rsp,
 				 size_t *rsp_len, const char *op,
@@ -763,7 +767,7 @@ done:
 }
 
 /* read handler for object counter table */
-int kparser_read_counter_table(const struct kparser_hkey *key,
+int kparser_read_counter_table(void *netns, const struct kparser_hkey *key,
 			       struct kparser_cmd_rsp_hdr **rsp,
 			       size_t *rsp_len, __u8 recursive_read,
 			       const char *op,
@@ -822,7 +826,7 @@ done:
 }
 
 /* create handler for object metadata */
-int kparser_create_metadata(const struct kparser_conf_cmd *conf,
+int kparser_create_metadata(void *netns, const struct kparser_conf_cmd *conf,
 			    size_t conf_len,
 			    struct kparser_cmd_rsp_hdr **rsp,
 			    size_t *rsp_len, const char *op,
@@ -935,7 +939,7 @@ done:
 }
 
 /* read handler for object metadata */
-int kparser_read_metadata(const struct kparser_hkey *key,
+int kparser_read_metadata(void *netns, const struct kparser_hkey *key,
 			  struct kparser_cmd_rsp_hdr **rsp,
 			  size_t *rsp_len, __u8 recursive_read,
 			  const char *op,
@@ -971,7 +975,7 @@ done:
 }
 
 /* delete handler for object metadata */
-int kparser_del_metadata(const struct kparser_hkey *key,
+int kparser_del_metadata(void *netns, const struct kparser_hkey *key,
 			 struct kparser_cmd_rsp_hdr **rsp,
 			 size_t *rsp_len, __u8 recursive_read,
 			 const char *op,
@@ -1034,7 +1038,7 @@ void kparser_free_metadata(void *ptr, void *arg)
 }
 
 /* create handler for object metadata list */
-int kparser_create_metalist(const struct kparser_conf_cmd *conf,
+int kparser_create_metalist(void *netns, const struct kparser_conf_cmd *conf,
 			    size_t conf_len,
 			    struct kparser_cmd_rsp_hdr **rsp,
 			    size_t *rsp_len, const char *op,
@@ -1205,7 +1209,7 @@ done:
 }
 
 /* read handler for object metadata list */
-int kparser_read_metalist(const struct kparser_hkey *key,
+int kparser_read_metalist(void *netns, const struct kparser_hkey *key,
 			  struct kparser_cmd_rsp_hdr **rsp,
 			  size_t *rsp_len, __u8 recursive_read,
 			  const char *op,
@@ -1265,7 +1269,7 @@ done:
 }
 
 /* delete handler for object metadata list */
-int kparser_del_metalist(const struct kparser_hkey *key,
+int kparser_del_metalist(void *netns, const struct kparser_hkey *key,
 			 struct kparser_cmd_rsp_hdr **rsp,
 			 size_t *rsp_len, __u8 recursive_read,
 			 const char *op,
@@ -1547,7 +1551,7 @@ static inline bool kparser_conf_node_convert(const struct kparser_conf_node *con
 }
 
 /* create handler for object parse node */
-int kparser_create_parse_node(const struct kparser_conf_cmd *conf,
+int kparser_create_parse_node(void *netns, const struct kparser_conf_cmd *conf,
 			      size_t conf_len,
 			      struct kparser_cmd_rsp_hdr **rsp,
 			      size_t *rsp_len, const char *op,
@@ -1672,7 +1676,7 @@ done:
 }
 
 /* read handler for object parse node */
-int kparser_read_parse_node(const struct kparser_hkey *key,
+int kparser_read_parse_node(void *netns, const struct kparser_hkey *key,
 			    struct kparser_cmd_rsp_hdr **rsp,
 			    size_t *rsp_len, __u8 recursive_read,
 			    const char *op,
@@ -1708,7 +1712,7 @@ done:
 }
 
 /* delete handler for object parse node */
-int kparser_del_parse_node(const struct kparser_hkey *key,
+int kparser_del_parse_node(void *netns, const struct kparser_hkey *key,
 			   struct kparser_cmd_rsp_hdr **rsp,
 			   size_t *rsp_len, __u8 recursive_read,
 			   const char *op,
@@ -1859,7 +1863,7 @@ static bool kparser_create_proto_table_ent(const struct kparser_conf_table *arg,
 }
 
 /* create handler for object protocol table */
-int kparser_create_proto_table(const struct kparser_conf_cmd *conf,
+int kparser_create_proto_table(void *netns, const struct kparser_conf_cmd *conf,
 			       size_t conf_len,
 			       struct kparser_cmd_rsp_hdr **rsp,
 			       size_t *rsp_len, const char *op,
@@ -1950,7 +1954,7 @@ done:
 }
 
 /* read handler for object protocol table */
-int kparser_read_proto_table(const struct kparser_hkey *key,
+int kparser_read_proto_table(void *netns, const struct kparser_hkey *key,
 			     struct kparser_cmd_rsp_hdr **rsp,
 			     size_t *rsp_len, __u8 recursive_read,
 			     const char *op,
@@ -2016,7 +2020,7 @@ done:
 }
 
 /* delete handler for object protocol table */
-int kparser_del_proto_table(const struct kparser_hkey *key,
+int kparser_del_proto_table(void *netns, const struct kparser_hkey *key,
 			    struct kparser_cmd_rsp_hdr **rsp,
 			    size_t *rsp_len, __u8 recursive_read,
 			    const char *op,
@@ -2186,7 +2190,7 @@ static inline bool kparser_conf_tlv_node_convert(const struct kparser_conf_node_
 }
 
 /* create handler for object tlv node */
-int kparser_create_parse_tlv_node(const struct kparser_conf_cmd *conf,
+int kparser_create_parse_tlv_node(void *netns, const struct kparser_conf_cmd *conf,
 				  size_t conf_len,
 				  struct kparser_cmd_rsp_hdr **rsp,
 				  size_t *rsp_len, const char *op,
@@ -2272,7 +2276,7 @@ done:
 }
 
 /* read handler for object tlv node */
-int kparser_read_parse_tlv_node(const struct kparser_hkey *key,
+int kparser_read_parse_tlv_node(void *netns, const struct kparser_hkey *key,
 				struct kparser_cmd_rsp_hdr **rsp,
 				size_t *rsp_len, __u8 recursive_read,
 				const char *op,
@@ -2366,7 +2370,7 @@ static bool kparser_create_tlv_proto_table_ent(const struct kparser_conf_table *
 }
 
 /* create handler for object tlv proto table */
-int kparser_create_tlv_proto_table(const struct kparser_conf_cmd *conf,
+int kparser_create_tlv_proto_table(void *netns, const struct kparser_conf_cmd *conf,
 				   size_t conf_len,
 				   struct kparser_cmd_rsp_hdr **rsp,
 				   size_t *rsp_len, const char *op,
@@ -2455,7 +2459,7 @@ done:
 }
 
 /* read handler for object tlv proto table */
-int kparser_read_tlv_proto_table(const struct kparser_hkey *key,
+int kparser_read_tlv_proto_table(void *netns, const struct kparser_hkey *key,
 				 struct kparser_cmd_rsp_hdr **rsp,
 				 size_t *rsp_len, __u8 recursive_read,
 				 const char *op,
@@ -2521,7 +2525,7 @@ done:
 }
 
 /* create handler for object flag field */
-int kparser_create_flag_field(const struct kparser_conf_cmd *conf,
+int kparser_create_flag_field(void *netns, const struct kparser_conf_cmd *conf,
 			      size_t conf_len,
 			      struct kparser_cmd_rsp_hdr **rsp,
 			      size_t *rsp_len, const char *op,
@@ -2601,7 +2605,7 @@ done:
 }
 
 /* read handler for object flag field */
-int kparser_read_flag_field(const struct kparser_hkey *key,
+int kparser_read_flag_field(void *netns, const struct kparser_hkey *key,
 			    struct kparser_cmd_rsp_hdr **rsp,
 			    size_t *rsp_len, __u8 recursive_read,
 			    const char *op,
@@ -2720,7 +2724,7 @@ static bool kparser_create_flag_field_table_ent(const struct kparser_conf_table 
 }
 
 /* create handler for object flag field */
-int kparser_create_flag_field_table(const struct kparser_conf_cmd *conf,
+int kparser_create_flag_field_table(void *netns, const struct kparser_conf_cmd *conf,
 				    size_t conf_len,
 				    struct kparser_cmd_rsp_hdr **rsp,
 				    size_t *rsp_len, const char *op,
@@ -2807,7 +2811,7 @@ done:
 }
 
 /* read handler for object flag field */
-int kparser_read_flag_field_table(const struct kparser_hkey *key,
+int kparser_read_flag_field_table(void *netns, const struct kparser_hkey *key,
 				  struct kparser_cmd_rsp_hdr **rsp,
 				  size_t *rsp_len, __u8 recursive_read,
 				  const char *op,
@@ -2898,7 +2902,7 @@ kparser_create_parse_flag_field_node_convert(const struct kparser_conf_node_pars
 }
 
 /* create handler for object flag field node */
-int kparser_create_parse_flag_field_node(const struct kparser_conf_cmd *conf,
+int kparser_create_parse_flag_field_node(void *netns, const struct kparser_conf_cmd *conf,
 					 size_t conf_len,
 					 struct kparser_cmd_rsp_hdr **rsp,
 					 size_t *rsp_len, const char *op,
@@ -2983,7 +2987,7 @@ done:
 }
 
 /* read handler for object flag field node */
-int kparser_read_parse_flag_field_node(const struct kparser_hkey *key,
+int kparser_read_parse_flag_field_node(void *netns, const struct kparser_hkey *key,
 				       struct kparser_cmd_rsp_hdr **rsp,
 				       size_t *rsp_len, __u8 recursive_read,
 				       const char *op,
@@ -3080,7 +3084,7 @@ kparser_create_flag_field_proto_table_ent(const struct kparser_conf_table *arg,
 }
 
 /* create handler for object flag field proto table */
-int kparser_create_flag_field_proto_table(const struct kparser_conf_cmd *conf,
+int kparser_create_flag_field_proto_table(void *netns, const struct kparser_conf_cmd *conf,
 					  size_t conf_len,
 					  struct kparser_cmd_rsp_hdr **rsp,
 					  size_t *rsp_len, const char *op,
@@ -3170,7 +3174,7 @@ done:
 }
 
 /* read handler for object flag field proto table */
-int kparser_read_flag_field_proto_table(const struct kparser_hkey *key,
+int kparser_read_flag_field_proto_table(void *netns, const struct kparser_hkey *key,
 					struct kparser_cmd_rsp_hdr **rsp,
 					size_t *rsp_len, __u8 recursive_read,
 					const char *op,
@@ -3270,7 +3274,7 @@ static inline bool kparser_parser_convert(const struct kparser_conf_parser *conf
 }
 
 /* create handler for object parser */
-int kparser_create_parser(const struct kparser_conf_cmd *conf,
+int kparser_create_parser(void *netns, const struct kparser_conf_cmd *conf,
 			  size_t conf_len,
 			  struct kparser_cmd_rsp_hdr **rsp,
 			  size_t *rsp_len, const char *op,
@@ -3308,7 +3312,8 @@ int kparser_create_parser(const struct kparser_conf_cmd *conf,
 		goto done;
 	}
 
-	if (!kparser_cmd_create_pre_process(op, conf, &arg->key, &key,
+	if (!kparser_cmd_create_pre_process(netns,
+					    op, conf, &arg->key, &key,
 					    (void **)&kparser, sizeof(*kparser), *rsp,
 					    offsetof(struct kparser_glue_parser,
 						     glue), extack, err))
@@ -3387,13 +3392,15 @@ done:
 	return KPARSER_ATTR_RSP(KPARSER_NS_PARSER);
 }
 
-static bool kparser_dump_protocol_table(const struct kparser_proto_table *obj,
+static bool kparser_dump_protocol_table(void *netns,
+					const struct kparser_proto_table *obj,
 					struct kparser_cmd_rsp_hdr **rsp,
 					size_t *rsp_len,
 					void *extack, int *err);
 
 /* dump metadata list to netlink msg rsp */
-static bool kparser_dump_metadata_table(const struct kparser_metadata_table *obj,
+static bool kparser_dump_metadata_table(void *netns,
+					const struct kparser_metadata_table *obj,
 					struct kparser_cmd_rsp_hdr **rsp,
 					size_t *rsp_len,
 					void *extack, int *err)
@@ -3420,7 +3427,8 @@ static bool kparser_dump_metadata_table(const struct kparser_metadata_table *obj
 
 	/* NOTE: TODO: kparser_config_lock should not be released and reacquired here. Fix later. */
 	mutex_unlock(&kparser_config_lock);
-	rc = kparser_read_metalist(&glue_obj->glue.key,
+	rc = kparser_read_metalist(netns,
+				   &glue_obj->glue.key,
 				   &new_rsp, &new_rsp_len, false, "read",
 				   extack, err);
 	mutex_lock(&kparser_config_lock);
@@ -3448,7 +3456,7 @@ error:
 }
 
 /* dump parse node to netlink msg rsp */
-static bool kparser_dump_parse_node(const struct kparser_parse_node *obj,
+static bool kparser_dump_parse_node(void *netns, const struct kparser_parse_node *obj,
 				    struct kparser_cmd_rsp_hdr **rsp,
 				    size_t *rsp_len,
 				    void *extack, int *err)
@@ -3474,7 +3482,7 @@ static bool kparser_dump_parse_node(const struct kparser_parse_node *obj,
 
 	/* NOTE: TODO: kparser_config_lock should not be released and reacquired here. Fix later. */
 	mutex_unlock(&kparser_config_lock);
-	rc = kparser_read_parse_node(&glue_obj->glue.glue.key,
+	rc = kparser_read_parse_node(netns, &glue_obj->glue.glue.key,
 				     &new_rsp, &new_rsp_len, false, "read",
 				     extack, err);
 	mutex_lock(&kparser_config_lock);
@@ -3494,11 +3502,11 @@ static bool kparser_dump_parse_node(const struct kparser_parse_node *obj,
 	kparser_free(new_rsp);
 	new_rsp = NULL;
 
-	if (!kparser_dump_protocol_table(obj->proto_table, rsp, rsp_len, extack,
+	if (!kparser_dump_protocol_table(netns, obj->proto_table, rsp, rsp_len, extack,
 					 err))
 		goto error;
 
-	if (!kparser_dump_metadata_table(obj->metadata_table, rsp, rsp_len,
+	if (!kparser_dump_metadata_table(netns, obj->metadata_table, rsp, rsp_len,
 					 extack, err))
 		goto error;
 
@@ -3510,7 +3518,8 @@ error:
 }
 
 /* dump protocol table to netlink msg rsp */
-static bool kparser_dump_protocol_table(const struct kparser_proto_table *obj,
+static bool kparser_dump_protocol_table(void *netns,
+					const struct kparser_proto_table *obj,
 					struct kparser_cmd_rsp_hdr **rsp,
 					size_t *rsp_len,
 					void *extack, int *err)
@@ -3537,7 +3546,7 @@ static bool kparser_dump_protocol_table(const struct kparser_proto_table *obj,
 
 	/* NOTE: TODO: kparser_config_lock should not be released and reacquired here. Fix later. */
 	mutex_unlock(&kparser_config_lock);
-	rc = kparser_read_proto_table(&glue_obj->glue.key,
+	rc = kparser_read_proto_table(netns, &glue_obj->glue.key,
 				      &new_rsp, &new_rsp_len, false, "read",
 				      extack, err);
 	mutex_lock(&kparser_config_lock);
@@ -3558,7 +3567,8 @@ static bool kparser_dump_protocol_table(const struct kparser_proto_table *obj,
 	new_rsp = NULL;
 
 	for (i = 0; i < glue_obj->proto_table.num_ents; i++)
-		if (!kparser_dump_parse_node(glue_obj->proto_table.entries[i].node,
+		if (!kparser_dump_parse_node(netns,
+					     glue_obj->proto_table.entries[i].node,
 					     rsp, rsp_len, extack, err))
 			goto error;
 
@@ -3570,7 +3580,7 @@ error:
 }
 
 /* dump parser to netlink msg rsp */
-static bool kparser_dump_parser(const struct kparser_glue_parser *kparser,
+static bool kparser_dump_parser(void *netns, const struct kparser_glue_parser *kparser,
 				struct kparser_cmd_rsp_hdr **rsp,
 				size_t *rsp_len,
 				void *extack, int *err)
@@ -3581,7 +3591,7 @@ static bool kparser_dump_parser(const struct kparser_glue_parser *kparser,
 
 	kparser_start_new_tree_traversal();
 
-	if (!kparser_dump_parse_node(kparser->parser.root_node, rsp, rsp_len,
+	if (!kparser_dump_parse_node(netns, kparser->parser.root_node, rsp, rsp_len,
 				     extack, err))
 		goto error;
 
@@ -3591,7 +3601,7 @@ error:
 }
 
 /* read handler for object parser */
-int kparser_read_parser(const struct kparser_hkey *key,
+int kparser_read_parser(void *netns, const struct kparser_hkey *key,
 			struct kparser_cmd_rsp_hdr **rsp,
 			size_t *rsp_len, __u8 recursive_read,
 			const char *op,
@@ -3621,7 +3631,7 @@ int kparser_read_parser(const struct kparser_hkey *key,
 	(*rsp)->object.parser_conf = kparser->glue.config.parser_conf;
 
 	if (recursive_read &&
-	    kparser_dump_parser(kparser, rsp, rsp_len, extack, err) == false)
+	    kparser_dump_parser(netns, kparser, rsp, rsp_len, extack, err) == false)
 		KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "kparser_dump_parser failed");
 
 done:
@@ -3632,7 +3642,7 @@ done:
 }
 
 /* delete handler for object parser */
-int kparser_del_parser(const struct kparser_hkey *key,
+int kparser_del_parser(void *netns, const struct kparser_hkey *key,
 		       struct kparser_cmd_rsp_hdr **rsp,
 		       size_t *rsp_len, __u8 recursive_read,
 		       const char *op,
@@ -3698,7 +3708,7 @@ void kparser_free_parser(void *ptr, void *arg)
 }
 
 /* handler for object parser lock */
-int kparser_parser_lock(const struct kparser_conf_cmd *conf,
+int kparser_parser_lock(void *netns, const struct kparser_conf_cmd *conf,
 			size_t conf_len,
 			struct kparser_cmd_rsp_hdr **rsp,
 			size_t *rsp_len, const char *op,
@@ -3737,7 +3747,7 @@ done:
 }
 
 /* handler for object parser unlock */
-int kparser_parser_unlock(const struct kparser_hkey *key,
+int kparser_parser_unlock(void *netns, const struct kparser_hkey *key,
 			  struct kparser_cmd_rsp_hdr **rsp,
 			  size_t *rsp_len, __u8 recursive_read,
 			  const char *op,

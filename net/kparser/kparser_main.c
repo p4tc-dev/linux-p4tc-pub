@@ -20,6 +20,7 @@
 #include <net/kparser.h>
 #include <net/netlink.h>
 #include <net/pkt_cls.h>
+#include <net/sock.h>
 
 #include "kparser.h"
 
@@ -60,55 +61,55 @@ static int kparser_cli_cmd_handler(struct sk_buff *skb, struct genl_info *info);
 static const struct nla_policy kparser_nl_policy[KPARSER_ATTR_MAX] = {
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_CONDEXPRS,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_CONDEXPRS_TABLE,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_CONDEXPRS_TABLES,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_COUNTER,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_COUNTER_TABLE,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_METADATA,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_METALIST,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_NODE_PARSE,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_PROTO_TABLE,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_TLV_NODE_PARSE,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_TLV_PROTO_TABLE,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_FLAG_FIELD,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_FLAG_FIELD_TABLE,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_FLAG_FIELD_NODE_PARSE,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_FLAG_FIELD_PROTO_TABLE,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_PARSER,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 	NS_DEFINE_POLICY_ATTR_ENTRY(KPARSER_NS_OP_PARSER_LOCK_UNLOCK,
 				    kparser_conf_cmd,
-			kparser_cmd_rsp_hdr),
+				    kparser_cmd_rsp_hdr),
 };
 
 /* define netlink operations and family */
@@ -186,7 +187,8 @@ static int kparser_send_cmd_rsp(int cmd, int attrtype,
 	return ret;
 }
 
-typedef int kparser_ops(const void *, size_t, struct kparser_cmd_rsp_hdr **,
+typedef int kparser_ops(void *netns, const void *, size_t,
+			struct kparser_cmd_rsp_hdr **,
 			size_t *, void *extack, int *err);
 
 /* define netlink msg processors */
@@ -222,6 +224,8 @@ static kparser_ops *kparser_ns_op_handler[KPARSER_ATTR_MAX] = {
 static int kparser_cli_cmd_handler(struct sk_buff *skb, struct genl_info *info)
 {
 	struct kparser_cmd_rsp_hdr *rsp = NULL;
+	struct net *net = NULL;
+	void *netns = NULL;
 	size_t rsp_len = 0;
 	int ret_attr_id;
 	int attr_idx;
@@ -229,11 +233,19 @@ static int kparser_cli_cmd_handler(struct sk_buff *skb, struct genl_info *info)
 
 	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "IN: ");
 
+	net = get_net(sock_net(skb->sk));
+	if (net)
+		netns = net->kparser_ns;
+
+	if (netns == NULL)
+		netns = kparser_alloc_global_ns_ctx();
+
 	for (attr_idx = KPARSER_ATTR_UNSPEC + 1; attr_idx < KPARSER_ATTR_MAX; attr_idx++) {
 		if (!info->attrs[attr_idx] || !kparser_ns_op_handler[attr_idx])
 			continue;
 
-		ret_attr_id = kparser_ns_op_handler[attr_idx](nla_data(info->attrs[attr_idx]),
+		ret_attr_id = kparser_ns_op_handler[attr_idx](netns,
+							      nla_data(info->attrs[attr_idx]),
 							      nla_len(info->attrs[attr_idx]),
 							      &rsp, &rsp_len,
 							      info->extack, &err);
@@ -263,6 +275,9 @@ static int kparser_cli_cmd_handler(struct sk_buff *skb, struct genl_info *info)
 out:
 	if (rsp)
 		kfree(rsp);
+
+	if (net)
+		put_net(net);
 
 	KPARSER_KMOD_DEBUG_PRINT(KPARSER_F_DEBUG_CLI, "OUT: ");
 
