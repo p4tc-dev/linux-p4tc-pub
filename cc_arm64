@@ -1,0 +1,10 @@
+#!/bin/bash -x
+
+#install debian/ubuntu: apt-get install gcc-aarch64-linux-gnueabihf -y
+
+cp arm64_config .config
+
+make CC=arm-linux-gnueabihf-gcc LD=arm-linux-gnueabihf-ld AR=arm-linux-gnueabihf-ar \
+NM=/usr/bin/arm-linux-gnueabihf-nm OBJCOPY=arm-linux-gnueabihf-objcopy \
+OBJDUMP=arm-linux-gnueabihf-objdump ARCH=arm64 READELF=/usr/bin/arm-linux-gnueabihf-readelf \
+STRIP=/usr/bin/arm-linux-gnueabihf-strip -j`nproc`

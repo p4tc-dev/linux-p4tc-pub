@@ -1,0 +1,176 @@
+{
+    "build": {
+        "environment": {
+            "KBUILD_BUILD_HOST": "tuxmake",
+            "KBUILD_BUILD_TIMESTAMP": "@1711373126",
+            "KBUILD_BUILD_USER": "tuxmake",
+            "KCFLAGS": "-ffile-prefix-map=/home/vnogueira/linux-stub/net-next/tuxmake_output/build/="
+        },
+        "jobs": 16,
+        "kconfig": "tinyconfig",
+        "kconfig_add": [
+            "CONFIG_NET=y",
+            "CONFIG_NET_INGRESS=y",
+            "CONFIG_NET_EGRESS=y",
+            "CONFIG_INET=y",
+            "CONFIG_NET_SCHED=y",
+            "CONFIG_NET_CLS=y",
+            "CONFIG_NET_CLS_ACT=y",
+            "CONFIG_NET_CLS_BPF=y",
+            "CONFIG_BPF_SYSCALL=y",
+            "CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=y",
+            "CONFIG_DEBUG_INFO_BTF=y",
+            "CONFIG_NET_TC_SKB_EXT=y",
+            "CONFIG_NET_P4TC=y",
+            "CONFIG_NET_CLS_P4=y"
+        ],
+        "reproducer_cmdline": [
+            "tuxmake",
+            "--target-arch=s390",
+            "--kconfig=tinyconfig",
+            "--kconfig-add=CONFIG_NET=y",
+            "--kconfig-add=CONFIG_NET_INGRESS=y",
+            "--kconfig-add=CONFIG_NET_EGRESS=y",
+            "--kconfig-add=CONFIG_INET=y",
+            "--kconfig-add=CONFIG_NET_SCHED=y",
+            "--kconfig-add=CONFIG_NET_CLS=y",
+            "--kconfig-add=CONFIG_NET_CLS_ACT=y",
+            "--kconfig-add=CONFIG_NET_CLS_BPF=y",
+            "--kconfig-add=CONFIG_BPF_SYSCALL=y",
+            "--kconfig-add=CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=y",
+            "--kconfig-add=CONFIG_DEBUG_INFO_BTF=y",
+            "--kconfig-add=CONFIG_NET_TC_SKB_EXT=y",
+            "--kconfig-add=CONFIG_NET_P4TC=y",
+            "--kconfig-add=CONFIG_NET_CLS_P4=y",
+            "--toolchain=clang-18",
+            "--wrapper=none",
+            "--environment=KBUILD_BUILD_TIMESTAMP=@1711373126",
+            "--environment=KBUILD_BUILD_USER=tuxmake",
+            "--environment=KBUILD_BUILD_HOST=tuxmake",
+            "--environment=KCFLAGS=-ffile-prefix-map=/home/vnogueira/linux-stub/net-next/tuxmake_output/build/=",
+            "--runtime=docker",
+            "--quiet",
+            "--image=docker.io/tuxmake/s390_clang-18",
+            "KCFLAGS+=-Wimplicit-function-declaration -Warray-bounds -funsigned-char -Wundef -Wunused-macros",
+            "W=1",
+            "C=1",
+            "config",
+            "default",
+            "kernel"
+        ],
+        "runtime": "docker",
+        "target_arch": "s390",
+        "targets": [
+            "config",
+            "default",
+            "kernel"
+        ],
+        "toolchain": "clang-18",
+        "verbose": false,
+        "wrapper": "none"
+    },
+    "compiler": {
+        "name": "clang",
+        "version": "18.1.2",
+        "version_full": "Debian clang version 18.1.2 (++20240317023116+edbe7fa5fef9-1~exp1~20240317023226.82)"
+    },
+    "hardware": {
+        "cores": 16,
+        "free_disk_space": 174732,
+        "ram": 31509
+    },
+    "os": {
+        "name": "Debian GNU/Linux",
+        "version": "11"
+    },
+    "resources": {
+        "disk_space": 419
+    },
+    "results": {
+        "artifacts": {
+            "config": [
+                "config"
+            ],
+            "default": [],
+            "kernel": [
+                "bzImage"
+            ],
+            "log": [
+                "build.log",
+                "build-debug.log"
+            ]
+        },
+        "duration": {
+            "build": 84.06965684890747,
+            "cleanup": 0.6151096820831299,
+            "copy": 0.0016567707061767578,
+            "metadata": 0.37830328941345215,
+            "prepare": 0.38146281242370605,
+            "validate": 0.00017118453979492188
+        },
+        "errors": 78,
+        "status": "PASS",
+        "targets": {
+            "config": {
+                "duration": 6.305727481842041,
+                "status": "PASS"
+            },
+            "default": {
+                "duration": 76.73422574996948,
+                "status": "PASS"
+            },
+            "kernel": {
+                "duration": 1.0296800136566162,
+                "status": "PASS"
+            }
+        },
+        "warnings": 67819
+    },
+    "runtime": {
+        "image_digest": "tuxmake/s390_clang-18@sha256:88c6d66ba2cb82ac1c43640b4541c31ecb7438a52cc3ef356921a7ed8b16e008",
+        "image_name": "docker.io/tuxmake/s390_clang-18",
+        "image_tag": null,
+        "version": "Docker version 24.0.5, build 24.0.5-0ubuntu1~22.04.1"
+    },
+    "source": {
+        "kernelrelease": "6.8.0",
+        "kernelversion": "6.8.0"
+    },
+    "system_map": {
+        "text_offset": "0x0000000000100000"
+    },
+    "tools": {
+        "ar": "GNU ar (GNU Binutils for Debian) 2.35.2",
+        "as": "GNU assembler (GNU Binutils for Debian) 2.35.2",
+        "bc": "bc 1.07.1",
+        "bison": "bison (GNU Bison) 3.7.5",
+        "ccache": "ccache version 4.2",
+        "clang": "Debian clang version 18.1.2 (++20240317023116+edbe7fa5fef9-1~exp1~20240317023226.82)",
+        "depmod": "kmod version 28",
+        "fdformat": "fdformat from util-linux 2.36.1",
+        "flex": "flex 2.6.4",
+        "gcc": "gcc (Debian 10.2.1-6) 10.2.1 20210110",
+        "ld": "GNU ld (GNU Binutils for Debian) 2.35.2",
+        "lld": "Debian LLD 18.1.2 (compatible with GNU linkers)",
+        "make": "GNU Make 4.3",
+        "openssl": "OpenSSL 1.1.1w  11 Sep 2023",
+        "pahole": "v1.25",
+        "ps": "ps from procps-ng 3.3.17"
+    },
+    "tuxmake": {
+        "version": "1.21.3"
+    },
+    "uname": {
+        "kernel": "Linux",
+        "kernel_release": "5.15.0-92-generic",
+        "kernel_version": "#102-Ubuntu SMP Wed Jan 10 09:33:48 UTC 2024",
+        "machine": "x86_64",
+        "operating_system": "GNU/Linux"
+    },
+    "vmlinux": {
+        "bss_size": 149416,
+        "data_size": 597258,
+        "file_size": 55558976,
+        "text_size": 5420058
+    }
+}
