@@ -46,8 +46,10 @@ static int p4_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 	bool at_ingress = skb_at_tc_ingress(skb);
 	int rc = TC_ACT_PIPE;
 	struct p4tc_percpu_scratchpad *pad;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	struct tcf_result p4res = {};
 	struct p4tc_pipeline *pipeline;
+#endif
 
 	if (unlikely(!head)) {
 		pr_err("P4 classifier not found\n");
@@ -85,6 +87,7 @@ static int p4_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 	if (rc != TC_ACT_PIPE)
 		goto zero_pad;
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	pipeline = head->pipeline;
 	trace_p4_classify(skb, pipeline);
 
@@ -97,6 +100,7 @@ static int p4_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 			     &p4res);
 	if (rc != TC_ACT_PIPE)
 		goto zero_pad;
+#endif
 
 	*res = head->res;
 

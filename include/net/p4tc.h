@@ -37,11 +37,13 @@
 
 struct p4tc_percpu_scratchpad {
 	u32 prog_cookie;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	u32 keysz;
 	u32 maskid;
 	u8 key[BITS_TO_BYTES(P4TC_MAX_KEYSZ)];
 	u8 hdrs[BITS_TO_BYTES(HEADER_MAX_LEN)];
 	u8 metadata[BITS_TO_BYTES(META_MAX_LEN)];
+#endif
 };
 
 DECLARE_PER_CPU(struct p4tc_percpu_scratchpad, p4tc_percpu_scratchpad);
@@ -105,6 +107,7 @@ struct p4tc_template_common {
 
 extern const struct p4tc_template_ops p4tc_pipeline_ops;
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 struct p4tc_act_dep_edge_node {
 	struct list_head head;
 	u32 act_id;
@@ -115,24 +118,31 @@ struct p4tc_act_dep_node {
 	struct list_head head;
 	u32 act_id;
 };
+#endif
 
 struct p4tc_pipeline {
 	struct p4tc_template_common common;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	struct idr                  p_meta_idr;
+#endif
 	struct idr                  p_act_idr;
 	struct idr                  p_tbl_idr;
 	struct idr                  p_reg_idr;
 	struct rcu_head             rcu;
 	struct net                  *net;
 	struct p4tc_parser          *parser;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	struct tc_action            **preacts;
 	int                         num_preacts;
 	struct tc_action            **postacts;
 	int                         num_postacts;
 	struct list_head            act_dep_graph;
 	struct list_head            act_topological_order;
+#endif
 	u32                         max_rules;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	u32                         p_meta_offset;
+#endif
 	u32                         num_created_acts;
 	refcount_t                  p_ref;
 	refcount_t                  p_ctrl_ref;
@@ -143,8 +153,28 @@ struct p4tc_pipeline {
 	refcount_t                  p_hdrs_used;
 };
 
+#define P4TC_PIPELINE_MAX_ARRAY 32
+
+struct p4tc_table;
+
+struct p4tc_tbl_cache_key {
+	u32 pipeid;
+	u32 tblid;
+};
+
+extern const struct rhashtable_params tbl_cache_ht_params;
+
+int p4tc_tbl_cache_insert(struct net *net, u32 pipeid, struct p4tc_table *table);
+void p4tc_tbl_cache_remove(struct net *net, struct p4tc_table *table);
+struct p4tc_table *p4tc_tbl_cache_lookup(struct net *net, u32 pipeid, u32 tblid);
+
+#define P4TC_TBLS_CACHE_SIZE 32
+
 struct p4tc_pipeline_net {
-	struct idr pipeline_idr;
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+	struct list_head  tbls_cache[P4TC_TBLS_CACHE_SIZE];
+#endif
+	struct idr        pipeline_idr;
 };
 
 int tcf_p4_tmpl_generic_dump(struct sk_buff *skb, struct p4tc_dump_ctx *ctx,
@@ -182,6 +212,7 @@ static inline bool pipeline_sealed(struct p4tc_pipeline *pipeline)
 	return pipeline->p_state == P4TC_STATE_READY;
 }
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 void tcf_pipeline_add_dep_edge(struct p4tc_pipeline *pipeline,
 			       struct p4tc_act_dep_edge_node *edge_node,
 			       u32 vertex_id);
@@ -194,7 +225,9 @@ int determine_act_topological_order(struct p4tc_pipeline *pipeline,
 struct p4tc_act;
 void tcf_pipeline_delete_from_dep_graph(struct p4tc_pipeline *pipeline,
 					struct p4tc_act *act);
+#endif
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 struct p4tc_metadata {
 	struct p4tc_template_common common;
 	struct rcu_head             rcu;
@@ -209,6 +242,7 @@ struct p4tc_metadata {
 };
 
 extern const struct p4tc_template_ops p4tc_meta_ops;
+#endif
 
 struct p4tc_table_key {
 	struct tc_action **key_acts;
@@ -224,8 +258,24 @@ struct p4tc_table_key {
 
 #define P4TC_PERMISSIONS_UNINIT (1 << P4TC_PERM_MAX_BIT)
 
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+#define P4TC_MAX_PARAM_DATA_SIZE 124
+
+struct p4tc_table_entry_act_bpf {
+	u32 act_id;
+	u8 params[P4TC_MAX_PARAM_DATA_SIZE];
+} __packed;
+#endif
+
+struct p4tc_parser_buffer_act_bpf {
+	u16 hdrs[BITS_TO_U16(HEADER_MAX_LEN)];
+};
+
 struct p4tc_table_defact {
 	struct tc_action **default_acts;
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+	struct p4tc_table_entry_act_bpf *defact_bpf;
+#endif
 	/* Will have 2 5 bits blocks containing CRUDX (Create, read, update,
 	 * delete, execute) permissions for control plane and data plane.
 	 * The first 5 bits are for control and the next five are for data plane.
@@ -242,13 +292,18 @@ struct p4tc_table_perm {
 
 struct p4tc_table {
 	struct p4tc_template_common         common;
+	struct list_head                    tbl_cache_node;
 	struct list_head                    tbl_acts_list;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	struct p4tc_table_key               *tbl_key;
+#endif
 	struct idr                          tbl_masks_idr;
 	struct ida                          tbl_prio_idr;
 	struct rhltable                     tbl_entries;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	struct tc_action                    **tbl_preacts;
 	struct tc_action                    **tbl_postacts;
+#endif
 	struct p4tc_table_entry             *tbl_const_entry;
 	struct p4tc_table_defact __rcu      *tbl_default_hitact;
 	struct p4tc_table_defact __rcu      *tbl_default_missact;
@@ -280,7 +335,10 @@ struct p4tc_ipv4_param_value {
 	u32 mask;
 };
 
+
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 #define P4TC_ACT_PARAM_FLAGS_ISDYN BIT(0)
+#endif
 
 struct p4tc_act_param {
 	char            name[ACTPARAMNAMSIZ];
@@ -305,6 +363,7 @@ struct p4tc_act_param_ops {
 	u32 alloc_len;
 };
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 struct p4tc_label_key {
 	char *label;
 	u32 labelsz;
@@ -315,12 +374,15 @@ struct p4tc_label_node {
 	struct p4tc_label_key key;
 	int cmd_offset;
 };
+#endif
 
 struct p4tc_act {
 	struct p4tc_template_common common;
 	struct tc_action_ops        ops;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	struct rhashtable           *labels;
 	struct list_head            cmd_operations;
+#endif
 	struct tc_action_net        *tn;
 	struct p4tc_pipeline        *pipeline;
 	struct idr                  params_idr;
@@ -345,6 +407,13 @@ void p4tc_label_ht_destroy(void *ptr, void *arg);
 
 extern const struct rhashtable_params entry_hlt_params;
 
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+struct p4tc_table_entry_act_bpf_params {
+	u32 pipeid;
+	u32 tblid;
+};
+#endif
+
 struct p4tc_table_entry;
 struct p4tc_table_entry_work {
 	struct work_struct   work;
@@ -364,6 +433,9 @@ struct p4tc_table_entry_value {
 	u32                              prio;
 	int                              num_acts;
 	struct tc_action                 **acts;
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+	struct p4tc_table_entry_act_bpf  *act_bpf;
+#endif
 	refcount_t                       entries_ref;
 	u32                              permissions;
 	struct p4tc_table_entry_tm __rcu *tm;
@@ -395,13 +467,24 @@ static inline void *p4tc_table_entry_value(struct p4tc_table_entry *entry)
 
 extern const struct nla_policy p4tc_root_policy[P4TC_ROOT_MAX + 1];
 extern const struct nla_policy p4tc_policy[P4TC_MAX + 1];
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 struct p4tc_table_entry *p4tc_table_entry_lookup(struct sk_buff *skb,
 						 struct p4tc_table *table,
 						 u32 keysz);
+#endif
+struct p4tc_table_entry *
+p4tc_table_entry_lookup_direct(struct p4tc_table *table,
+			       struct p4tc_table_entry_key *key);
 int __tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 			  struct p4tc_table *table,
 			  struct p4tc_table_entry_key *key,
 			  struct p4tc_table_entry_mask *mask, u32 prio);
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+struct p4tc_table_entry_act_bpf *
+tcf_table_entry_create_act_bpf(struct tc_action *action,
+			       struct netlink_ext_ack *extack);
+#endif
+int register_p4tc_tbl_bpf(void);
 
 struct p4tc_parser {
 	char parser_name[PARSERNAMSIZ];
@@ -439,6 +522,7 @@ struct p4tc_register {
 
 extern const struct p4tc_template_ops p4tc_register_ops;
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 struct p4tc_metadata *tcf_meta_find_byid(struct p4tc_pipeline *pipeline,
 					 u32 m_id);
 void tcf_meta_fill_user_offsets(struct p4tc_pipeline *pipeline);
@@ -448,6 +532,7 @@ struct p4tc_metadata *tcf_meta_get(struct p4tc_pipeline *pipeline,
 				   struct netlink_ext_ack *extack);
 void tcf_meta_put_ref(struct p4tc_metadata *meta);
 void *tcf_meta_fetch(struct sk_buff *skb, struct p4tc_metadata *meta);
+#endif
 
 static inline int p4tc_action_init(struct net *net, struct nlattr *nla,
 				   struct tc_action *acts[], u32 pipeid,
@@ -553,12 +638,13 @@ struct p4tc_hdrfield *tcf_hdrfield_find_byany(struct p4tc_parser *parser,
 					      const char *hdrfield_name,
 					      u32 hdrfield_id,
 					      struct netlink_ext_ack *extack);
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 void *tcf_hdrfield_fetch(struct sk_buff *skb, struct p4tc_hdrfield *hdrfield);
+#endif
 struct p4tc_hdrfield *tcf_hdrfield_get(struct p4tc_parser *parser,
 				       const char *hdrfield_name,
 				       u32 hdrfield_id,
 				       struct netlink_ext_ack *extack);
-void *tcf_hdrfield_fetch(struct sk_buff *skb, struct p4tc_hdrfield *hdrfield);
 void tcf_hdrfield_put_ref(struct p4tc_hdrfield *hdrfield);
 
 int p4tc_init_net_ops(struct net *net, unsigned int id);
@@ -595,13 +681,16 @@ struct p4tc_register *tcf_register_find_byany(struct p4tc_pipeline *pipeline,
 void tcf_register_put_rcu(struct rcu_head *head);
 
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 #define to_meta(t) ((struct p4tc_metadata *)t)
+#endif
 #define to_hdrfield(t) ((struct p4tc_hdrfield *)t)
 #define to_act(t) ((struct p4tc_act *)t)
 #define to_table(t) ((struct p4tc_table *)t)
 #define to_register(t) ((struct p4tc_register *)t)
 
 /* P4TC COMMANDS */
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 int p4tc_cmds_parse(struct net *net, struct p4tc_act *act, struct nlattr *nla,
 		    bool ovr, struct netlink_ext_ack *extack);
 int p4tc_cmds_copy(struct p4tc_act *act, struct list_head *new_cmd_operations,
@@ -679,6 +768,7 @@ static inline int __p4tc_cmd_run(struct sk_buff *skb, struct p4tc_cmd_operate *o
 {
 	return op->cmd->run(skb, op, cmd, res);
 }
+#endif
 #endif
 
 #endif

@@ -29,12 +29,14 @@
 #include <net/p4tc.h>
 #include <net/sch_generic.h>
 #include <net/sock.h>
+
 #include <net/tc_act/p4tc.h>
 
 static LIST_HEAD(dynact_list);
 
 #define SEPARATOR "/"
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 static u32 label_hash_fn(const void *data, u32 len, u32 seed)
 {
 	const struct p4tc_label_key *key = data;
@@ -73,6 +75,7 @@ const struct rhashtable_params p4tc_label_ht_params = {
 	.key_offset = offsetof(struct p4tc_label_node, key),
 	.automatic_shrinking = true,
 };
+#endif
 
 static void set_param_indices(struct p4tc_act *act)
 {
@@ -131,7 +134,9 @@ static int __tcf_p4_dyna_init(struct net *net, struct nlattr *est,
 		p = to_p4act(*a);
 		p->p_id = pipeline->common.p_id;
 		p->act_id = act->a_id;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 		INIT_LIST_HEAD(&p->cmd_operations);
+#endif
 
 		ret = ACT_P_CREATED;
 	} else {
@@ -160,7 +165,7 @@ static int __tcf_p4_dyna_init_set(struct p4tc_act *act, struct tc_action **a,
 {
 	struct tcf_p4act_params *params_old;
 	struct tcf_p4act *p;
-	int err;
+	int err = 0;
 
 	p = to_p4act(*a);
 
@@ -169,6 +174,7 @@ static int __tcf_p4_dyna_init_set(struct p4tc_act *act, struct tc_action **a,
 
 	goto_ch = tcf_action_set_ctrlact(*a, parm->action, goto_ch);
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	err = p4tc_cmds_copy(act, &p->cmd_operations, exists, extack);
 	if (err < 0) {
 		if (exists)
@@ -176,6 +182,7 @@ static int __tcf_p4_dyna_init_set(struct p4tc_act *act, struct tc_action **a,
 
 		return err;
 	}
+#endif
 
 	params_old = rcu_replace_pointer(p->params, params, 1);
 	if (exists)
@@ -375,9 +382,13 @@ static int dev_dump_param_value(struct sk_buff *skb,
 				struct p4tc_act_param *param)
 {
 	struct nlattr *nest;
+	u32 *ifindex;
 	int ret;
 
 	nest = nla_nest_start(skb, P4TC_ACT_PARAMS_VALUE);
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+	ifindex = (u32 *)param->value;
+#else
 	if (param->flags & P4TC_ACT_PARAM_FLAGS_ISDYN) {
 		struct p4tc_cmd_operand *kopnd;
 		struct nlattr *nla_opnd;
@@ -390,13 +401,16 @@ static int dev_dump_param_value(struct sk_buff *skb,
 		}
 		nla_nest_end(skb, nla_opnd);
 	} else {
-		const u32 *ifindex = param->value;
+		ifindex = (u32 *)param->value;
+#endif
 
 		if (nla_put_u32(skb, P4TC_ACT_PARAMS_VALUE_RAW, *ifindex)) {
 			ret = -EINVAL;
 			goto out_nla_cancel;
 		}
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	}
+#endif
 	nla_nest_end(skb, nest);
 
 	return 0;
@@ -408,8 +422,12 @@ out_nla_cancel:
 
 static void dev_free_param_value(struct p4tc_act_param *param)
 {
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+	kfree(param->value);
+#else
 	if (!(param->flags & P4TC_ACT_PARAM_FLAGS_ISDYN))
 		kfree(param->value);
+#endif
 }
 
 static int generic_init_param_value(struct p4tc_act_param *nparam,
@@ -486,10 +504,15 @@ const struct p4tc_act_param_ops param_ops[P4T_MAX + 1] = {
 
 static void generic_free_param_value(struct p4tc_act_param *param)
 {
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+	kfree(param->value);
+	kfree(param->mask);
+#else
 	if (!(param->flags & P4TC_ACT_PARAM_FLAGS_ISDYN)) {
 		kfree(param->value);
 		kfree(param->mask);
 	}
+#endif
 }
 
 int tcf_p4_act_init_params_list(struct tcf_p4act_params *params,
@@ -586,12 +609,15 @@ INDIRECT_CALLABLE_SCOPE int tcf_p4_dyna_act(struct sk_buff *skb,
 {
 	struct tcf_p4act *dynact = to_p4act(a);
 	int ret = 0;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	int jmp_cnt = 0;
 	struct p4tc_cmd_operate *op;
+#endif
 
 	tcf_lastuse_update(&dynact->tcf_tm);
 	tcf_action_update_bstats(&dynact->common, skb);
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	list_for_each_entry(op, &dynact->cmd_operations, cmd_operations) {
 		if (jmp_cnt-- > 0)
 			continue;
@@ -609,6 +635,7 @@ INDIRECT_CALLABLE_SCOPE int tcf_p4_dyna_act(struct sk_buff *skb,
 			break;
 		}
 	}
+#endif
 
 	if (ret == TC_ACT_SHOT)
 		tcf_action_inc_drop_qstats(&dynact->common);
@@ -636,7 +663,9 @@ static int tcf_p4_dyna_dump(struct sk_buff *skb, struct tc_action *a, int bind,
 	struct tcf_p4act_params *params;
 	struct p4tc_act_param *parm;
 	struct nlattr *nest_parms;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	struct nlattr *nest;
+#endif
 	struct tcf_t t;
 	int id;
 
@@ -646,10 +675,12 @@ static int tcf_p4_dyna_dump(struct sk_buff *skb, struct tc_action *a, int bind,
 	if (nla_put(skb, P4TC_ACT_OPT, sizeof(opt), &opt))
 		goto nla_put_failure;
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	nest = nla_nest_start(skb, P4TC_ACT_CMDS_LIST);
 	if (p4tc_cmds_fillup(skb, &dynact->cmd_operations))
 		goto nla_put_failure;
 	nla_nest_end(skb, nest);
+#endif
 
 	if (nla_put_string(skb, P4TC_ACT_NAME, a->ops->kind))
 		goto nla_put_failure;
@@ -744,7 +775,9 @@ static void tcf_p4_dyna_cleanup(struct tc_action *a)
 	if (refcount_read(&ops->dyn_ref) > 1)
 		refcount_dec(&ops->dyn_ref);
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	p4tc_cmds_release_ope_list(NULL, &m->cmd_operations, false);
+#endif
 	if (params)
 		call_rcu(&params->rcu, tcf_p4_act_params_destroy_rcu);
 }
@@ -757,6 +790,7 @@ int generic_dump_param_value(struct sk_buff *skb, struct p4tc_type *type,
 	struct nlattr *nla_value;
 
 	nla_value = nla_nest_start(skb, P4TC_ACT_PARAMS_VALUE);
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	if (param->flags & P4TC_ACT_PARAM_FLAGS_ISDYN) {
 		struct p4tc_cmd_operand *kopnd;
 		struct nlattr *nla_opnd;
@@ -767,10 +801,13 @@ int generic_dump_param_value(struct sk_buff *skb, struct p4tc_type *type,
 			goto out_nlmsg_trim;
 		nla_nest_end(skb, nla_opnd);
 	} else {
+#endif
 		if (nla_put(skb, P4TC_ACT_PARAMS_VALUE_RAW, bytesz,
 			    param->value))
 			goto out_nlmsg_trim;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	}
+#endif
 	nla_nest_end(skb, nla_value);
 
 	if (param->mask &&
@@ -1343,7 +1380,9 @@ static int __tcf_act_put(struct net *net, struct p4tc_pipeline *pipeline,
 		kfree(act_param);
 	}
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	p4tc_cmds_release_ope_list(net, &act->cmd_operations, true);
+#endif
 
 	ret = tcf_unregister_dyn_action(net, &act->ops);
 	if (ret < 0) {
@@ -1353,16 +1392,20 @@ static int __tcf_act_put(struct net *net, struct p4tc_pipeline *pipeline,
 	}
 	p4tc_action_net_exit(act->tn);
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	if (act->labels) {
 		rhashtable_free_and_destroy(act->labels, p4tc_label_ht_destroy,
 					    NULL);
 		kfree(act->labels);
 	}
+#endif
 
 	idr_remove(&pipeline->p_act_idr, act->a_id);
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	if (!unconditional_purge)
 		tcf_pipeline_delete_from_dep_graph(pipeline, act);
+#endif
 
 	list_del(&act->head);
 
@@ -1378,9 +1421,12 @@ static int _tcf_act_fill_nlmsg(struct net *net, struct sk_buff *skb,
 {
 	unsigned char *b = nlmsg_get_pos(skb);
 	int i = 1;
-	struct nlattr *nest, *parms, *cmds;
+	struct nlattr *nest, *parms;
 	struct p4tc_act_param *param;
 	unsigned long param_id, tmp;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
+	struct nlattr *cmds;
+#endif
 
 	if (nla_put_u32(skb, P4TC_PATH, act->a_id))
 		goto out_nlmsg_trim;
@@ -1417,10 +1463,12 @@ static int _tcf_act_fill_nlmsg(struct net *net, struct sk_buff *skb,
 	}
 	nla_nest_end(skb, parms);
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	cmds = nla_nest_start(skb, P4TC_ACT_CMDS_LIST);
 	if (p4tc_cmds_fillup(skb, &act->cmd_operations))
 		goto out_nlmsg_trim;
 	nla_nest_end(skb, cmds);
+#endif
 
 	nla_nest_end(skb, nest);
 
@@ -1578,7 +1626,9 @@ static struct p4tc_act *tcf_act_create(struct net *net, struct nlattr **tb,
 	u32 a_id = ids[P4TC_AID_IDX];
 	int num_params = 0;
 	int ret = 0;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	struct p4tc_act_dep_node *dep_node;
+#endif
 	struct p4tc_act *act;
 	char *act_name;
 
@@ -1649,6 +1699,7 @@ static struct p4tc_act *tcf_act_create(struct net *net, struct nlattr **tb,
 		}
 	}
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	dep_node = kzalloc(sizeof(*dep_node), GFP_KERNEL);
 	if (!dep_node) {
 		ret = -ENOMEM;
@@ -1657,13 +1708,18 @@ static struct p4tc_act *tcf_act_create(struct net *net, struct nlattr **tb,
 	dep_node->act_id = act->a_id;
 	INIT_LIST_HEAD(&dep_node->incoming_egde_list);
 	list_add_tail(&dep_node->head, &pipeline->act_dep_graph);
+#endif
 
 	refcount_set(&act->ops.dyn_ref, 1);
 	ret = tcf_register_dyn_action(net, &act->ops);
 	if (ret < 0) {
 		NL_SET_ERR_MSG(extack,
 			       "Unable to register new action template");
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+		goto idr_rm;
+#else
 		goto free_dep_node;
+#endif
 	}
 
 	num_params = p4_act_init(act, tb[P4TC_ACT_PARMS], params, extack);
@@ -1675,6 +1731,13 @@ static struct p4tc_act *tcf_act_create(struct net *net, struct nlattr **tb,
 
 	set_param_indices(act);
 
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+	if (tb[P4TC_ACT_CMDS_LIST]) {
+		NL_SET_ERR_MSG(extack, "Commands not supported in kfuncs mode");
+		ret = -EOPNOTSUPP;
+		goto uninit;
+	}
+#else
 	INIT_LIST_HEAD(&act->cmd_operations);
 	act->pipeline = pipeline;
 	if (tb[P4TC_ACT_CMDS_LIST]) {
@@ -1683,14 +1746,17 @@ static struct p4tc_act *tcf_act_create(struct net *net, struct nlattr **tb,
 		if (ret < 0)
 			goto uninit;
 	}
+#endif
 
 	pipeline->num_created_acts++;
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	ret = determine_act_topological_order(pipeline, true);
 	if (ret < 0) {
 		pipeline->num_created_acts--;
 		goto release_cmds;
 	}
+#endif
 
 	act->common.p_id = pipeline->common.p_id;
 	snprintf(act->common.name, ACTNAMSIZ, "%s/%s", pipeline->common.name,
@@ -1703,9 +1769,11 @@ static struct p4tc_act *tcf_act_create(struct net *net, struct nlattr **tb,
 
 	return act;
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 release_cmds:
 	if (tb[P4TC_ACT_CMDS_LIST])
 		p4tc_cmds_release_ope_list(net, &act->cmd_operations, false);
+#endif
 
 uninit:
 	p4_put_many_params(&act->params_idr, params, num_params);
@@ -1716,9 +1784,11 @@ unregister:
 	tcf_unregister_dyn_action(net, &act->ops);
 	rtnl_lock();
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 free_dep_node:
 	list_del(&dep_node->head);
 	kfree(dep_node);
+#endif
 
 idr_rm:
 	idr_remove(&pipeline->p_act_idr, act->a_id);
@@ -1785,6 +1855,13 @@ static struct p4tc_act *tcf_act_update(struct net *net, struct nlattr **tb,
 		goto params_del;
 	}
 
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+	if (tb[P4TC_ACT_CMDS_LIST]) {
+		NL_SET_ERR_MSG(extack, "Commands not supported in kfuncs mode");
+		ret = -EOPNOTSUPP;
+		goto params_del;
+	}
+#else
 	if (tb[P4TC_ACT_CMDS_LIST]) {
 		ret = p4tc_cmds_parse(net, act, tb[P4TC_ACT_CMDS_LIST], true,
 				      extack);
@@ -1795,12 +1872,15 @@ static struct p4tc_act *tcf_act_update(struct net *net, struct nlattr **tb,
 		if (ret < 0)
 			goto release_cmds;
 	}
+#endif
 
 	p4tc_params_replace_many(&act->params_idr, params, num_params);
 	return act;
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 release_cmds:
 	p4tc_cmds_release_ope_list(net, &act->cmd_operations, false);
+#endif
 
 params_del:
 	p4_put_many_params(&act->params_idr, params, num_params);
@@ -1880,7 +1960,9 @@ static int tcf_act_dump_1(struct sk_buff *skb,
 	struct nlattr *param = nla_nest_start(skb, P4TC_PARAMS);
 	unsigned char *b = nlmsg_get_pos(skb);
 	struct p4tc_act *act = to_act(common);
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	struct nlattr *nest;
+#endif
 
 	if (!param)
 		goto out_nlmsg_trim;
@@ -1888,10 +1970,12 @@ static int tcf_act_dump_1(struct sk_buff *skb,
 	if (nla_put_string(skb, P4TC_ACT_NAME, act->common.name))
 		goto out_nlmsg_trim;
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	nest = nla_nest_start(skb, P4TC_ACT_CMDS_LIST);
 	if (p4tc_cmds_fillup(skb, &act->cmd_operations))
 		goto out_nlmsg_trim;
 	nla_nest_end(skb, nest);
+#endif
 
 	if (nla_put_u8(skb, P4TC_ACT_ACTIVE, act->active))
 		goto out_nlmsg_trim;

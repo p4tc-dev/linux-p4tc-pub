@@ -42,7 +42,9 @@ static bool obj_is_valid(u32 obj)
 {
 	switch (obj) {
 	case P4TC_OBJ_PIPELINE:
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	case P4TC_OBJ_META:
+#endif
 	case P4TC_OBJ_HDR_FIELD:
 	case P4TC_OBJ_ACT:
 	case P4TC_OBJ_TABLE:
@@ -55,7 +57,9 @@ static bool obj_is_valid(u32 obj)
 
 static const struct p4tc_template_ops *p4tc_ops[P4TC_OBJ_MAX] = {
 	[P4TC_OBJ_PIPELINE] = &p4tc_pipeline_ops,
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	[P4TC_OBJ_META] = &p4tc_meta_ops,
+#endif
 	[P4TC_OBJ_HDR_FIELD] = &p4tc_hdrfield_ops,
 	[P4TC_OBJ_ACT] = &p4tc_act_ops,
 	[P4TC_OBJ_TABLE] = &p4tc_table_ops,
@@ -576,12 +580,17 @@ static int __init p4tc_template_init(void)
 	for (obj = P4TC_OBJ_PIPELINE; obj < P4TC_OBJ_MAX; obj++) {
 		const struct p4tc_template_ops *op = p4tc_ops[obj];
 
+		if (!op)
+			continue;
+
 		if (!obj_is_valid(obj))
 			continue;
 
 		if (op->init)
 			op->init();
 	}
+
+	register_p4tc_tbl_bpf();
 
 	return 0;
 }

@@ -37,8 +37,55 @@ static __net_init int pipeline_init_net(struct net *net)
 
 	idr_init(&pipe_net->pipeline_idr);
 
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+	for (int i = 0; i < P4TC_TBLS_CACHE_SIZE; i++)
+		INIT_LIST_HEAD(&pipe_net->tbls_cache[i]);
+#endif
+
 	return 0;
 }
+
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+static inline size_t p4tc_tbl_cache_hash(u32 pipeid, u32 tblid)
+{
+	return (pipeid + tblid) % P4TC_TBLS_CACHE_SIZE;
+}
+
+struct p4tc_table *p4tc_tbl_cache_lookup(struct net *net, u32 pipeid, u32 tblid)
+{
+	size_t hash = p4tc_tbl_cache_hash(pipeid, tblid);
+	struct p4tc_pipeline_net *pipe_net;
+	struct p4tc_table *pos, *tmp;
+	struct net_generic *ng;
+
+	/* RCU read lock is already being held */
+	ng = rcu_dereference(net->gen);
+	pipe_net = ng->ptr[pipeline_net_id];
+
+	list_for_each_entry_safe(pos, tmp, &pipe_net->tbls_cache[hash],
+				 tbl_cache_node) {
+		if (pos->common.p_id == pipeid && pos->tbl_id == tblid)
+			return pos;
+	}
+
+	return NULL;
+}
+
+int p4tc_tbl_cache_insert(struct net *net, u32 pipeid, struct p4tc_table *table)
+{
+	struct p4tc_pipeline_net *pipe_net = net_generic(net, pipeline_net_id);
+	size_t hash = p4tc_tbl_cache_hash(pipeid, table->tbl_id);
+
+	list_add_tail(&table->tbl_cache_node, &pipe_net->tbls_cache[hash]);
+
+	return 0;
+}
+
+void p4tc_tbl_cache_remove(struct net *net, struct p4tc_table *table)
+{
+	list_del(&table->tbl_cache_node);
+}
+#endif
 
 static int tcf_pipeline_put(struct net *net,
 			    struct p4tc_template_common *template,
@@ -73,10 +120,13 @@ static const struct nla_policy tc_pipeline_policy[P4TC_PIPELINE_MAX + 1] = {
 	[P4TC_PIPELINE_NUMTABLES] =
 		NLA_POLICY_RANGE(NLA_U16, P4TC_MINTABLES_COUNT, P4TC_MAXTABLES_COUNT),
 	[P4TC_PIPELINE_STATE] = { .type = NLA_U8 },
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	[P4TC_PIPELINE_PREACTIONS] = { .type = NLA_NESTED },
 	[P4TC_PIPELINE_POSTACTIONS] = { .type = NLA_NESTED },
+#endif
 };
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 static void __act_dep_graph_free(struct list_head *incoming_egde_list)
 {
 	struct p4tc_act_dep_edge_node *cursor_edge, *tmp_edge;
@@ -291,11 +341,14 @@ int determine_act_topological_order(struct p4tc_pipeline *pipeline,
 
 	return 0;
 }
+#endif
 
 static void tcf_pipeline_destroy(struct p4tc_pipeline *pipeline,
 				 bool free_pipeline)
 {
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	idr_destroy(&pipeline->p_meta_idr);
+#endif
 	idr_destroy(&pipeline->p_act_idr);
 	idr_destroy(&pipeline->p_tbl_idr);
 	idr_destroy(&pipeline->p_reg_idr);
@@ -324,9 +377,17 @@ static int tcf_pipeline_put(struct net *net,
 	struct p4tc_pipeline_net *pipe_net = net_generic(net, pipeline_net_id);
 	struct p4tc_pipeline *pipeline = to_pipeline(template);
 	struct net *pipeline_net = maybe_get_net(net);
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+	struct p4tc_act *act;
+	unsigned long iter_act_id;
+#else
 	struct p4tc_act_dep_node *act_node, *node_tmp;
-	unsigned long reg_id, tbl_id, m_id, tmp;
+#endif
+	unsigned long reg_id, tbl_id, tmp;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	struct p4tc_metadata *meta;
+	unsigned long m_id;
+#endif
 	struct p4tc_register *reg;
 	struct p4tc_table *table;
 
@@ -349,12 +410,18 @@ static int tcf_pipeline_put(struct net *net,
 	 * will use them. So there is no need to free them in the rcu
 	 * callback. We can just free them here
 	 */
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	p4tc_action_destroy(pipeline->preacts);
 	p4tc_action_destroy(pipeline->postacts);
+#endif
 
 	idr_for_each_entry_ul(&pipeline->p_tbl_idr, table, tmp, tbl_id)
 		table->common.ops->put(net, &table->common, true, extack);
 
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+	idr_for_each_entry_ul(&pipeline->p_act_idr, act, tmp, iter_act_id)
+		act->common.ops->put(net, &act->common, true, extack);
+#else
 	act_dep_graph_free(&pipeline->act_dep_graph);
 
 	list_for_each_entry_safe(act_node, node_tmp,
@@ -366,9 +433,12 @@ static int tcf_pipeline_put(struct net *net,
 		list_del(&act_node->head);
 		kfree(act_node);
 	}
+#endif
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	idr_for_each_entry_ul(&pipeline->p_meta_idr, meta, tmp, m_id)
 		meta->common.ops->put(net, &meta->common, true, extack);
+#endif
 
 	if (pipeline->parser)
 		tcf_parser_del(net, pipeline, pipeline->parser, extack);
@@ -398,6 +468,7 @@ static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 		return -EINVAL;
 	}
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	if (!pipeline->preacts) {
 		NL_SET_ERR_MSG(extack,
 			       "Must specify pipeline preactions before sealing");
@@ -409,12 +480,15 @@ static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 			       "Must specify pipeline postactions before sealing");
 		return -EINVAL;
 	}
+#endif
 	ret = tcf_table_try_set_state_ready(pipeline, extack);
 	if (ret < 0)
 		return ret;
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	/* Will never fail in this case */
 	determine_act_topological_order(pipeline, false);
+#endif
 
 	pipeline->p_state = P4TC_STATE_READY;
 	return true;
@@ -520,6 +594,14 @@ static struct p4tc_pipeline *tcf_pipeline_create(struct net *net,
 	else
 		pipeline->num_tables = P4TC_DEFAULT_NUM_TABLES;
 
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+	if (tb[P4TC_PIPELINE_PREACTIONS]) {
+		NL_SET_ERR_MSG(extack,
+			       "Pipeline preactions not supported in kfuncs mode");
+		ret = -EOPNOTSUPP;
+		goto idr_rm;
+	}
+#else
 	if (tb[P4TC_PIPELINE_PREACTIONS]) {
 		pipeline->preacts = kcalloc(TCA_ACT_MAX_PRIO,
 					    sizeof(struct tc_action *),
@@ -540,7 +622,16 @@ static struct p4tc_pipeline *tcf_pipeline_create(struct net *net,
 		pipeline->preacts = NULL;
 		pipeline->num_preacts = 0;
 	}
+#endif
 
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+	if (tb[P4TC_PIPELINE_POSTACTIONS]) {
+		NL_SET_ERR_MSG(extack,
+			       "Pipeline postactions not supported in kfuncs mode");
+		ret = -EOPNOTSUPP;
+		goto idr_rm;
+	}
+#else
 	if (tb[P4TC_PIPELINE_POSTACTIONS]) {
 		pipeline->postacts = kcalloc(TCA_ACT_MAX_PRIO,
 					     sizeof(struct tc_action *),
@@ -561,6 +652,7 @@ static struct p4tc_pipeline *tcf_pipeline_create(struct net *net,
 		pipeline->postacts = NULL;
 		pipeline->num_postacts = 0;
 	}
+#endif
 
 	pipeline->parser = NULL;
 
@@ -569,13 +661,17 @@ static struct p4tc_pipeline *tcf_pipeline_create(struct net *net,
 	idr_init(&pipeline->p_tbl_idr);
 	pipeline->curr_tables = 0;
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	idr_init(&pipeline->p_meta_idr);
 	pipeline->p_meta_offset = 0;
+#endif
 
 	idr_init(&pipeline->p_reg_idr);
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	INIT_LIST_HEAD(&pipeline->act_dep_graph);
 	INIT_LIST_HEAD(&pipeline->act_topological_order);
+#endif
 	pipeline->num_created_acts = 0;
 
 	pipeline->p_state = P4TC_STATE_NOT_READY;
@@ -591,8 +687,10 @@ static struct p4tc_pipeline *tcf_pipeline_create(struct net *net,
 
 	return pipeline;
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 preactions_destroy:
 	p4tc_action_destroy(pipeline->preacts);
+#endif
 
 idr_rm:
 	idr_remove(&pipe_net->pipeline_idr, pipeid);
@@ -715,7 +813,9 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	int ret = 0;
 	struct nlattr *tb[P4TC_PIPELINE_MAX + 1];
 	struct p4tc_pipeline *pipeline;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	int num_preacts, num_postacts;
+#endif
 
 	ret = nla_parse_nested(tb, P4TC_PIPELINE_MAX, nla, tc_pipeline_policy,
 			       extack);
@@ -734,6 +834,14 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	if (tb[P4TC_PIPELINE_MAXRULES])
 		max_rules = nla_get_u32(tb[P4TC_PIPELINE_MAXRULES]);
 
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+	if (tb[P4TC_PIPELINE_PREACTIONS]) {
+		NL_SET_ERR_MSG(extack,
+			       "Pipeline preactions not supported in kfuncs mode");
+		ret = -EOPNOTSUPP;
+		goto out;
+	}
+#else
 	if (tb[P4TC_PIPELINE_PREACTIONS]) {
 		preacts = kcalloc(TCA_ACT_MAX_PRIO, sizeof(struct tc_action *),
 				  GFP_KERNEL);
@@ -751,7 +859,16 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 		}
 		num_preacts = ret;
 	}
+#endif
 
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+	if (tb[P4TC_PIPELINE_POSTACTIONS]) {
+		NL_SET_ERR_MSG(extack,
+			       "Pipeline preactions not supported in kfuncs mode");
+		ret = -EOPNOTSUPP;
+		goto preactions_destroy;
+	}
+#else
 	if (tb[P4TC_PIPELINE_POSTACTIONS]) {
 		postacts = kcalloc(TCA_ACT_MAX_PRIO, sizeof(struct tc_action *),
 				   GFP_KERNEL);
@@ -769,18 +886,22 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 		}
 		num_postacts = ret;
 	}
+#endif
 
 	if (tb[P4TC_PIPELINE_STATE]) {
 		ret = pipeline_try_set_state_ready(pipeline, extack);
 		if (ret < 0)
 			goto postactions_destroy;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 		tcf_meta_fill_user_offsets(pipeline);
+#endif
 	}
 
 	if (max_rules)
 		pipeline->max_rules = max_rules;
 	if (num_tables)
 		pipeline->num_tables = num_tables;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	if (preacts) {
 		p4tc_action_destroy(pipeline->preacts);
 		pipeline->preacts = preacts;
@@ -791,6 +912,7 @@ tcf_pipeline_update(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 		pipeline->postacts = postacts;
 		pipeline->num_postacts = num_postacts;
 	}
+#endif
 
 	return pipeline;
 
@@ -835,7 +957,10 @@ static int _tcf_pipeline_fill_nlmsg(struct sk_buff *skb,
 				    const struct p4tc_pipeline *pipeline)
 {
 	unsigned char *b = nlmsg_get_pos(skb);
-	struct nlattr *nest, *preacts, *postacts;
+#ifndef CONFIG_NET_P4_TC_KFUNCS
+	 struct nlattr *preacts, *postacts;
+#endif
+	struct nlattr *nest;
 
 	nest = nla_nest_start(skb, P4TC_PARAMS);
 	if (!nest)
@@ -848,6 +973,7 @@ static int _tcf_pipeline_fill_nlmsg(struct sk_buff *skb,
 	if (nla_put_u8(skb, P4TC_PIPELINE_STATE, pipeline->p_state))
 		goto out_nlmsg_trim;
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	if (pipeline->preacts) {
 		preacts = nla_nest_start(skb, P4TC_PIPELINE_PREACTIONS);
 		if (tcf_action_dump(skb, pipeline->preacts, 0, 0, false) < 0)
@@ -861,6 +987,7 @@ static int _tcf_pipeline_fill_nlmsg(struct sk_buff *skb,
 			goto out_nlmsg_trim;
 		nla_nest_end(skb, postacts);
 	}
+#endif
 
 	nla_nest_end(skb, nest);
 
@@ -992,7 +1119,9 @@ static void __tcf_pipeline_init(void)
 
 	strscpy(root_pipeline->common.name, "kernel", PIPELINENAMSIZ);
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	idr_init(&root_pipeline->p_meta_idr);
+#endif
 
 	root_pipeline->common.ops =
 		(struct p4tc_template_ops *)&p4tc_pipeline_ops;
@@ -1001,7 +1130,9 @@ static void __tcf_pipeline_init(void)
 
 	root_pipeline->p_state = P4TC_STATE_READY;
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 	tcf_meta_init(root_pipeline);
+#endif
 }
 
 static void tcf_pipeline_init(void)
