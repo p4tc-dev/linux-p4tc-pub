@@ -76,6 +76,8 @@ static const struct nla_policy tc_pipeline_policy[P4TC_PIPELINE_MAX + 1] = {
 static void tcf_pipeline_destroy(struct p4tc_pipeline *pipeline,
 				 bool free_pipeline)
 {
+	idr_destroy(&pipeline->p_act_idr);
+
 	if (free_pipeline)
 		kfree(pipeline);
 }
@@ -100,15 +102,21 @@ static int tcf_pipeline_put(struct net *net,
 	struct p4tc_pipeline_net *pipe_net = net_generic(net, pipeline_net_id);
 	struct p4tc_pipeline *pipeline = to_pipeline(template);
 	struct net *pipeline_net = maybe_get_net(net);
+	unsigned long iter_act_id, tmp;
+	struct p4tc_act *act;
 
 	if (pipeline_net && !refcount_dec_if_one(&pipeline->p_ref)) {
 		NL_SET_ERR_MSG(extack, "Can't delete referenced pipeline");
 		return -EBUSY;
 	}
 
-	idr_remove(&pipe_net->pipeline_idr, pipeline->common.p_id);
+	idr_for_each_entry_ul(&pipeline->p_act_idr, act, tmp, iter_act_id)
+		act->common.ops->put(net, &act->common, true, extack);
+
 	if (pipeline->parser)
 		tcf_parser_del(net, pipeline, pipeline->parser, extack);
+
+	idr_remove(&pipe_net->pipeline_idr, pipeline->common.p_id);
 
 	if (pipeline_net)
 		call_rcu(&pipeline->rcu, tcf_pipeline_destroy_rcu);
@@ -232,6 +240,10 @@ static struct p4tc_pipeline *tcf_pipeline_create(struct net *net,
 		pipeline->num_tables = P4TC_DEFAULT_NUM_TABLES;
 
 	pipeline->parser = NULL;
+
+	idr_init(&pipeline->p_act_idr);
+
+	pipeline->num_created_acts = 0;
 
 	pipeline->p_state = P4TC_STATE_NOT_READY;
 
@@ -486,7 +498,8 @@ static int tcf_pipeline_gd(struct net *net, struct sk_buff *skb,
 		return PTR_ERR(pipeline);
 
 	tmpl = (struct p4tc_template_common *)pipeline;
-	if (tcf_pipeline_fill_nlmsg(net, skb, tmpl, extack) < 0)
+	ret = tcf_pipeline_fill_nlmsg(net, skb, tmpl, extack);
+	if (ret < 0)
 		return -1;
 
 	if (!ids[P4TC_PID_IDX])
