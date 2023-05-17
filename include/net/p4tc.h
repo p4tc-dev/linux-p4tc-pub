@@ -180,6 +180,7 @@ static inline bool pipeline_sealed(struct p4tc_pipeline *pipeline)
 {
 	return pipeline->p_state == P4TC_STATE_READY;
 }
+
 void tcf_pipeline_add_dep_edge(struct p4tc_pipeline *pipeline,
 			       struct p4tc_act_dep_edge_node *edge_node,
 			       u32 vertex_id);
@@ -514,7 +515,6 @@ struct p4tc_table *tcf_table_find_byany(struct p4tc_pipeline *pipeline,
 					struct netlink_ext_ack *extack);
 struct p4tc_table *tcf_table_find_byid(struct p4tc_pipeline *pipeline,
 				       const u32 tbl_id);
-void *tcf_table_fetch(struct sk_buff *skb, void *tbl_value_ops);
 int tcf_table_try_set_state_ready(struct p4tc_pipeline *pipeline,
 				  struct netlink_ext_ack *extack);
 struct p4tc_table *tcf_table_get(struct p4tc_pipeline *pipeline,
@@ -557,6 +557,7 @@ struct p4tc_hdrfield *tcf_hdrfield_get(struct p4tc_parser *parser,
 				       const char *hdrfield_name,
 				       u32 hdrfield_id,
 				       struct netlink_ext_ack *extack);
+void *tcf_hdrfield_fetch(struct sk_buff *skb, struct p4tc_hdrfield *hdrfield);
 void tcf_hdrfield_put_ref(struct p4tc_hdrfield *hdrfield);
 
 int p4tc_init_net_ops(struct net *net, unsigned int id);
@@ -598,5 +599,86 @@ void tcf_register_put_rcu(struct rcu_head *head);
 #define to_act(t) ((struct p4tc_act *)t)
 #define to_table(t) ((struct p4tc_table *)t)
 #define to_register(t) ((struct p4tc_register *)t)
+
+/* P4TC COMMANDS */
+int p4tc_cmds_parse(struct net *net, struct p4tc_act *act, struct nlattr *nla,
+		    bool ovr, struct netlink_ext_ack *extack);
+int p4tc_cmds_copy(struct p4tc_act *act, struct list_head *new_cmd_operations,
+		   bool delete_old, struct netlink_ext_ack *extack);
+
+int p4tc_cmds_fillup(struct sk_buff *skb, struct list_head *meta_ops);
+void p4tc_cmds_release_ope_list(struct net *net, struct list_head *entries,
+				bool called_from_template);
+struct p4tc_cmd_operand;
+int p4tc_cmds_fill_operand(struct sk_buff *skb, struct p4tc_cmd_operand *kopnd);
+
+struct p4tc_cmd_operate {
+	struct list_head cmd_operations;
+	struct list_head operands_list;
+	struct p4tc_cmd_s *cmd;
+	char *label1;
+	char *label2;
+	char *cmd_label;
+	u32 num_opnds;
+	u32 ctl1;
+	u32 ctl2;
+	u16 op_id;		/* P4TC_CMD_OP_XXX */
+	u32 cmd_offset;
+	u8 op_flags;
+	u8 op_cnt;
+};
+
+struct tcf_p4act;
+struct p4tc_cmd_operand {
+	struct list_head oper_list_node;
+	void *(*fetch)(struct sk_buff *skb, struct p4tc_cmd_operand *op,
+		       struct tcf_p4act *cmd, struct tcf_result *res);
+	struct p4tc_type *oper_datatype; /* what is stored in path_or_value - P4T_XXX */
+	struct p4tc_type_mask_shift *oper_mask_shift;
+	struct tc_action *action;
+	void *path_or_value;
+	void *path_or_value_extra;
+	void *print_prefix;
+	void *priv;
+	u64 immedv_large[BITS_TO_U64(P4T_MAX_BITSZ)];
+	u32 immedv;		/* one of: immediate value, metadata id, action id */
+	u32 immedv2;		/* one of: action instance */
+	u32 immedv3;
+	u32 path_or_value_sz;
+	u32 path_or_value_extra_sz;
+	u32 print_prefix_sz;
+	u32 immedv_large_sz;
+	u32 pipeid;		/* 0 for kernel */
+	u8 oper_type;		/* P4TC_CMD_OPER_XXX */
+	u8 oper_cbitsize;	/* based on P4T_XXX container size */
+	u8 oper_bitsize;	/* diff between bitend - oper_bitend */
+	u8 oper_bitstart;
+	u8 oper_bitend;
+	u8 oper_flags;		/* TBA: DATA_IS_IMMEDIATE */
+};
+
+struct p4tc_cmd_s {
+	int cmdid;
+	u32 num_opnds;
+	int (*validate_operands)(struct net *net, struct p4tc_act *act,
+				 struct p4tc_cmd_operate *ope, u32 cmd_num_opns,
+				 struct netlink_ext_ack *extack);
+	void (*free_operation)(struct net *net, struct p4tc_cmd_operate *op,
+			       bool called_for_instance,
+			       struct netlink_ext_ack *extack);
+	int (*run)(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+		   struct tcf_p4act *cmd, struct tcf_result *res);
+};
+
+#ifdef CONFIG_RETPOLINE
+int __p4tc_cmd_run(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+		   struct tcf_p4act *cmd, struct tcf_result *res);
+#else
+static inline int __p4tc_cmd_run(struct sk_buff *skb, struct p4tc_cmd_operate *op,
+		   struct tcf_p4act *cmd, struct tcf_result *res)
+{
+	return op->cmd->run(skb, op, cmd, res);
+}
+#endif
 
 #endif
