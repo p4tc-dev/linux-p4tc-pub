@@ -1,0 +1,2752 @@
+[
+    {
+        "id": "c312",
+        "name": "Create valid register",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables/my_reg type bit32 numelems 2",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit32",
+                        "startbit": 0,
+                        "endbit": 31,
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "6240",
+        "name": "Create valid register with num_elems == P4TC_MAX_REGISTER_ELEMS",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables/my_reg type bit32 numelems 128",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit32",
+                        "startbit": 0,
+                        "endbit": 31,
+                        "numelems": 128
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "849c",
+        "name": "Try to create register with num_elems > P4TC_MAX_REGISTER_ELEMS",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables/my_reg type bit32 numelems 129",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchPattern": "Error: Register name not found",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "062d",
+        "name": "Try to create register with unknown type",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables/my_reg type invalid123 numelems 128",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchPattern": "Error: Register name not found",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "b811",
+        "name": "Try to create register with num_elems = 0",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables/my_reg type bit32 numelems 0",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchPattern": "Error: Register name not found",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "6428",
+        "name": "Try to create register without specifying type",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables/my_reg numelems 2",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchPattern": "Error: Register name not found",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "a989",
+        "name": "Try to create register without specifying register name or id",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables type bit32 numelems 129",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchPattern": "Error: Register name not found",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "40a0",
+        "name": "Try to create register without specifying pipeline name or id",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ type bit32 numelems 129",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchPattern": "Error: Register name not found",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "004c",
+        "name": "Try to create register with name > REGISTERNAMSIZ",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables/7eozFYyaqVCD7H0xS3M5sMnluUqPgZewfSLnYPf4s3k0lbx8lKoR32zSqiGsh84qJ32vnLPdl7f2XcUh5yIdEP7uJy2C3iPtyU7159s9CMB0EtTAlWTVz4U1jkQ5h2advwp3KCVsZ1jlGgStoJL2op5ZxoThTSUQLR61a5RNDovoSFcq86Brh6oW9DSmTbN6SYygbG3JLnEHzRC5hh0jGmJKHq5ivBK9Y9FlNZQXC9wVwX4qTFAd8ITUTj2Au2Jg1 type bit32 numelems 127",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchPattern": "Error: Register name not found",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "6d37",
+        "name": "Create valid register with type bit 37",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables/my_reg type bit37 numelems 2",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit64",
+                        "startbit": 0,
+                        "endbit": 36,
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "ec58",
+        "name": "Create valid register with signed type",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables/my_reg type int37 numelems 2",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "int64",
+                        "startbit": 0,
+                        "endbit": 36,
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "d2ee",
+        "name": "Try to create register with type int129",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables/my_reg type int129 numelems 1",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchPattern": "Error: Register name not found",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "50d1",
+        "name": "Create valid register with type ipv4",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables/my_reg type ipv4 numelems 2",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "ipv4",
+                        "startbit": 0,
+                        "endbit": 31,
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "418b",
+        "name": "Try to create register with same name twice",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit56 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables/my_reg type ipv4 numelems 2",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit64",
+                        "startbit": 0,
+                        "endbit": 55,
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "095d",
+        "name": "Try to create register with same id twice",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit56 regid 1 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables/my_reg2 regid 1 type ipv4 numelems 2",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit64",
+                        "startbit": 0,
+                        "endbit": 55,
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "4ecf",
+        "name": "Update register index 0 with value 256",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit56 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update register/ptables/my_reg index 0 value constant.bit56.256",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit64",
+                        "startbit": 0,
+                        "endbit": 55,
+                        "values": [
+                            {
+                                "my_reg[0]": 256
+                            },
+                            {
+                                "my_reg[1]": 0
+                            }
+                        ],
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "1af9",
+        "name": "Update register index 1 with value 62",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit32 regid 1 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update register/ptables/my_reg index 1 value constant.bit32.62",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/ regid 1",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit32",
+                        "startbit": 0,
+                        "endbit": 31,
+                        "values": [
+                            {
+                                "my_reg[0]": 0
+                            },
+                            {
+                                "my_reg[1]": 62
+                            }
+                        ],
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "9f4d",
+        "name": "Update register specifying pipeid",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit56 regid 1 numelems 2",
+                0
+            ],
+            [
+                "$TC p4template update register/ptables/my_reg index 0 value constant.bit56.123",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update register/ pipeid 22 regid 1 index 1 value constant.bit56.0x123",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/ regid 1",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit64",
+                        "startbit": 0,
+                        "endbit": 55,
+                        "values": [
+                            {
+                                "my_reg[0]": 123
+                            },
+                            {
+                                "my_reg[1]": 291
+                            }
+                        ],
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "6181",
+        "name": "Update register index 0 and check only value of index 0",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit56 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update register/ptables/my_reg index 0 value constant.bit56.256",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg index 0",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit64",
+                        "my_reg[0]": 256
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "3d3d",
+        "name": "Update register index 1 and check only value of index 1",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit56 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update register/ptables/my_reg index 1 value constant.bit56.0x123",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg index 1",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit64",
+                        "my_reg[1]": 291
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "cd47",
+        "name": "Update register index 127 and check only value of index 127",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit44 numelems 128",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update register/ptables/my_reg index 127 value constant.bit44.0x1234",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg index 127",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit64",
+                        "my_reg[127]": 4660
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "8966",
+        "name": "Try to update register with index out of range",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit44 numelems 1",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update register/ptables/my_reg index 0 value constant.bit44.0x1234",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg index 1",
+        "matchCount": "1",
+        "matchPattern": "Error: Register index out of bounds",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "77b3",
+        "name": "Try to update register index 1 and numelems",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit56 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update register/ptables/my_reg index 1 value constant.bit56.25 numelems 22",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit64",
+                        "startbit": 0,
+                        "endbit": 55,
+                        "values": [
+                            {
+                                "my_reg[0]": 0
+                            },
+                            {
+                                "my_reg[1]": 0
+                            }
+                        ],
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "fd51",
+        "name": "Try to update register index out of bounds",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit56 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update register/ptables/my_reg index 2 value constant.bit56.22",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit64",
+                        "startbit": 0,
+                        "endbit": 55,
+                        "values": [
+                            {
+                                "my_reg[0]": 0
+                            },
+                            {
+                                "my_reg[1]": 0
+                            }
+                        ],
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "7b36",
+        "name": "Try to update inexistent register",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update register/ptables/my_reg index 0 value constant.int32.0x12",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchPattern": "Error: Register name not found",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "1079",
+        "name": "Try to update register without specifying pipeline name or id",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit56 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update register/ index 0 value constant.bit56.2",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit64",
+                        "startbit": 0,
+                        "endbit": 55,
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "8199",
+        "name": "Try to update register without specifying register name or id",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit56 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update register/ pipeid 22 index 0 value constant.bit56.2",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit64",
+                        "startbit": 0,
+                        "endbit": 55,
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "6520",
+        "name": "Try to update register with bitsz bigger than bit64",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg type bit56 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update register/ pipeid 22 index 0 value constant.bit77.2",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit64",
+                        "startbit": 0,
+                        "endbit": 55,
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "d3b4",
+        "name": "Try to update register index with wrong type",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg regid 1 type bit24 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update register/ regid 1 pipeid 22 index 0 value constant.bit33.2",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit32",
+                        "startbit": 0,
+                        "endbit": 23,
+                        "values": [
+                            {
+                                "my_reg[0]": 0
+                            },
+                            {
+                                "my_reg[1]": 0
+                            }
+                        ],
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "7154",
+        "name": "Try to update register index with bit32 when type is bit24",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg regid 1 type bit24 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update register/ regid 1 pipeid 22 index 0 value constant.bit32.0xFFFFFFFF",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit32",
+                        "startbit": 0,
+                        "endbit": 23,
+                        "values": [
+                            {
+                                "my_reg[0]": 0
+                            },
+                            {
+                                "my_reg[1]": 0
+                            }
+                        ],
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "eeef",
+        "name": "Try to update register index with constant bit24 doesn't fix in bit24",
+        "category": [
+            "p4tc",
+            "template",
+            "register"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/my_reg regid 1 type bit24 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template update register/ regid 1 pipeid 22 index 0 value constant.bit24.0xFFFFFFFF",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/my_reg",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "my_reg",
+                        "regid": 1,
+                        "containertype": "bit32",
+                        "startbit": 0,
+                        "endbit": 23,
+                        "values": [
+                            {
+                                "my_reg[0]": 0
+                            },
+                            {
+                                "my_reg[1]": 0
+                            }
+                        ],
+                        "numelems": 2
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "1f5e",
+        "name": "Dump registers using pname to find pipeline",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/reg1 type bit8 numelems 1",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables/reg2 type bit27 numelems 2",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "register"
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "reg1"
+                    },
+                    {
+                        "regname": "reg2"
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "08c9",
+        "name": "Dump registers using pipeid to find pipeline",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/reg1 type bit8 numelems 1",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables/reg2 type bit27 numelems 2",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ pipeid 22",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "pname": "ptables",
+                "pipeid": 22,
+                "obj": "register"
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "reg1"
+                    },
+                    {
+                        "regname": "reg2"
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "9782",
+        "name": "Try to dump registers without specifying pipeline name or id",
+        "category": [
+            "p4tc",
+            "template",
+            "metadata"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/reg1 type bit8 numelems 1",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template create register/ptables/reg2 type bit27 numelems 2",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/",
+        "matchCount": "1",
+        "matchPattern": "Must specify pipeline name or id.*",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "2781",
+        "name": "Delete register by name",
+        "category": [
+            "p4tc",
+            "template",
+            "registers"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/register1 type bit8 numelems 1",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template del register/ptables/register1",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/register1",
+        "matchCount": "1",
+        "matchPattern": "Error: Register name not found",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "50d2",
+        "name": "Delete register by id",
+        "category": [
+            "p4tc",
+            "template",
+            "registers"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/register1 regid 5 type bit8 numelems 1",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template del register/ptables/ regid 5",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/ regid 5",
+        "matchCount": "1",
+        "matchPattern": "Error: Unable to find register by id",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "0b3c",
+        "name": "Delete register specifying pipeid",
+        "category": [
+            "p4tc",
+            "template",
+            "registers"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/register1 regid 5 type bit8 numelems 1",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template del register/ pipeid 22 regid 5",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/ regid 5",
+        "matchCount": "1",
+        "matchPattern": "Error: Unable to find register by id",
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "cd7f",
+        "name": "Try to delete register without specifying pipeline name or id",
+        "category": [
+            "p4tc",
+            "template",
+            "registers"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/register1 regid 5 type bit8 numelems 1",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template del register/",
+        "expExitCode": "255",
+        "verifyCmd": "$TC -j p4template get register/ptables/register1",
+        "matchCount": "1",
+        "matchJSON": [
+            {
+                "obj": "register",
+                "pname": "ptables",
+                "pipeid": 22
+            },
+            {
+                "templates": [
+                    {
+                        "regname": "register1",
+                        "regid": 5,
+                        "containertype": "bit8",
+                        "startbit": 0,
+                        "endbit": 7,
+                        "numelems": 1
+                    }
+                ]
+            }
+        ],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "07cf",
+        "name": "Flush registers",
+        "category": [
+            "p4tc",
+            "template",
+            "registers"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/register1 type bit8 numelems 1",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/register2 type bit21 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template del register/ptables/",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ptables/",
+        "matchCount": "1",
+        "matchJSON": [],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    },
+    {
+        "id": "b69d",
+        "name": "Flush registers specifying pipeline id",
+        "category": [
+            "p4tc",
+            "template",
+            "registers"
+        ],
+        "setup": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions flush action gact",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 1",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC actions add action pass index 2",
+                0,
+                1,
+                255
+            ],
+            [
+                "$TC p4template create pipeline/ptables pipeid 22 maxrules 1 numtables 2 preactions action gact index 1 postactions action gact index 2",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/register1 type bit8 numelems 1",
+                0
+            ],
+            [
+                "$TC p4template create register/ptables/register2 type bit21 numelems 2",
+                0
+            ]
+        ],
+        "cmdUnderTest": "$TC p4template del register/ pipeid 22",
+        "expExitCode": "0",
+        "verifyCmd": "$TC -j p4template get register/ pipeid 22",
+        "matchCount": "1",
+        "matchJSON": [],
+        "teardown": [
+            [
+                "$TC p4template del pipeline/ptables",
+                0
+            ],
+            [
+                "$TC actions flush action gact",
+                0
+            ]
+        ]
+    }
+]
