@@ -107,6 +107,8 @@ static int tcf_pipeline_put(struct net *net,
 	}
 
 	idr_remove(&pipe_net->pipeline_idr, pipeline->common.p_id);
+	if (pipeline->parser)
+		tcf_parser_del(net, pipeline, pipeline->parser, extack);
 
 	if (pipeline_net)
 		call_rcu(&pipeline->rcu, tcf_pipeline_destroy_rcu);
@@ -228,6 +230,8 @@ static struct p4tc_pipeline *tcf_pipeline_create(struct net *net,
 			nla_get_u16(tb[P4TC_PIPELINE_NUMTABLES]);
 	else
 		pipeline->num_tables = P4TC_DEFAULT_NUM_TABLES;
+
+	pipeline->parser = NULL;
 
 	pipeline->p_state = P4TC_STATE_NOT_READY;
 
