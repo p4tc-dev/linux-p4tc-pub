@@ -142,22 +142,14 @@ static void mask_key(const struct p4tc_table_entry_mask *mask, u8 *masked_key,
 		masked_key[i] = skb_key[i] & mask->fa_value[i];
 }
 
-struct p4tc_table_entry *p4tc_table_entry_lookup(struct sk_buff *skb,
-						 struct p4tc_table *table,
-						 u32 keysz)
+struct p4tc_table_entry *
+p4tc_table_entry_lookup_direct(struct p4tc_table *table,
+			       struct p4tc_table_entry_key *key)
 {
-	const struct p4tc_table_entry_mask **masks_array;
-	u32 smallest_prio = U32_MAX;
 	struct p4tc_table_entry *entry = NULL;
-	struct p4tc_percpu_scratchpad *pad;
-	struct p4tc_table_entry_key *key;
+	u32 smallest_prio = U32_MAX;
+	const struct p4tc_table_entry_mask **masks_array;
 	int i;
-
-	pad = this_cpu_ptr(&p4tc_percpu_scratchpad);
-
-	key = (struct p4tc_table_entry_key *)&pad->keysz;
-	key->keysz = keysz;
-	key->maskid = 0;
 
 	if (table->tbl_type == P4TC_TABLE_TYPE_EXACT)
 		return __p4tc_entry_lookup_fast(table, key);
@@ -193,6 +185,24 @@ struct p4tc_table_entry *p4tc_table_entry_lookup(struct sk_buff *skb,
 
 	return entry;
 }
+
+#ifndef CONFIG_NET_P4_TC_KFUNCS
+struct p4tc_table_entry *p4tc_table_entry_lookup(struct sk_buff *skb,
+						 struct p4tc_table *table,
+						 u32 keysz)
+{
+	struct p4tc_percpu_scratchpad *pad;
+	struct p4tc_table_entry_key *key;
+
+	pad = this_cpu_ptr(&p4tc_percpu_scratchpad);
+
+	key = (void *)&pad->keysz;
+	key->keysz = keysz;
+	key->maskid = 0;
+
+	return p4tc_table_entry_lookup_direct(table, key);
+}
+#endif
 
 #define tcf_table_entry_mask_find_byid(table, id) \
 	(idr_find(&(table)->tbl_masks_idr, id))
@@ -595,6 +605,10 @@ static void tcf_table_entry_put(struct p4tc_table_entry *entry)
 		struct p4tc_table_entry_work *entry_work = value->entry_work;
 		struct p4tc_pipeline *pipeline = entry_work->pipeline;
 		struct net *net;
+
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+		kfree(value->act_bpf);
+#endif
 
 		if (entry_work->defer_deletion) {
 			net = get_net(pipeline->net);
@@ -1475,7 +1489,9 @@ static struct p4tc_table_entry *__tcf_table_entry_cu(struct net *net, u32 flags,
 	}
 
 	if (tb[P4TC_ENTRY_ACT]) {
-
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+		struct p4tc_table_entry_act_bpf *act_bpf;
+#endif
 		value->acts = kcalloc(TCA_ACT_MAX_PRIO,
 				      sizeof(struct tc_action *), GFP_KERNEL);
 		if (!value->acts) {
@@ -1501,6 +1517,16 @@ static struct p4tc_table_entry *__tcf_table_entry_cu(struct net *net, u32 flags,
 				       "Action is not allowed as entry action");
 			goto free_acts;
 		}
+
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+		act_bpf = tcf_table_entry_create_act_bpf(value->acts[0],
+							 extack);
+		if (IS_ERR(act_bpf)) {
+			ret = PTR_ERR(act_bpf);
+			goto free_acts;
+		}
+		value->act_bpf = act_bpf;
+#endif
 	}
 
 	rcu_read_lock();
@@ -1512,11 +1538,20 @@ static struct p4tc_table_entry *__tcf_table_entry_cu(struct net *net, u32 flags,
 					       whodunnit, true);
 	if (ret < 0) {
 		rcu_read_unlock();
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+		goto free_act_bpf;
+#else
 		goto free_acts;
+#endif
 	}
 	rcu_read_unlock();
 
 	return entry;
+
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+free_act_bpf:
+	kfree(value->act_bpf);
+#endif
 
 free_acts:
 	p4tc_action_destroy(value->acts);
@@ -1530,6 +1565,58 @@ idr_rm:
 
 	return ERR_PTR(ret);
 }
+
+#ifdef CONFIG_NET_P4_TC_KFUNCS
+struct p4tc_table_entry_act_bpf *
+tcf_table_entry_create_act_bpf(struct tc_action *action,
+			       struct netlink_ext_ack *extack)
+{
+	size_t tot_params_sz = 0;
+	int num_params = 0;
+	struct p4tc_act_param *params[P4TC_MSGBATCH_SIZE];
+	struct p4tc_table_entry_act_bpf *act_bpf;
+	struct p4tc_act_param *param;
+	unsigned long param_id, tmp;
+	struct tcf_p4act *p4act;
+	struct tcf_p4act_params *act_params;
+	u8 *params_cursor;
+	int i;
+
+	p4act = to_p4act(action);
+
+	act_params = rcu_dereference(p4act->params);
+
+	idr_for_each_entry_ul(&act_params->params_idr, param, tmp, param_id) {
+		const struct p4tc_type *type = param->type;
+
+		if (tot_params_sz > P4TC_MAX_PARAM_DATA_SIZE) {
+			NL_SET_ERR_MSG(extack, "Maximum parameter byte size reached");
+			return ERR_PTR(-EINVAL);
+		}
+
+		tot_params_sz += BITS_TO_BYTES(type->container_bitsz);
+		params[num_params] = param;
+		num_params++;
+	}
+
+	act_bpf = kzalloc(sizeof(*act_bpf), GFP_KERNEL);
+	if (!act_bpf)
+		return ERR_PTR(-ENOMEM);
+
+	act_bpf->act_id = p4act->act_id;
+	params_cursor = (u8 *)act_bpf + sizeof(act_bpf->act_id);
+	for (i = 0; i < num_params; i++) {
+		const struct p4tc_act_param *param = params[i];
+		const struct p4tc_type *type = param->type;
+		const u32 type_bytesz = BITS_TO_BYTES(type->container_bitsz);
+
+		memcpy(params_cursor, param->value, type_bytesz);
+		params_cursor += type_bytesz;
+	}
+
+	return act_bpf;
+}
+#endif
 
 static int tcf_table_entry_cu(struct sk_buff *skb, struct net *net, u32 flags,
 			      struct nlattr *arg, u32 *ids,

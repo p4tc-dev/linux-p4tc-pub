@@ -165,6 +165,7 @@ tcf_hdrfield_find_byanyattr(struct p4tc_parser *parser,
 				       extack);
 }
 
+#ifndef CONFIG_NET_P4_TC_KFUNCS
 void *tcf_hdrfield_fetch(struct sk_buff *skb, struct p4tc_hdrfield *hdrfield)
 {
 	size_t hdr_offset_len = sizeof(u16);
@@ -183,6 +184,7 @@ void *tcf_hdrfield_fetch(struct sk_buff *skb, struct p4tc_hdrfield *hdrfield)
 
 	return skb_mac_header(skb) + hdr_offset;
 }
+#endif
 
 static struct p4tc_hdrfield *tcf_hdrfield_create(struct nlmsghdr *n,
 						 struct nlattr *nla,
