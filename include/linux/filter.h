@@ -577,6 +577,9 @@ typedef unsigned int (*bpf_dispatcher_fn)(const void *ctx,
 					  const struct bpf_insn *insnsi,
 					  unsigned int (*bpf_func)(const void *,
 								   const struct bpf_insn *));
+#if !defined(CONFIG_NET_P4_TC_KFUNCS) && defined(CONFIG_NET_P4_TC) && defined(CONFIG_DEBUG_INFO_BTF)
+extern int is_p4tc_kfunc(const struct bpf_reg_state *reg);
+#endif
 
 static __always_inline u32 __bpf_prog_run(const struct bpf_prog *prog,
 					  const void *ctx,

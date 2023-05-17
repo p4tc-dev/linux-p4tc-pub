@@ -583,6 +583,10 @@ static int __init p4tc_template_init(void)
 			op->init();
 	}
 
+#ifdef CONFIG_DEBUG_INFO_BTF
+	register_p4tc_tbl_bpf();
+#endif
+
 	return 0;
 }
 

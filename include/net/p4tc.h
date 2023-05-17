@@ -36,6 +36,7 @@
 #define P4TC_HDRFIELD_IS_VALIDITY_BIT 0x1
 
 struct p4tc_percpu_scratchpad {
+	u32 prog_cookie;
 	u32 keysz;
 	u32 maskid;
 	u8 key[BITS_TO_BYTES(P4TC_MAX_KEYSZ)];
@@ -401,6 +402,7 @@ int __tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 			  struct p4tc_table *table,
 			  struct p4tc_table_entry_key *key,
 			  struct p4tc_table_entry_mask *mask, u32 prio);
+int register_p4tc_tbl_bpf(void);
 
 struct p4tc_parser {
 	char parser_name[PARSERNAMSIZ];

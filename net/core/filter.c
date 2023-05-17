@@ -8756,6 +8756,11 @@ static int tc_cls_act_btf_struct_access(struct bpf_verifier_log *log,
 {
 	int ret = -EACCES;
 
+#if !defined(CONFIG_NET_P4_TC_KFUNCS) && defined(CONFIG_NET_P4_TC) && defined(CONFIG_DEBUG_INFO_BTF)
+	if (is_p4tc_kfunc(reg))
+		return 0;
+#endif
+
 	mutex_lock(&nf_conn_btf_access_lock);
 	if (nfct_btf_struct_access)
 		ret = nfct_btf_struct_access(log, reg, off, size);
@@ -8828,6 +8833,11 @@ static int xdp_btf_struct_access(struct bpf_verifier_log *log,
 				 int off, int size)
 {
 	int ret = -EACCES;
+
+#if !defined(CONFIG_NET_P4_TC_KFUNCS) && defined(CONFIG_NET_P4_TC) && defined(CONFIG_DEBUG_INFO_BTF)
+	if (is_p4tc_kfunc(reg))
+		return 0;
+#endif
 
 	mutex_lock(&nf_conn_btf_access_lock);
 	if (nfct_btf_struct_access)
