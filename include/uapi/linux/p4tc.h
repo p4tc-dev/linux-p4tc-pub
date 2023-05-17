@@ -18,11 +18,15 @@ struct p4tcmsg {
 #define P4TC_MAXPARSE_KEYS 16
 #define P4TC_MAXMETA_SZ 128
 #define P4TC_MSGBATCH_SIZE 16
+#define P4TC_MAX_KEYSZ 512
+#define HEADER_MAX_LEN 512
+#define META_MAX_LEN 512
 
 #define P4TC_MAX_KEYSZ 512
 
 #define TEMPLATENAMSZ 256
 #define PIPELINENAMSIZ TEMPLATENAMSZ
+#define METANAMSIZ TEMPLATENAMSZ
 
 /* Root attributes */
 enum {
@@ -50,6 +54,7 @@ enum {
 enum {
 	P4TC_OBJ_UNSPEC,
 	P4TC_OBJ_PIPELINE,
+	P4TC_OBJ_META,
 	__P4TC_OBJ_MAX,
 };
 #define P4TC_OBJ_MAX __P4TC_OBJ_MAX
@@ -59,6 +64,7 @@ enum {
 	P4TC_UNSPEC,
 	P4TC_PATH,
 	P4TC_PARAMS,
+	P4TC_COUNT,
 	__P4TC_MAX,
 };
 #define P4TC_MAX __P4TC_MAX
@@ -101,6 +107,51 @@ enum {
 	__P4T_MAX,
 };
 #define P4T_MAX (__P4T_MAX - 1)
+
+/* Details all the info needed to find out metadata size and layout inside cb
+ * datastructure
+ */
+struct p4tc_meta_size_params {
+	__u16 startbit;
+	__u16 endbit;
+	__u8 datatype; /* T_XXX */
+};
+
+/* Metadata attributes */
+enum {
+	P4TC_META_UNSPEC,
+	P4TC_META_NAME, /* string */
+	P4TC_META_SIZE, /* struct p4tc_meta_size_params */
+	__P4TC_META_MAX
+};
+#define P4TC_META_MAX __P4TC_META_MAX
+
+/* Linux system metadata */
+enum {
+	P4TC_KERNEL_META_UNSPEC,
+	P4TC_KERNEL_META_PKTLEN,	/* u32 */
+	P4TC_KERNEL_META_DATALEN,	/* u32 */
+	P4TC_KERNEL_META_SKBMARK,	/* u32 */
+	P4TC_KERNEL_META_TCINDEX,	/* u16 */
+	P4TC_KERNEL_META_SKBHASH,	/* u32 */
+	P4TC_KERNEL_META_SKBPRIO,	/* u32 */
+	P4TC_KERNEL_META_IFINDEX,	/* s32 */
+	P4TC_KERNEL_META_SKBIIF,	/* s32 */
+	P4TC_KERNEL_META_PROTOCOL,	/* be16 */
+	P4TC_KERNEL_META_PKTYPE,	/* u8:3 */
+	P4TC_KERNEL_META_IDF,		/* u8:1 */
+	P4TC_KERNEL_META_IPSUM,		/* u8:2 */
+	P4TC_KERNEL_META_OOOK,		/* u8:1 */
+	P4TC_KERNEL_META_FCLONE,	/* u8:2 */
+	P4TC_KERNEL_META_PEEKED,	/* u8:1 */
+	P4TC_KERNEL_META_QMAP,		/* u16 */
+	P4TC_KERNEL_META_PTYPEOFF,	/* u8 */
+	P4TC_KERNEL_META_CLONEOFF,	/* u8 */
+	P4TC_KERNEL_META_PTCLNOFF,	/* u16 */
+	P4TC_KERNEL_META_DIRECTION,	/* u8:1 */
+	__P4TC_KERNEL_META_MAX
+};
+#define P4TC_KERNEL_META_MAX (__P4TC_KERNEL_META_MAX - 1)
 
 #define P4TC_RTA(r) \
 	((struct rtattr *)(((char *)(r)) + NLMSG_ALIGN(sizeof(struct p4tcmsg))))
