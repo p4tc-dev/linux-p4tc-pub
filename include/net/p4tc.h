@@ -15,10 +15,17 @@
 #define P4TC_DEFAULT_NUM_TABLES P4TC_MINTABLES_COUNT
 #define P4TC_DEFAULT_MAX_RULES 1
 #define P4TC_PATH_MAX 3
+#define P4TC_MAX_TENTRIES (2 << 23)
+#define P4TC_DEFAULT_TENTRIES 256
+#define P4TC_MAX_TMASKS 1024
+#define P4TC_DEFAULT_TMASKS 8
+
+#define P4TC_MAX_PERMISSION (GENMASK(P4TC_PERM_MAX_BIT, 0))
 
 #define P4TC_KERNEL_PIPEID 0
 
 #define P4TC_PID_IDX 0
+#define P4TC_TBLID_IDX 1
 #define P4TC_AID_IDX 1
 #define P4TC_PARSEID_IDX 1
 #define P4TC_HDRFIELDID_IDX 2
@@ -72,6 +79,7 @@ extern const struct p4tc_template_ops p4tc_pipeline_ops;
 struct p4tc_pipeline {
 	struct p4tc_template_common common;
 	struct idr                  p_act_idr;
+	struct idr                  p_tbl_idr;
 	struct rcu_head             rcu;
 	struct net                  *net;
 	struct p4tc_parser          *parser;
@@ -111,6 +119,11 @@ tcf_pipeline_find_byany_unsealed(struct net *net, const char *p_name,
 				 const u32 pipeid,
 				 struct netlink_ext_ack *extack);
 
+static inline bool pipeline_sealed(struct p4tc_pipeline *pipeline)
+{
+	return pipeline->p_state == P4TC_STATE_READY;
+}
+
 static inline int p4tc_action_destroy(struct tc_action **acts)
 {
 	int ret = 0;
@@ -122,6 +135,54 @@ static inline int p4tc_action_destroy(struct tc_action **acts)
 
 	return ret;
 }
+
+#define P4TC_CONTROL_PERMISSIONS (GENMASK(9, 5))
+#define P4TC_DATA_PERMISSIONS (GENMASK(4, 0))
+
+#define P4TC_TABLE_PERMISSIONS                                   \
+	((GENMASK(P4TC_CTRL_PERM_C_BIT, P4TC_CTRL_PERM_D_BIT)) | \
+	 P4TC_DATA_PERM_R | P4TC_DATA_PERM_X)
+
+#define P4TC_PERMISSIONS_UNINIT (1 << P4TC_PERM_MAX_BIT)
+
+struct p4tc_table_defact {
+	struct tc_action **default_acts;
+	/* Will have 2 5 bits blocks containing CRUDX (Create, read, update,
+	 * delete, execute) permissions for control plane and data plane.
+	 * The first 5 bits are for control and the next five are for data plane.
+	 * |crudxcrudx| if we were to denote it as UNIX permission flags.
+	 */
+	__u16 permissions;
+	struct rcu_head  rcu;
+};
+
+struct p4tc_table_perm {
+	__u16           permissions;
+	struct rcu_head rcu;
+};
+
+struct p4tc_table {
+	struct p4tc_template_common         common;
+	struct list_head                    tbl_acts_list;
+	struct idr                          tbl_masks_idr;
+	struct idr                          tbl_prio_idr;
+	struct rhltable                     tbl_entries;
+	struct p4tc_table_defact __rcu      *tbl_default_hitact;
+	struct p4tc_table_defact __rcu      *tbl_default_missact;
+	struct p4tc_table_perm __rcu        *tbl_permissions;
+	struct p4tc_table_entry_mask __rcu  **tbl_masks_array;
+	unsigned long __rcu                 *tbl_free_masks_bitmap;
+	spinlock_t                          tbl_masks_idr_lock;
+	u32                                 tbl_keysz;
+	u32                                 tbl_id;
+	u32                                 tbl_max_entries;
+	u32                                 tbl_max_masks;
+	u32                                 tbl_curr_num_masks;
+	refcount_t                          tbl_ctrl_ref;
+	u16                                 tbl_type;
+};
+
+extern const struct p4tc_template_ops p4tc_table_ops;
 
 struct p4tc_ipv4_param_value {
 	u32 value;
@@ -163,6 +224,12 @@ struct p4tc_act {
 	u32                         num_params;
 	bool                        active;
 	refcount_t                  a_ref;
+};
+
+struct p4tc_table_act {
+	struct list_head node;
+	struct tc_action_ops *ops;
+	u8     flags;
 };
 
 extern const struct p4tc_template_ops p4tc_act_ops;
@@ -238,6 +305,18 @@ struct p4tc_act_param *tcf_param_find_byany(struct p4tc_act *act,
 					    const u32 param_id,
 					    struct netlink_ext_ack *extack);
 
+struct p4tc_table *tcf_table_find_byany(struct p4tc_pipeline *pipeline,
+					const char *tblname, const u32 tbl_id,
+					struct netlink_ext_ack *extack);
+struct p4tc_table *tcf_table_find_byid(struct p4tc_pipeline *pipeline,
+				       const u32 tbl_id);
+int tcf_table_try_set_state_ready(struct p4tc_pipeline *pipeline,
+				  struct netlink_ext_ack *extack);
+struct p4tc_table *tcf_table_find_get(struct p4tc_pipeline *pipeline,
+				      const char *tblname, const u32 tbl_id,
+				      struct netlink_ext_ack *extack);
+void tcf_table_put_ref(struct p4tc_table *table);
+
 struct p4tc_parser *tcf_parser_create(struct p4tc_pipeline *pipeline,
 				      const char *parser_name,
 				      u32 parser_inst_id,
@@ -267,5 +346,6 @@ void tcf_hdrfield_put_ref(struct p4tc_hdrfield *hdrfield);
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
 #define to_hdrfield(t) ((struct p4tc_hdrfield *)t)
 #define to_act(t) ((struct p4tc_act *)t)
+#define to_table(t) ((struct p4tc_table *)t)
 
 #endif
