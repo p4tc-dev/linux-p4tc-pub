@@ -108,7 +108,16 @@ static int tcf_pipeline_put(struct net *net,
 	struct p4tc_act *act;
 	unsigned long tbl_id;
 
+	if (!refcount_dec_if_one(&pipeline->p_ctrl_ref)) {
+		if (pipeline_net) {
+			put_net(pipeline_net);
+			NL_SET_ERR_MSG(extack, "Can't delete referenced pipeline");
+			return -EBUSY;
+		}
+	}
+
 	if (pipeline_net && !refcount_dec_if_one(&pipeline->p_ref)) {
+		refcount_set(&pipeline->p_ctrl_ref, 1);
 		NL_SET_ERR_MSG(extack, "Can't delete referenced pipeline");
 		return -EBUSY;
 	}
@@ -260,6 +269,9 @@ static struct p4tc_pipeline *tcf_pipeline_create(struct net *net,
 	pipeline->net = net;
 
 	refcount_set(&pipeline->p_ref, 1);
+	refcount_set(&pipeline->p_ctrl_ref, 1);
+	refcount_set(&pipeline->p_hdrs_used, 1);
+	refcount_set(&pipeline->p_entry_deferal_ref, 1);
 
 	pipeline->common.ops = (struct p4tc_template_ops *)&p4tc_pipeline_ops;
 

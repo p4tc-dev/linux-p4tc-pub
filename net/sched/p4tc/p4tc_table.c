@@ -103,7 +103,7 @@ static const struct nla_policy p4tc_table_policy[P4TC_TABLE_MAX + 1] = {
 	[P4TC_TABLE_DEFAULT_HIT] = { .type = NLA_NESTED },
 	[P4TC_TABLE_DEFAULT_MISS] = { .type = NLA_NESTED },
 	[P4TC_TABLE_ACTS_LIST] = { .type = NLA_NESTED },
-	[P4TC_TABLE_OPT_ENTRY] = { .type = NLA_NESTED },
+	[P4TC_TABLE_CONST_ENTRY] = { .type = NLA_NESTED },
 };
 
 static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
@@ -203,6 +203,16 @@ static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 		i++;
 	}
 	nla_nest_end(skb, nested_tbl_acts);
+
+	if (table->tbl_const_entry) {
+		struct nlattr *const_nest;
+
+		const_nest = nla_nest_start(skb, P4TC_TABLE_CONST_ENTRY);
+		p4tca_table_get_entry_fill(skb, table, table->tbl_const_entry,
+					   table->tbl_id);
+		nla_nest_end(skb, const_nest);
+	}
+	table->tbl_const_entry = NULL;
 
 	if (nla_put(skb, P4TC_TABLE_INFO, sizeof(parm), &parm))
 		goto out_nlmsg_trim;
@@ -339,8 +349,11 @@ static inline int _tcf_table_put(struct net *net, struct nlattr **tb,
 
 	tcf_table_acts_list_destroy(&table->tbl_acts_list);
 
+	rhltable_free_and_destroy(&table->tbl_entries,
+				  tcf_table_entry_destroy_hash, table);
+
 	idr_destroy(&table->tbl_masks_idr);
-	idr_destroy(&table->tbl_prio_idr);
+	ida_destroy(&table->tbl_prio_idr);
 
 	perm = rcu_replace_pointer_rtnl(table->tbl_permissions, NULL);
 	kfree_rcu(perm, rcu);
@@ -741,6 +754,7 @@ static struct p4tc_table *tcf_table_create(struct net *net, struct nlattr **tb,
 					   struct p4tc_pipeline *pipeline,
 					   struct netlink_ext_ack *extack)
 {
+	struct rhashtable_params table_hlt_params = entry_hlt_params;
 	struct p4tc_table_parm *parm;
 	struct p4tc_table *table;
 	char *tblname;
@@ -944,15 +958,29 @@ static struct p4tc_table *tcf_table_create(struct net *net, struct nlattr **tb,
 	refcount_set(&table->tbl_entries_ref, 1);
 
 	idr_init(&table->tbl_masks_idr);
-	idr_init(&table->tbl_prio_idr);
+	ida_init(&table->tbl_prio_idr);
 	spin_lock_init(&table->tbl_masks_idr_lock);
-	spin_lock_init(&table->tbl_prio_idr_lock);
+
+	table_hlt_params.max_size = table->tbl_max_entries;
+	if (table->tbl_max_entries > U16_MAX)
+		table_hlt_params.nelem_hint = U16_MAX / 4 * 3;
+	else
+		table_hlt_params.nelem_hint = table->tbl_max_entries / 4 * 3;
+
+	if (rhltable_init(&table->tbl_entries, &table_hlt_params) < 0) {
+		ret = -EINVAL;
+		goto defaultacts_destroy;
+	}
 
 	pipeline->curr_tables += 1;
 
 	table->common.ops = (struct p4tc_template_ops *)&p4tc_table_ops;
 
 	return table;
+
+defaultacts_destroy:
+	p4tc_table_defact_destroy(table->tbl_default_missact);
+	p4tc_table_defact_destroy(table->tbl_default_hitact);
 
 idr_rm:
 	idr_remove(&pipeline->p_tbl_idr, table->tbl_id);
@@ -1100,6 +1128,21 @@ static struct p4tc_table *tcf_table_update(struct net *net, struct nlattr **tb,
 			}
 			table->tbl_type = parm->tbl_type;
 		}
+	}
+
+	if (tb[P4TC_TABLE_CONST_ENTRY]) {
+		struct p4tc_table_entry *entry;
+
+		/* Workaround to make this work */
+		entry = tcf_table_const_entry_cu(net,
+						 tb[P4TC_TABLE_CONST_ENTRY],
+						 pipeline, table, extack);
+		if (IS_ERR(entry)) {
+			ret = PTR_ERR(entry);
+			goto free_perm;
+		}
+
+		table->tbl_const_entry = entry;
 	}
 
 	if (default_hitact) {
