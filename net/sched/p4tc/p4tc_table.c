@@ -263,6 +263,22 @@ static void tcf_table_acts_list_destroy(struct list_head *acts_list)
 	}
 }
 
+static void __tcf_table_put_mask_array(struct p4tc_table *table)
+{
+	kfree(table->tbl_masks_array);
+	bitmap_free(table->tbl_free_masks_bitmap);
+}
+
+void tcf_table_put_mask_array(struct p4tc_pipeline *pipeline)
+{
+	struct p4tc_table *table;
+	unsigned long tmp, id;
+
+	idr_for_each_entry_ul(&pipeline->p_tbl_idr, table, tmp, id) {
+		__tcf_table_put_mask_array(table);
+	}
+}
+
 static inline int _tcf_table_put(struct net *net, struct nlattr **tb,
 				 struct p4tc_pipeline *pipeline,
 				 struct p4tc_table *table,
@@ -353,8 +369,7 @@ static inline int _tcf_table_put(struct net *net, struct nlattr **tb,
 	idr_remove(&pipeline->p_tbl_idr, table->tbl_id);
 	pipeline->curr_tables -= 1;
 
-	kfree(table->tbl_masks_array);
-	bitmap_free(table->tbl_free_masks_bitmap);
+	__tcf_table_put_mask_array(table);
 
 	kfree(table);
 
