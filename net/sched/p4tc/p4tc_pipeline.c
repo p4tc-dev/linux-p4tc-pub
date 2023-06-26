@@ -100,6 +100,7 @@ static void __net_exit pipeline_exit_net(struct net *net)
 		tcf_pipeline_put(net, &pipeline->common, true, NULL);
 	}
 	idr_destroy(&pipe_net->pipeline_idr);
+
 	rtnl_unlock();
 }
 
@@ -121,6 +122,7 @@ static void tcf_pipeline_destroy(struct p4tc_pipeline *pipeline,
 {
 	idr_destroy(&pipeline->p_act_idr);
 	idr_destroy(&pipeline->p_tbl_idr);
+	idr_destroy(&pipeline->user_ext_idr);
 
 	if (free_pipeline)
 		kfree(pipeline);
@@ -146,7 +148,8 @@ static int tcf_pipeline_put(struct net *net,
 	struct p4tc_pipeline_net *pipe_net = net_generic(net, pipeline_net_id);
 	struct p4tc_pipeline *pipeline = to_pipeline(template);
 	struct net *pipeline_net = maybe_get_net(net);
-	unsigned long iter_act_id, tmp;
+	struct p4tc_user_pipeline_extern *pipe_ext;
+	unsigned long iter_act_id, ext_id, tmp;
 	struct p4tc_table *table;
 	struct p4tc_act *act;
 	unsigned long tbl_id;
@@ -170,6 +173,17 @@ static int tcf_pipeline_put(struct net *net,
 
 	idr_for_each_entry_ul(&pipeline->p_act_idr, act, tmp, iter_act_id)
 		act->common.ops->put(net, &act->common, true, extack);
+
+	idr_for_each_entry_ul(&pipeline->user_ext_idr, pipe_ext, tmp, ext_id) {
+		unsigned long tmp_in, inst_id;
+		struct p4tc_extern_inst *inst;
+
+		idr_for_each_entry_ul(&pipe_ext->e_inst_idr, inst, tmp_in, inst_id) {
+			inst->common.ops->put(net, &inst->common, true, extack);
+		}
+
+		pipe_ext->free(pipe_ext, &pipeline->user_ext_idr);
+	}
 
 	if (pipeline->parser)
 		tcf_parser_del(net, pipeline, pipeline->parser, extack);
@@ -304,6 +318,9 @@ static struct p4tc_pipeline *tcf_pipeline_create(struct net *net,
 
 	idr_init(&pipeline->p_tbl_idr);
 	pipeline->curr_tables = 0;
+	idr_init(&pipeline->p_tbl_idr);
+
+	idr_init(&pipeline->user_ext_idr);
 
 	pipeline->num_created_acts = 0;
 
@@ -641,6 +658,8 @@ static void __tcf_pipeline_init(void)
 	}
 
 	strscpy(root_pipeline->common.name, "kernel", PIPELINENAMSIZ);
+
+	idr_init(&root_pipeline->p_ext_idr);
 
 	root_pipeline->common.ops =
 		(struct p4tc_template_ops *)&p4tc_pipeline_ops;
