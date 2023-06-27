@@ -583,6 +583,7 @@ static void tcf_table_entry_put(struct p4tc_table_entry *entry, bool deferred)
 	kfree(tm);
 
 	if (value->acts) {
+		kfree(value->act_bpf);
 		if (deferred) {
 			/* We have to free tc actions
 			 * in a sleepable context
@@ -1326,6 +1327,56 @@ static bool tcf_table_check_entry_acts(struct p4tc_table *table,
 	return false;
 }
 
+struct p4tc_table_entry_act_bpf *
+tcf_table_entry_create_act_bpf(struct tc_action *action,
+			       struct netlink_ext_ack *extack)
+{
+	struct p4tc_act_param *params[P4TC_MSGBATCH_SIZE];
+	struct p4tc_table_entry_act_bpf *act_bpf;
+	struct tcf_p4act_params *act_params;
+	struct p4tc_act_param *param;
+	unsigned long param_id, tmp;
+	size_t tot_params_sz = 0;
+	struct tcf_p4act *p4act;
+	int num_params = 0;
+	u8 *params_cursor;
+	int i;
+
+	p4act = to_p4act(action);
+
+	act_params = rcu_dereference(p4act->params);
+
+	idr_for_each_entry_ul(&act_params->params_idr, param, tmp, param_id) {
+		const struct p4tc_type *type = param->type;
+
+		if (tot_params_sz > P4TC_MAX_PARAM_DATA_SIZE) {
+			NL_SET_ERR_MSG(extack, "Maximum parameter byte size reached");
+			return ERR_PTR(-EINVAL);
+		}
+
+		tot_params_sz += BITS_TO_BYTES(type->container_bitsz);
+		params[num_params] = param;
+		num_params++;
+	}
+
+	act_bpf = kzalloc(sizeof(*act_bpf), GFP_KERNEL);
+	if (!act_bpf)
+		return ERR_PTR(-ENOMEM);
+
+	act_bpf->act_id = p4act->act_id;
+	params_cursor = (u8 *)act_bpf + sizeof(act_bpf->act_id);
+	for (i = 0; i < num_params; i++) {
+		const struct p4tc_act_param *param = params[i];
+		const struct p4tc_type *type = param->type;
+		const u32 type_bytesz = BITS_TO_BYTES(type->container_bitsz);
+
+		memcpy(params_cursor, param->value, type_bytesz);
+		params_cursor += type_bytesz;
+	}
+
+	return act_bpf;
+}
+
 static struct p4tc_table_entry *
 __tcf_table_entry_cu(struct net *net, bool replace, struct nlattr **tb,
 		     struct p4tc_pipeline *pipeline, struct p4tc_table *table,
@@ -1440,6 +1491,8 @@ __tcf_table_entry_cu(struct net *net, bool replace, struct nlattr **tb,
 	}
 
 	if (tb[P4TC_ENTRY_ACT]) {
+		struct p4tc_table_entry_act_bpf *act_bpf;
+
 		value->acts = kcalloc(TCA_ACT_MAX_PRIO,
 				      sizeof(struct tc_action *), GFP_KERNEL);
 		if (unlikely(!value->acts)) {
@@ -1465,6 +1518,14 @@ __tcf_table_entry_cu(struct net *net, bool replace, struct nlattr **tb,
 				       "Action is not allowed as entry action");
 			goto free_acts;
 		}
+
+		act_bpf = tcf_table_entry_create_act_bpf(value->acts[0],
+							 extack);
+		if (IS_ERR(act_bpf)) {
+			ret = PTR_ERR(act_bpf);
+			goto free_acts;
+		}
+		value->act_bpf = act_bpf;
 	}
 
 	rcu_read_lock();
@@ -1476,11 +1537,14 @@ __tcf_table_entry_cu(struct net *net, bool replace, struct nlattr **tb,
 					       whodunnit, true);
 	if (ret < 0) {
 		rcu_read_unlock();
-		goto free_acts;
+		goto free_act_bpf;
 	}
 	rcu_read_unlock();
 
 	return entry;
+
+free_act_bpf:
+	kfree(value->act_bpf);
 
 free_acts:
 	p4tc_action_destroy(value->acts);
