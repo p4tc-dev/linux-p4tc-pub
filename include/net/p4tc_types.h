@@ -8,7 +8,7 @@
 
 #include <uapi/linux/p4tc.h>
 
-#define P4T_MAX_BITSZ 128
+#define P4T_MAX_BITSZ P4TC_MAX_KEYSZ
 
 struct p4tc_type_mask_shift {
 	void *mask;
