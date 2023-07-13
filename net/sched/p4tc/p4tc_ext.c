@@ -135,15 +135,12 @@ static int __p4tc_ext_idr_release(struct p4tc_extern *p)
 
 static int p4tc_ext_idr_release(struct p4tc_extern *e)
 {
-	const struct p4tc_extern_ops *ops = e->ops;
 	struct p4tc_extern_inst *inst = e->inst;
 	int ret;
 
 	ret = __p4tc_ext_idr_release(e);
-	if (ret == ACT_P_DELETED) {
+	if (ret == ACT_P_DELETED)
 		refcount_dec(&inst->curr_num_elems);
-		p4tc_extern_ops_put(ops);
-	}
 
 	return ret;
 }
@@ -295,13 +292,18 @@ static const struct p4tc_extern_param_ops ext_param_ops[P4T_MAX + 1] = {
 static int
 p4tc_extern_dump_1(struct sk_buff *skb, struct p4tc_extern *e, int ref)
 {
+	const char *kind = e->inst->pipe_ext->ext_name;
+	const char *instname = e->inst->common.name;
 	unsigned char *b = skb_tail_pointer(skb);
 	struct p4tc_extern_param *parm;
 	struct nlattr *nest_parms;
 	u32 flags;
 	int id;
 
-	if (nla_put_string(skb, P4TC_EXT_KIND, e->ops->kind))
+	if (nla_put_string(skb, P4TC_EXT_KIND, kind))
+		goto nla_put_failure;
+
+	if (nla_put_string(skb, P4TC_EXT_INST_NAME, instname))
 		goto nla_put_failure;
 
 	flags = e->p4tc_ext_flags & P4TC_EXT_FLAGS_USER_MASK;
@@ -421,7 +423,6 @@ nla_put_failure:
 
 static void __p4tc_ext_idr_purge(struct p4tc_extern *p)
 {
-	p4tc_extern_ops_put(p->ops);
 	refcount_dec(&p->inst->curr_num_elems);
 	p4tc_extern_cleanup(p);
 }
@@ -570,8 +571,6 @@ static int p4tc_ext_idr_create(struct p4tc_extern_inst *inst,
 	p->p4tc_ext_flags = flags;
 
 	p->elems_idr = &inst->inst_common->control_elems_idr;
-	__module_get(ops->owner);
-	inst->ops = ops;
 	refcount_inc(&inst->inst_ref);
 	p->inst = inst;
 	p->ops = ops;
@@ -753,12 +752,10 @@ static int p4tc_extern_destroy(struct p4tc_extern *externs[], int init_res[])
 			ret = __p4tc_ext_idr_release(e);
 			if (ret == ACT_P_DELETED) {
 				refcount_dec(&inst->curr_num_elems);
-				p4tc_extern_ops_put(ops);
 			} else if (ret < 0) {
 				return ret;
 			}
 		} else {
-			p4tc_extern_ops_put(ops);
 			free_p4tc_ext_rcu(&e->rcu);
 		}
 	}
@@ -782,8 +779,7 @@ static void p4tc_extern_put_many(struct p4tc_extern *externs[])
 		if (!e)
 			continue;
 		ops = e->ops;
-		if (p4tc_extern_put(e))
-			p4tc_extern_ops_put(ops);
+		p4tc_extern_put(e);
 	}
 }
 
@@ -1176,13 +1172,10 @@ static void p4tc_ext_idr_insert_many(struct p4tc_extern *externs[])
 	}
 }
 
-static struct p4tc_extern_ops *
-p4tc_ext_load_ops(struct net *net, struct nlattr *nla,
-		  struct netlink_ext_ack *extack)
+static const char *
+p4tc_ext_get_kind(struct nlattr *nla, struct netlink_ext_ack *extack)
 {
 	struct nlattr *tb[P4TC_EXT_MAX + 1];
-	struct p4tc_extern_ops *a_o;
-	char ext_name[EXTERNNAMSIZ];
 	struct nlattr *kind;
 	int err;
 
@@ -1193,39 +1186,11 @@ p4tc_ext_load_ops(struct net *net, struct nlattr *nla,
 	err = -EINVAL;
 	kind = tb[P4TC_EXT_KIND];
 	if (!kind) {
-		NL_SET_ERR_MSG(extack, "TC extern must be specified");
-		return ERR_PTR(err);
-	}
-	if (nla_strscpy(ext_name, kind, EXTERNNAMSIZ) < 0) {
-		NL_SET_ERR_MSG(extack, "TC extern name too long");
+		NL_SET_ERR_MSG(extack, "TC extern name must be specified");
 		return ERR_PTR(err);
 	}
 
-	a_o = p4tc_extern_ops_get(ext_name);
-	if (!a_o) {
-#ifdef CONFIG_MODULES
-		rtnl_unlock();
-		request_module("ext_%s", ext_name);
-		rtnl_lock();
-
-		a_o = p4tc_extern_ops_get(ext_name);
-
-		/* We dropped the RTNL semaphore in order to
-		 * perform the module load.  So, even if we
-		 * succeeded in loading the module we have to
-		 * tell the caller to replay the request.  We
-		 * indicate this using -EAGAIN.
-		 */
-		if (a_o) {
-			p4tc_extern_ops_put(a_o);
-			return ERR_PTR(-EAGAIN);
-		}
-#endif
-		NL_SET_ERR_MSG(extack, "Failed to load TC extern module");
-		return ERR_PTR(-ENOENT);
-	}
-
-	return a_o;
+	return nla_data(kind);
 }
 
 static int p4tc_ext_init(struct net *net, struct nlattr **tb,
@@ -1543,18 +1508,16 @@ destroy_ext_inst_elems:
 
 static struct p4tc_extern_inst *
 __p4tc_ext_inst_find_bynames(struct net *net, struct p4tc_pipeline *pipeline,
-			     const char *modextname, const char *instname,
+			     const char *extname, const char *instname,
 			     struct netlink_ext_ack *extack)
 {
-	const char *extname = &modextname[4];
-
 	return p4tc_ext_inst_find_bynames(net, pipeline, extname, instname,
 					  extack);
 }
 
 static struct p4tc_extern *
 p4tc_extern_init_1(struct net *net, struct p4tc_pipeline *pipeline,
-		   struct nlattr *nla, struct p4tc_extern_ops *a_o,
+		   struct nlattr *nla, const char *kind,
 		   int *init_res, u32 flags, size_t *attrs_size,
 		   struct netlink_ext_ack *extack)
 {
@@ -1580,12 +1543,10 @@ p4tc_extern_init_1(struct net *net, struct p4tc_pipeline *pipeline,
 	}
 	instname = nla_data(tb[P4TC_EXT_INST_NAME]);
 
-	inst = __p4tc_ext_inst_find_bynames(net, pipeline, a_o->kind, instname,
+	inst = __p4tc_ext_inst_find_bynames(net, pipeline, kind, instname,
 					    extack);
 	if (IS_ERR(inst))
 		return (void *)inst;
-
-	inst->ops = a_o;
 
 	err = p4tc_ext_init(net, tb, &e, inst, userflags.value | flags,
 			    attrs_size, extack);
@@ -1603,7 +1564,7 @@ static int p4tc_extern_init(struct net *net, struct p4tc_pipeline *pipeline,
 			    int init_res[], size_t *attrs_size, u32 flags,
 			    struct netlink_ext_ack *extack)
 {
-	struct p4tc_extern_ops *ops[P4TC_MSGBATCH_SIZE] = {};
+	const char *ekinds[P4TC_MSGBATCH_SIZE] = {0};
 	struct nlattr *tb[P4TC_MSGBATCH_SIZE + 1];
 	struct p4tc_extern *ext;
 	size_t sz = 0;
@@ -1616,21 +1577,20 @@ static int p4tc_extern_init(struct net *net, struct p4tc_pipeline *pipeline,
 		return err;
 
 	for (i = 1; i <= P4TC_MSGBATCH_SIZE && tb[i]; i++) {
-		struct p4tc_extern_ops *a_o;
+		const char *ekind = p4tc_ext_get_kind(tb[i], extack);
 
-		a_o = p4tc_ext_load_ops(net, tb[i], extack);
-		if (IS_ERR(a_o)) {
-			err = PTR_ERR(a_o);
-			goto err_mod;
+		if (IS_ERR(ekind)) {
+			err = PTR_ERR(ekind);
+			return err;
 		}
-		ops[i - 1] = a_o;
+		ekinds[i - 1] = ekind;
 	}
 
 	for (i = 1; i <= P4TC_MSGBATCH_SIZE && tb[i]; i++) {
 		size_t attrs_size_before = *attrs_size;
 		size_t extern_fill_size;
 
-		ext = p4tc_extern_init_1(net, pipeline, tb[i], ops[i - 1],
+		ext = p4tc_extern_init_1(net, pipeline, tb[i], ekinds[i - 1],
 					 &init_res[i - 1], flags, attrs_size,
 					 extack);
 		if (IS_ERR(ext)) {
@@ -1651,15 +1611,11 @@ static int p4tc_extern_init(struct net *net, struct p4tc_pipeline *pipeline,
 
 	*attrs_size = p4tc_extern_full_attrs_size(sz);
 	err = i - 1;
-	goto err_mod;
+
+	return err;
 
 err:
 	p4tc_extern_destroy(externs, init_res);
-err_mod:
-	for (i = 0; i < P4TC_MSGBATCH_SIZE; i++) {
-		if (ops[i])
-			p4tc_extern_ops_put(ops[i]);
-	}
 	return err;
 }
 
@@ -1722,7 +1678,6 @@ p4tc_extern_get_1(struct net *net, struct p4tc_pipeline *pipeline,
 		  struct netlink_ext_ack *extack)
 {
 	struct nlattr *tb[P4TC_EXT_MAX + 1];
-	const struct p4tc_extern_ops *ops;
 	struct p4tc_extern_inst *inst;
 	char *kind, *instname;
 	struct p4tc_extern *e;
@@ -1757,17 +1712,11 @@ p4tc_extern_get_1(struct net *net, struct p4tc_pipeline *pipeline,
 	instname = nla_data(tb[P4TC_EXT_INST_NAME]);
 
 	err = -EINVAL;
-	ops = p4tc_extern_ops_get(kind);
-	if (!ops) { /* could happen in batch of externs */
-		NL_SET_ERR_MSG(extack, "Specified TC extern kind not found");
-		goto err_out;
-	}
-
-	inst = __p4tc_ext_inst_find_bynames(net, pipeline, ops->kind, instname,
+	inst = __p4tc_ext_inst_find_bynames(net, pipeline, kind, instname,
 					    extack);
 	if (IS_ERR(inst)) {
 		err = PTR_ERR(inst);
-		goto err_mod;
+		goto err_out;
 	}
 
 	if (inst->is_scalar) {
@@ -1776,13 +1725,13 @@ p4tc_extern_get_1(struct net *net, struct p4tc_pipeline *pipeline,
 							    tb[P4TC_EXT_KEY],
 							    &key, extack);
 			if (err < 0)
-				goto err_mod;
+				goto err_out;
 
 			if (key != 1) {
 				NL_SET_ERR_MSG(extack,
 					       "Key of scalar must be 1");
 				err = -EINVAL;
-				goto err_mod;
+				goto err_out;
 			}
 		} else {
 			key = 1;
@@ -1792,27 +1741,24 @@ p4tc_extern_get_1(struct net *net, struct p4tc_pipeline *pipeline,
 			err = p4tc_ext_get_key_param(inst, tb[P4TC_EXT_KEY],
 						     &key, extack);
 			if (err < 0)
-				goto err_mod;
+				goto err_out;
 		}
 
 		if (!key) {
 			NL_SET_ERR_MSG(extack, "Must specify extern key");
 			err = -EINVAL;
-			goto err_mod;
+			goto err_out;
 		}
 	}
 
 	if (__p4tc_ext_idr_search(inst, &e, key) == 0) {
 		err = -ENOENT;
 		NL_SET_ERR_MSG(extack, "TC extern with specified key not found");
-		goto err_mod;
+		goto err_out;
 	}
 
-	p4tc_extern_ops_put(ops);
 	return e;
 
-err_mod:
-	p4tc_extern_ops_put(ops);
 err_out:
 	return ERR_PTR(err);
 }
@@ -1946,7 +1892,6 @@ int p4tc_ctl_extern_dump(struct sk_buff *skb, struct netlink_callback *cb,
 	struct nlattr *count_attr = NULL;
 	struct p4tc_pipeline *pipeline;
 	struct p4tc_extern_inst *inst;
-	struct p4tc_extern_ops *a_o;
 	char *kind_str, *instname;
 	struct nla_bitfield32 bf;
 	struct nlmsghdr *nlh;
@@ -1971,13 +1916,9 @@ int p4tc_ctl_extern_dump(struct sk_buff *skb, struct netlink_callback *cb,
 
 	kind_str = nla_data(tb2[P4TC_EXT_KIND]);
 
-	a_o = p4tc_extern_ops_get(kind_str);
-	if (!a_o)
-		return 0;
-
 	instname = nla_data(tb2[P4TC_EXT_INST_NAME]);
 
-	inst = __p4tc_ext_inst_find_bynames(net, pipeline, a_o->kind, instname,
+	inst = __p4tc_ext_inst_find_bynames(net, pipeline, kind_str, instname,
 					    extack);
 	if (IS_ERR(inst))
 		return PTR_ERR(inst);
@@ -1991,22 +1932,22 @@ int p4tc_ctl_extern_dump(struct sk_buff *skb, struct netlink_callback *cb,
 	nlh = nlmsg_put(skb, NETLINK_CB(cb->skb).portid, cb->nlh->nlmsg_seq,
 			cb->nlh->nlmsg_type, sizeof(*t), 0);
 	if (!nlh)
-		goto out_ops_put;
+		goto err_out;
 
 	t = nlmsg_data(nlh);
 	t->pipeid = pipeline->common.p_id;
 	t->obj = P4TC_OBJ_RUNTIME_EXTERN;
 	count_attr = nla_reserve(skb, P4TC_ROOT_COUNT, sizeof(u32));
 	if (!count_attr)
-		goto out_ops_put;
+		goto err_out;
 
 	nest = nla_nest_start_noflag(skb, P4TC_ROOT);
 	if (!nest)
-		goto out_ops_put;
+		goto err_out;
 
 	ret = p4tc_ext_dump_walker(inst, skb, cb);
 	if (ret < 0)
-		goto out_ops_put;
+		goto err_out;
 
 	if (ret > 0) {
 		nla_nest_end(skb, nest);
@@ -2021,11 +1962,9 @@ int p4tc_ctl_extern_dump(struct sk_buff *skb, struct netlink_callback *cb,
 	nlh->nlmsg_len = skb_tail_pointer(skb) - b;
 	if (NETLINK_CB(cb->skb).portid && ret)
 		nlh->nlmsg_flags |= NLM_F_MULTI;
-	p4tc_extern_ops_put(a_o);
 	return skb->len;
 
-out_ops_put:
-	p4tc_extern_ops_put(a_o);
+err_out:
 	nlmsg_trim(skb, b);
 	return skb->len;
 }
