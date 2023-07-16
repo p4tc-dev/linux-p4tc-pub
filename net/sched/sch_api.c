@@ -1168,6 +1168,7 @@ static int qdisc_block_indexes_set(struct Qdisc *sch, struct nlattr **tca,
 			NL_SET_ERR_MSG(extack, "Ingress block index cannot be 0");
 			return -EINVAL;
 		}
+		//XXX: check it doesnt exceed 16 bits
 		if (!sch->ops->ingress_block_set) {
 			NL_SET_ERR_MSG(extack, "Ingress block sharing is not supported");
 			return -EOPNOTSUPP;
@@ -1181,6 +1182,7 @@ static int qdisc_block_indexes_set(struct Qdisc *sch, struct nlattr **tca,
 			NL_SET_ERR_MSG(extack, "Egress block index cannot be 0");
 			return -EINVAL;
 		}
+		//XXX: check it doesnt exceed 16 bits
 		if (!sch->ops->egress_block_set) {
 			NL_SET_ERR_MSG(extack, "Egress block sharing is not supported");
 			return -EOPNOTSUPP;
@@ -1207,6 +1209,8 @@ static struct Qdisc *qdisc_create(struct net_device *dev,
 	struct Qdisc *sch;
 	struct Qdisc_ops *ops;
 	struct qdisc_size_table *stab;
+	bool link_notify = false;
+	u32 block_index = 0;
 
 	ops = qdisc_lookup_ops(kind);
 #ifdef CONFIG_MODULES
@@ -1320,6 +1324,49 @@ static struct Qdisc *qdisc_create(struct net_device *dev,
 
 	qdisc_hash_add(sch, false);
 	trace_qdisc_create(ops, dev, parent);
+
+	if (tca[TCA_INGRESS_BLOCK]) {
+		if (sch->ops->ingress_block_get) {
+			block_index = sch->ops->ingress_block_get(sch);
+			if (block_index) {
+				printk("%s: Adding ingress groupid 0x%x ingress block %d\n",
+				       dev->name, dev->group,
+				       block_index);
+				link_notify = true;
+				//block_index |= (dev->group & 0xFFFF0000U);
+				// calling dev_set_group() requires more core
+				// changes to export it. We just set
+				// dev->group directly instead
+				//dev_set_group(dev, block_index);
+				dev->group = block_index;
+				printk("%s ingress final 0x%x\n", dev->name, dev->group);
+			}
+		}
+	}
+
+	if (tca[TCA_EGRESS_BLOCK]) {
+		if (sch->ops->egress_block_get) {
+			block_index = sch->ops->egress_block_get(sch);
+			if (block_index) {
+				printk("%s: egress adding to existing group 0x%x egress block %d\n",
+				       dev->name, dev->group, block_index);
+				link_notify = true;
+				block_index = (block_index << 16) | (dev->group & 0x0000FFFFU);
+				dev->group = block_index;
+				printk("%s egress final 0x%x\n", dev->name, dev->group);
+			}
+		}
+	}
+
+	if (link_notify) {
+		//XXX: Note: netdev_state_change only notifies when link
+		// is up. Not the best approach since we want to learn
+		// about netdevs being added in a control block even when
+		// they are not up.
+		// For an alternative see approach used when we  delete
+		// it is invasive but does what we want.
+		netdev_state_change(dev);
+	}
 
 	return sch;
 
@@ -1449,8 +1496,10 @@ static int tc_get_qdisc(struct sk_buff *skb, struct nlmsghdr *n,
 	struct nlattr *tca[TCA_MAX + 1];
 	struct net_device *dev;
 	u32 clid;
+	bool link_notify = false;
 	struct Qdisc *q = NULL;
 	struct Qdisc *p = NULL;
+	u32 block_index = 0;
 	int err;
 
 	err = nlmsg_parse_deprecated(n, sizeof(*tcm), tca, TCA_MAX,
@@ -1509,6 +1558,42 @@ static int tc_get_qdisc(struct sk_buff *skb, struct nlmsghdr *n,
 			NL_SET_ERR_MSG(extack, "Cannot delete qdisc with handle of zero");
 			return -ENOENT;
 		}
+
+		if (q->ops->ingress_block_get) {
+			block_index = q->ops->ingress_block_get(q);
+
+			printk("Deleting %s: current group 0x%x ingress block %d\n",
+			       dev->name, dev->group, block_index);
+			//zeroing it implies resetting to INIT_NETDEV_GROUP
+			block_index = (dev->group & 0xFFFF0000U);
+			dev_set_group(dev, block_index);
+			link_notify = true;
+
+		}
+
+		if (q->ops->egress_block_get) {
+			block_index = q->ops->egress_block_get(q);
+
+			printk("Deleting %s: current group 0x%x egress block %d\n",
+			       dev->name, dev->group, block_index);
+			//zeroing it implies resetting to INIT_NETDEV_GROUP
+			block_index = (dev->group & 0x0000FFFFU);
+			dev_set_group(dev, block_index);
+			link_notify = true;
+		}
+
+		if (link_notify) {
+			// different approach instead of netdev_state_change(dev);
+			// very raw
+			struct netdev_notifier_change_info change_info = {
+				.info.dev = dev,
+			};
+
+			call_netdevice_notifiers_info(NETDEV_CHANGE,
+						      &change_info.info);
+			rtmsg_ifinfo(RTM_NEWLINK, dev, 0, GFP_KERNEL, 0, NULL);
+		}
+
 		err = qdisc_graft(dev, p, skb, n, clid, NULL, q, extack);
 		if (err != 0)
 			return err;
