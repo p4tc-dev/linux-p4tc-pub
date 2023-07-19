@@ -71,6 +71,31 @@ const struct rhashtable_params entry_hlt_params = {
 	.automatic_shrinking = true,
 };
 
+static inline struct rhlist_head *
+p4tc_entry_lookup_bucket(struct p4tc_table *table,
+			 struct p4tc_table_entry_key *key)
+{
+	return rhltable_lookup(&table->tbl_entries, key, entry_hlt_params);
+
+}
+
+static struct p4tc_table_entry *
+__p4tc_entry_lookup_fast(struct p4tc_table *table, struct p4tc_table_entry_key *key)
+	__must_hold(RCU)
+{
+	struct p4tc_table_entry *entry_curr;
+	struct rhlist_head *bucket_list;
+
+	bucket_list =
+		p4tc_entry_lookup_bucket(table, key);
+	if (!bucket_list)
+		return NULL;
+
+	rht_entry(entry_curr, bucket_list, ht_node);
+
+	return entry_curr;
+}
+
 static struct p4tc_table_entry *
 p4tc_entry_lookup(struct p4tc_table *table, struct p4tc_table_entry_key *key,
 		  u32 prio) __must_hold(RCU)
@@ -78,8 +103,11 @@ p4tc_entry_lookup(struct p4tc_table *table, struct p4tc_table_entry_key *key,
 	struct rhlist_head *tmp, *bucket_list;
 	struct p4tc_table_entry *entry;
 
+	if (table->tbl_type == P4TC_TABLE_TYPE_EXACT)
+		return __p4tc_entry_lookup_fast(table, key);
+
 	bucket_list =
-		rhltable_lookup(&table->tbl_entries, key, entry_hlt_params);
+		p4tc_entry_lookup_bucket(table, key);
 	if (!bucket_list)
 		return NULL;
 
@@ -118,23 +146,6 @@ __p4tc_entry_lookup(struct p4tc_table *table, struct p4tc_table_entry_key *key)
 	}
 
 	return entry;
-}
-
-static struct p4tc_table_entry *
-__p4tc_entry_lookup_fast(struct p4tc_table *table, struct p4tc_table_entry_key *key)
-	__must_hold(RCU)
-{
-	struct p4tc_table_entry *entry_curr;
-	struct rhlist_head *bucket_list;
-
-	bucket_list =
-		rhltable_lookup(&table->tbl_entries, key, entry_hlt_params);
-	if (!bucket_list)
-		return NULL;
-
-	rht_entry(entry_curr, bucket_list, ht_node);
-
-	return entry_curr;
 }
 
 static void mask_key(const struct p4tc_table_entry_mask *mask, u8 *masked_key,
@@ -651,6 +662,23 @@ static int __tcf_table_entry_destroy(struct p4tc_table *table,
 	return 0;
 }
 
+#define P4TC_TABLE_EXACT_PRIO 64000
+
+static inline int tcf_table_entry_alloc_new_prio(struct p4tc_table *table)
+{
+	if (table->tbl_type == P4TC_TABLE_TYPE_EXACT)
+		return P4TC_TABLE_EXACT_PRIO;
+
+	return ida_alloc_min(&table->tbl_prio_idr, 1,
+			     GFP_ATOMIC);
+}
+
+static inline void tcf_table_entry_free_prio(struct p4tc_table *table, u32 prio)
+{
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT)
+		ida_free(&table->tbl_prio_idr, prio);
+}
+
 static int tcf_table_entry_destroy(struct p4tc_table *table,
 				   struct p4tc_table_entry *entry,
 				   bool remove_from_hash)
@@ -661,7 +689,7 @@ static int tcf_table_entry_destroy(struct p4tc_table *table,
 	if (!refcount_dec_if_one(&value->entries_ref))
 		return -EBUSY;
 
-	ida_free(&table->tbl_prio_idr, value->prio);
+	tcf_table_entry_free_prio(table, value->prio);
 
 	return __tcf_table_entry_destroy(table, entry, remove_from_hash);
 }
@@ -817,6 +845,23 @@ static void tcf_table_entry_build_key(struct p4tc_table *table,
 		key->fa_key[i] &= mask->fa_value[i];
 }
 
+struct p4tc_table_entry_tm *
+tcf_table_entry_create_tm(const u16 whodunnit)
+{
+	struct p4tc_table_entry_tm *dtm;
+
+	dtm = kzalloc(sizeof(*dtm), GFP_ATOMIC);
+	if (unlikely(!dtm))
+		return ERR_PTR(-ENOMEM);
+
+	dtm->who_created = whodunnit;
+	dtm->created = jiffies;
+	dtm->firstused = 0;
+	dtm->lastused = jiffies;
+
+	return dtm;
+}
+
 static int ___tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 				  struct p4tc_table *table,
 				  struct p4tc_table_entry *entry,
@@ -859,6 +904,28 @@ int __tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 	return ret;
 }
 
+int tcf_table_entry_del_bpf(struct p4tc_pipeline *pipeline,
+			    struct p4tc_table *table,
+			    struct p4tc_entry_key_bpf *key, u32 prio)
+{
+	u8 __mask[sizeof(struct p4tc_table_entry_mask) +
+		  BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
+	const u32 keysz_bytes = P4TC_KEYSZ_BYTES(table->tbl_keysz);
+	struct p4tc_table_entry_mask *mask = (void *)&__mask;
+	const u32 keysz_bits = table->tbl_keysz;
+	struct p4tc_table_entry entry = {0};
+
+	if (keysz_bytes != P4TC_KEYSZ_BYTES(key->key_sz))
+		return -EINVAL;
+
+	entry.key.keysz = keysz_bits;
+
+	tcf_table_entry_assign_key(table, &entry.key, mask, key->key,
+				   key->mask);
+
+	return __tcf_table_entry_del(pipeline, table, &entry.key, mask, prio);
+}
+
 static int tcf_table_entry_gd(struct net *net, struct sk_buff *skb, bool del,
 			      struct nlattr *arg, u32 *ids,
 			      struct p4tc_nl_pname *nl_pname,
@@ -881,18 +948,22 @@ static int tcf_table_entry_gd(struct net *net, struct sk_buff *skb, bool del,
 	if (ret < 0)
 		return ret;
 
-	if (NL_REQ_ATTR_CHECK(extack, arg, tb, P4TC_ENTRY_PRIO)) {
-		NL_SET_ERR_MSG(extack, "Must specify table entry priority");
-		return -EINVAL;
-	}
-	prio = nla_get_u32(tb[P4TC_ENTRY_PRIO]);
-
 	rcu_read_lock();
 	ret = tcf_table_entry_get_table(net, &pipeline, &table, tb, ids,
 					nl_pname->data, extack);
 	rcu_read_unlock();
 	if (ret < 0)
 		return ret;
+
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT) {
+		if (NL_REQ_ATTR_CHECK(extack, arg, tb, P4TC_ENTRY_PRIO)) {
+			NL_SET_ERR_MSG(extack, "Must specify table entry priority");
+			return -EINVAL;
+		}
+		prio = nla_get_u32(tb[P4TC_ENTRY_PRIO]);
+	} else {
+		prio = tcf_table_entry_alloc_new_prio(table);
+	}
 
 	if (del && !pipeline_sealed(pipeline)) {
 		NL_SET_ERR_MSG(extack,
@@ -1029,6 +1100,9 @@ static int tcf_table_entry_flush(struct net *net, struct sk_buff *skb,
 	if (ret < 0)
 		return ret;
 
+	if (skb)
+		b = nlmsg_get_pos(skb);
+
 	if (!ids[P4TC_TBLID_IDX])
 		arg_ids[P4TC_TBLID_IDX - 1] = table->tbl_id;
 
@@ -1098,6 +1172,49 @@ table_put:
 	return ret;
 }
 
+static int
+tcf_table_tc_act_from_bpf_act(struct tcf_p4act *p4act,
+			      struct p4tc_table_entry_value *value,
+			      struct p4tc_table_entry_act_bpf *act_bpf)
+{
+	struct p4tc_act_param *param;
+	unsigned long param_id, tmp;
+	u8 *params_cursor;
+	int err;
+
+	/* Skip act_id */
+	params_cursor = (u8 *)act_bpf + sizeof(act_bpf->act_id);
+	idr_for_each_entry_ul(&p4act->params->params_idr, param, tmp, param_id) {
+		const struct p4tc_type *type = param->type;
+		const u32 type_bytesz = BITS_TO_BYTES(type->container_bitsz);
+
+		memcpy(param->value, params_cursor, type_bytesz);
+		params_cursor += type_bytesz;
+	}
+
+	value->act_bpf = kzalloc(sizeof(*act_bpf), GFP_ATOMIC);
+	if (unlikely(!value->act_bpf))
+		return -ENOMEM;
+
+	value->acts = kcalloc(TCA_ACT_MAX_PRIO, sizeof(struct tc_action *),
+			      GFP_ATOMIC);
+	if (unlikely(!value->acts)) {
+		err = -ENOMEM;
+		goto free_act_bpf;
+	}
+
+	value->num_acts = 1;
+	value->acts[0] = (struct tc_action *)p4act;
+
+	*value->act_bpf = *act_bpf;
+
+	return 0;
+
+free_act_bpf:
+	kfree(value->act_bpf);
+	return err;
+}
+
 /* Invoked from both control and data path */
 static int __tcf_table_entry_create(struct p4tc_pipeline *pipeline,
 				    struct p4tc_table *table,
@@ -1142,16 +1259,12 @@ static int __tcf_table_entry_create(struct p4tc_pipeline *pipeline,
 		goto rm_masks_idr;
 	}
 
+	dtm = tcf_table_entry_create_tm(whodunnit);
 	dtm = kzalloc(sizeof(*dtm), GFP_ATOMIC);
-	if (unlikely(!dtm)) {
-		ret = -ENOMEM;
+	if (IS_ERR(dtm)) {
+		ret = PTR_ERR(dtm);
 		goto rm_masks_idr;
 	}
-
-	dtm->who_created = whodunnit;
-	dtm->created = jiffies;
-	dtm->firstused = 0;
-	dtm->lastused = jiffies;
 
 	rcu_assign_pointer(value->tm, dtm);
 
@@ -1447,24 +1560,32 @@ __tcf_table_entry_cu(struct net *net, bool replace, struct nlattr **tb,
 	u32 prio;
 
 	prio = tb[P4TC_ENTRY_PRIO] ? nla_get_u32(tb[P4TC_ENTRY_PRIO]) : 0;
-	if (replace) {
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT && replace) {
 		if (!prio) {
 			NL_SET_ERR_MSG(extack, "Must specify entry priority");
 			return ERR_PTR(-EINVAL);
 		}
 	} else {
-		if (prio)
-			ret = ida_alloc_range(&table->tbl_prio_idr, prio,
-					      prio, GFP_ATOMIC);
-		else
-			ret = ida_alloc_min(&table->tbl_prio_idr, 1,
-					    GFP_ATOMIC);
-		if (ret < 0) {
-			NL_SET_ERR_MSG(extack,
-				       "Unable to allocate priority");
-			return ERR_PTR(ret);
+		if (table->tbl_type == P4TC_TABLE_TYPE_EXACT) {
+			if (prio) {
+				NL_SET_ERR_MSG(extack,
+					       "Mustn't specify entry priority for exact");
+				return ERR_PTR(-EINVAL);
+			}
+			prio = tcf_table_entry_alloc_new_prio(table);
+		} else {
+			if (prio)
+				ret = ida_alloc_range(&table->tbl_prio_idr,
+						      prio, prio, GFP_ATOMIC);
+			else
+				ret = tcf_table_entry_alloc_new_prio(table);
+			if (ret < 0) {
+				NL_SET_ERR_MSG(extack,
+					       "Unable to allocate priority");
+				return ERR_PTR(ret);
+			}
+			prio = ret;
 		}
-		prio = ret;
 
 		if (refcount_read(&table->tbl_entries_ref) > table->tbl_max_entries) {
 			NL_SET_ERR_MSG(extack,
@@ -1512,6 +1633,12 @@ __tcf_table_entry_cu(struct net *net, bool replace, struct nlattr **tb,
 		    p4tc_data_create_ok(nlperm)) {
 			NL_SET_ERR_MSG(extack,
 				       "Create permission for table entry doesn't make sense");
+			ret = -EINVAL;
+			goto free_entry;
+		}
+		if (!p4tc_ctrl_read_ok(nlperm)) {
+			NL_SET_ERR_MSG(extack,
+				       "Control path read permission must be set");
 			ret = -EINVAL;
 			goto free_entry;
 		}
@@ -1606,7 +1733,7 @@ free_entry:
 
 idr_rm:
 	if (!replace)
-		ida_free(&table->tbl_prio_idr, prio);
+		tcf_table_entry_free_prio(table, prio);
 
 	return ERR_PTR(ret);
 }
