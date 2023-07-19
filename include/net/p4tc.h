@@ -159,12 +159,40 @@ static inline bool pipeline_sealed(struct p4tc_pipeline *pipeline)
 	return pipeline->p_state == P4TC_STATE_READY;
 }
 
+struct p4tc_act *tcf_p4_find_act(struct net *net,
+				 const struct tc_action_ops *a_o);
+void
+tcf_p4_put_prealloc_act(struct p4tc_act *act, struct tcf_p4act *p4_act);
+
 static inline int p4tc_action_destroy(struct tc_action **acts)
 {
+	struct tc_action *acts_non_prealloc[TCA_ACT_MAX_PRIO] = {NULL};
 	int ret = 0;
 
 	if (acts) {
-		ret = tcf_action_destroy(acts, TCA_ACT_UNBIND);
+		int j = 0;
+		int i;
+
+		for (i = 0; i < TCA_ACT_MAX_PRIO && acts[i]; i++) {
+			if (acts[i]->tcfa_flags & TCA_ACT_FLAGS_PREALLOC) {
+				const struct tc_action_ops *ops;
+				struct tcf_p4act *p4act;
+				struct p4tc_act *act;
+				struct net *net;
+
+				p4act = (struct tcf_p4act *)acts[i];
+				net = acts[i]->idrinfo->net;
+				ops = acts[i]->ops;
+
+				act = tcf_p4_find_act(net, ops);
+				tcf_p4_put_prealloc_act(act, p4act);
+			} else {
+				acts_non_prealloc[j] = acts[i];
+				j++;
+			}
+		}
+
+		ret = tcf_action_destroy(acts_non_prealloc, TCA_ACT_UNBIND);
 		kfree(acts);
 	}
 
@@ -186,6 +214,7 @@ struct p4tc_table_entry_act_bpf {
 	u32 act_id;
 	u8 params[P4TC_MAX_PARAM_DATA_SIZE];
 } __packed;
+
 
 #define P4TC_EXT_FLAGS_UNSPEC 0x0
 #define P4TC_EXT_FLAGS_CONTROL_READ 0x1
@@ -288,8 +317,11 @@ struct p4tc_act {
 	struct idr                  params_idr;
 	struct tcf_exts             exts;
 	struct list_head            head;
+	struct list_head            prealloc_list;
+	spinlock_t                  list_lock;
 	u32                         a_id;
 	u32                         num_params;
+	u32                         num_prealloc_acts;
 	bool                        active;
 	refcount_t                  a_ref;
 };
@@ -438,13 +470,15 @@ static inline int p4tc_action_init(struct net *net, struct nlattr *nla,
 	return ret;
 
 destroy_acts:
-	tcf_action_destroy(acts, TCA_ACT_FLAGS_BIND);
+	p4tc_action_destroy(acts);
 	return ret;
 }
 
 struct p4tc_act *tcf_action_find_get(struct p4tc_pipeline *pipeline,
 				     const char *act_name, const u32 a_id,
 				     struct netlink_ext_ack *extack);
+struct p4tc_act *tcf_action_find_byid(struct p4tc_pipeline *pipeline,
+				      const u32 a_id);
 void tcf_action_put(struct p4tc_act *act);
 struct p4tc_act_param *tcf_param_find_byid(struct idr *params_idr,
 					   const u32 param_id);
@@ -555,6 +589,14 @@ static inline bool p4tc_runtime_msg_is_update(struct nlmsghdr *n)
 {
 	return n->nlmsg_type == RTM_P4TC_UPDATE;
 }
+int tcf_p4_prealloc_acts(struct p4tc_pipeline *pipeline,
+			 struct tc_action ***prealloc_acts,
+			 struct netlink_ext_ack *extack);
+void tcf_p4_prealloc_list_add(struct p4tc_pipeline *pipeline,
+			      struct tc_action **acts);
+struct tcf_p4act *
+tcf_p4_get_next_prealloc_act(struct p4tc_act *act);
+void tcf_p4_set_init_flags(struct tcf_p4act *p4act);
 
 extern const struct p4tc_act_param_ops param_ops[P4T_MAX + 1];
 

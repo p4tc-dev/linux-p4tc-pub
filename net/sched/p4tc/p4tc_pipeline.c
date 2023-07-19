@@ -216,7 +216,10 @@ static int __tcf_pipeline_put(struct p4tc_pipeline *pipeline,
 static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 					       struct netlink_ext_ack *extack)
 {
+	struct tc_action ***prealloc_acts;
+	int act_kinds_with_prealloc;
 	int ret;
+	int i;
 
 	if (pipeline->curr_tables != pipeline->num_tables) {
 		NL_SET_ERR_MSG(extack,
@@ -228,12 +231,41 @@ static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 	if (ret < 0)
 		return ret;
 
+	prealloc_acts = kcalloc(pipeline->num_created_acts,
+				sizeof(*prealloc_acts), GFP_KERNEL);
+	if (!prealloc_acts) {
+		ret = -ENOMEM;
+		goto unset_table_state_ready;
+	}
+
+	act_kinds_with_prealloc = tcf_p4_prealloc_acts(pipeline, prealloc_acts,
+						       extack);
+	if (act_kinds_with_prealloc < 0) {
+		ret = act_kinds_with_prealloc;
+		goto free_prealloc_acts;
+	}
+
 	ret = p4tc_extern_inst_init_elems(&pipeline->user_ext_idr);
 	if (ret < 0)
-		goto unset_table_state_ready;
+		goto destroy_prealloc_acts;
 
 	pipeline->p_state = P4TC_STATE_READY;
+
+	for (i = 0; i < act_kinds_with_prealloc; i++) {
+		tcf_p4_prealloc_list_add(pipeline, prealloc_acts[i]);
+		kfree(prealloc_acts[i]);
+	}
+
+	kfree(prealloc_acts);
+
 	return true;
+
+destroy_prealloc_acts:
+	for (i = 0; i < act_kinds_with_prealloc; i++)
+		tcf_action_destroy(prealloc_acts[i], 0);
+
+free_prealloc_acts:
+	kfree(prealloc_acts);
 
 unset_table_state_ready:
 	tcf_table_put_mask_array(pipeline);

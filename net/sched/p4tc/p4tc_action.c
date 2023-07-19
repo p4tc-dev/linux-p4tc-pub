@@ -35,59 +35,578 @@ static LIST_HEAD(dynact_list);
 
 #define SEPARATOR "/"
 
-static struct p4tc_act *tcf_action_find_byname(const char *act_name,
-					struct p4tc_pipeline *pipeline)
+static void set_param_indices(struct p4tc_act *act)
 {
-	char full_act_name[ACTPARAMNAMSIZ];
+	struct p4tc_act_param *param;
 	unsigned long tmp, id;
-	struct p4tc_act *act;
+	int i = 0;
 
-	snprintf(full_act_name, ACTNAMSIZ, "%s/%s", pipeline->common.name,
-		 act_name);
-	idr_for_each_entry_ul(&pipeline->p_act_idr, act, tmp, id)
-		if (strncmp(act->common.name, full_act_name, ACTNAMSIZ) == 0)
-			return act;
-
-	return NULL;
+	idr_for_each_entry_ul(&act->params_idr, param, tmp, id) {
+		param->index = i;
+		i++;
+	}
 }
 
-static struct p4tc_act *tcf_action_find_byid(struct p4tc_pipeline *pipeline,
+static int __tcf_p4_dyna_init(struct net *net, struct nlattr *est,
+			      struct p4tc_act *act, struct tc_act_dyna *parm,
+			      struct tc_action **a, struct tcf_proto *tp,
+			      struct tc_action_ops *a_o,
+			      struct tcf_chain **goto_ch, u32 flags,
+			      struct netlink_ext_ack *extack)
+{
+	bool bind = flags & TCA_ACT_FLAGS_BIND;
+	bool exists = false;
+	int ret = 0;
+	struct p4tc_pipeline *pipeline;
+	u32 index;
+	int err;
+
+	index = parm->index;
+
+	err = tcf_idr_check_alloc(act->tn, &index, a, bind);
+	if (err < 0)
+		return err;
+
+	exists = err;
+	if (!exists) {
+		struct tcf_p4act *p;
+
+		ret = tcf_idr_create(act->tn, index, est, a, a_o, bind, true,
+				     flags);
+		if (ret) {
+			tcf_idr_cleanup(act->tn, index);
+			return ret;
+		}
+
+		/* dyn_ref here should never be 0, because if we are here, it
+		 * means that a template action of this kind was created. Thus
+		 * dyn_ref should be at least 1. Also since this operation and
+		 * others that add or delete action templates run with
+		 * rtnl_lock held, we cannot do this op and a deletion op in
+		 * parallel.
+		 */
+		WARN_ON(!refcount_inc_not_zero(&a_o->dyn_ref));
+
+		pipeline = act->pipeline;
+
+		p = to_p4act(*a);
+		p->p_id = pipeline->common.p_id;
+		p->act_id = act->a_id;
+
+		ret = ACT_P_CREATED;
+	} else {
+		if (bind) /* dont override defaults */
+			return 0;
+		if (!(flags & TCA_ACT_FLAGS_REPLACE)) {
+			tcf_idr_cleanup(act->tn, index);
+			return -EEXIST;
+		}
+	}
+
+	err = tcf_action_check_ctrlact(parm->action, tp, goto_ch, extack);
+	if (err < 0) {
+		tcf_idr_release(*a, bind);
+		return err;
+	}
+
+	return ret;
+}
+
+static void generic_free_param_value(struct p4tc_act_param *param)
+{
+	kfree(param->value);
+	kfree(param->mask);
+}
+
+static void tcf_p4_act_params_destroy(struct tcf_p4act_params *params)
+{
+	struct p4tc_act_param *param;
+	unsigned long param_id, tmp;
+
+	idr_for_each_entry_ul(&params->params_idr, param, tmp, param_id) {
+		struct p4tc_act_param_ops *op;
+
+		idr_remove(&params->params_idr, param_id);
+		op = (struct p4tc_act_param_ops *)&param_ops[param->type->typeid];
+		if (op->free)
+			op->free(param);
+		else
+			generic_free_param_value(param);
+		kfree(param);
+	}
+
+	kfree(params->params_array);
+	idr_destroy(&params->params_idr);
+
+	kfree(params);
+}
+
+static void tcf_p4_act_params_destroy_rcu(struct rcu_head *head)
+{
+	struct tcf_p4act_params *params;
+
+	params = container_of(head, struct tcf_p4act_params, rcu);
+	tcf_p4_act_params_destroy(params);
+}
+
+static int __tcf_p4_dyna_init_set(struct p4tc_act *act, struct tc_action **a,
+				  struct tcf_p4act_params *params,
+				  struct tcf_chain *goto_ch,
+				  struct tc_act_dyna *parm, bool exists,
+				  struct netlink_ext_ack *extack)
+{
+	struct tcf_p4act_params *params_old;
+	struct tcf_p4act *p;
+
+	p = to_p4act(*a);
+
+	if (exists)
+		spin_lock_bh(&p->tcf_lock);
+
+	goto_ch = tcf_action_set_ctrlact(*a, parm->action, goto_ch);
+
+	params_old = rcu_replace_pointer(p->params, params, 1);
+	if (exists)
+		spin_unlock_bh(&p->tcf_lock);
+
+	if (goto_ch)
+		tcf_chain_put_by_act(goto_ch);
+
+	if (params_old)
+		call_rcu(&params_old->rcu, tcf_p4_act_params_destroy_rcu);
+
+	return 0;
+}
+
+int tcf_p4_dyna_template_init(struct net *net, struct tc_action **a,
+			      struct p4tc_act *act,
+			      struct list_head *params_list,
+			      struct tc_act_dyna *parm, u32 flags,
+			      struct netlink_ext_ack *extack);
+
+static struct tcf_p4act_params *tcf_p4_act_params_init(struct p4tc_act *act)
+{
+	struct tcf_p4act_params *params;
+
+	params = kzalloc(sizeof(*params), GFP_KERNEL);
+	if (!params)
+		return ERR_PTR(-ENOMEM);
+
+	params->params_array = kcalloc(act->num_params,
+				       sizeof(struct p4tc_act_param *),
+				       GFP_KERNEL);
+	if (!params->params_array) {
+		kfree(params);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	return params;
+}
+
+static struct p4tc_act_param *
+init_prealloc_param(struct p4tc_act *act, unsigned long *param_id,
+		    struct netlink_ext_ack *extack)
+{
+	struct p4tc_act_param *nparam;
+	struct p4tc_act_param *param;
+	void *value;
+
+	param = idr_get_next_ul(&act->params_idr, param_id);
+	if (!param) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Act has less runtime parameters than passed in call");
+		return ERR_PTR(-EINVAL);
+	}
+
+	nparam = kzalloc(sizeof(*nparam), GFP_KERNEL);
+	if (!nparam)
+		return ERR_PTR(-ENOMEM);
+
+	value = kzalloc(BITS_TO_BYTES(param->type->container_bitsz),
+			GFP_KERNEL);
+	if (!value) {
+		kfree(nparam);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	strscpy(nparam->name, param->name, ACTPARAMNAMSIZ);
+	nparam->id = *param_id;
+	nparam->value = value;
+	nparam->type = param->type;
+
+	return nparam;
+}
+
+static int init_prealloc_params(struct p4tc_act *act,
+				struct list_head *params_lst,
+				struct netlink_ext_ack *extack)
+{
+	struct p4tc_act_param *params[P4TC_MSGBATCH_SIZE] = { NULL };
+	struct p4tc_act_param *param;
+	unsigned long param_id = 0;
+	unsigned long tmp;
+	int i = 0;
+	int err;
+
+	idr_for_each_entry_ul(&act->params_idr, param, tmp, param_id) {
+		struct p4tc_act_param *nparam;
+
+		nparam = init_prealloc_param(act, &param_id, extack);
+		if (IS_ERR(nparam)) {
+			err = PTR_ERR(nparam);
+			goto free_params;
+		}
+
+		params[i] = nparam;
+		list_add_tail(&nparam->head, params_lst);
+		i++;
+	}
+
+	return 0;
+
+free_params:
+	while (i--)
+		kfree(params[i]);
+
+	return err;
+}
+
+struct p4tc_act *tcf_action_find_byid(struct p4tc_pipeline *pipeline,
 				      const u32 a_id)
 {
 	return idr_find(&pipeline->p_act_idr, a_id);
 }
 
-static struct p4tc_act *tcf_action_find_byany(struct p4tc_pipeline *pipeline,
-				       const char *act_name, const u32 a_id,
-				       struct netlink_ext_ack *extack)
+void tcf_p4_prealloc_list_add(struct p4tc_pipeline *pipeline,
+			      struct tc_action **acts)
 {
+	struct tcf_p4act *first_p4act = to_p4act(acts[0]);
+	u32 num_prealloc_acts;
 	struct p4tc_act *act;
+	int i;
+
+	/* Will never return NULL */
+	act = tcf_action_find_byid(pipeline, first_p4act->act_id);
+	num_prealloc_acts = act->num_prealloc_acts;
+
+	for (i = 0; i < num_prealloc_acts; i++) {
+		struct tcf_p4act *p4act = to_p4act(acts[i]);
+
+		list_add_tail(&p4act->node, &act->prealloc_list);
+	}
+
+	tcf_idr_insert_n(acts, num_prealloc_acts);
+}
+
+static void free_intermediate_param(struct p4tc_act_param *param)
+{
+	kfree(param->value);
+	kfree(param);
+}
+
+static void free_intermediate_params_list(struct list_head *params_list)
+{
+	struct p4tc_act_param *nparam, *p;
+
+	list_for_each_entry_safe(nparam, p, params_list, head) {
+		free_intermediate_param(nparam);
+	}
+}
+
+static int __tcf_p4_prealloc_acts(struct net *net, struct p4tc_act *act,
+				  struct tc_action **acts,
+				  struct netlink_ext_ack *extack)
+{
+	u32 flags = TCA_ACT_FLAGS_PREALLOC | TCA_ACT_FLAGS_UNUSED;
+	int err;
+	int i;
+
+	for (i = 0; i < act->num_prealloc_acts; i++) {
+		struct tc_action *a = acts[i];
+		struct tc_act_dyna parm = {0};
+		struct list_head params_list;
+		struct tcf_p4act *p4act;
+
+		parm.index = i + 1;
+		parm.action = TC_ACT_PIPE;
+
+		INIT_LIST_HEAD(&params_list);
+
+		err = init_prealloc_params(act, &params_list, extack);
+		if (err < 0)
+			goto destroy_acts;
+
+		err = tcf_p4_dyna_template_init(net, &a, act, &params_list,
+						&parm, flags, extack);
+		if (err < 0) {
+			free_intermediate_params_list(&params_list);
+			goto destroy_acts;
+		}
+
+		acts[i] = a;
+		p4act = to_p4act(a);
+	}
+
+	return 0;
+
+destroy_acts:
+	tcf_action_destroy(acts, false);
+
+	return err;
+}
+
+int tcf_p4_prealloc_acts(struct p4tc_pipeline *pipeline,
+			 struct tc_action ***prealloc_acts,
+			 struct netlink_ext_ack *extack)
+{
+	unsigned long tmp, act_id;
+	struct p4tc_act *act;
+	int i = 0;
 	int err;
 
-	if (a_id) {
-		act = tcf_action_find_byid(pipeline, a_id);
-		if (!act) {
-			NL_SET_ERR_MSG(extack, "Unable to find action by id");
-			err = -ENOENT;
+	idr_for_each_entry_ul(&pipeline->p_act_idr, act, tmp, act_id) {
+		struct tc_action **acts;
+
+		if (!act->num_prealloc_acts)
+			continue;
+
+		acts = kcalloc(act->num_prealloc_acts, sizeof(*acts),
+			       GFP_KERNEL);
+		if (!acts) {
+			err = -ENOMEM;
+			goto free_prealloc_acts;
+		}
+
+		err = __tcf_p4_prealloc_acts(pipeline->net, act, acts, extack);
+		if (err < 0) {
+			kfree(acts);
+			goto free_prealloc_acts;
+		}
+		prealloc_acts[i] = acts;
+		i++;
+	}
+
+	return i;
+
+free_prealloc_acts:
+	while (prealloc_acts[i]) {
+		tcf_action_destroy(prealloc_acts[i], 0);
+		i--;
+	}
+	kfree(prealloc_acts);
+	return err;
+}
+
+/* Need to implement after preallocating */
+struct tcf_p4act *
+tcf_p4_get_next_prealloc_act(struct p4tc_act *act)
+{
+	struct tcf_p4act *p4_act;
+
+	spin_lock(&act->list_lock);
+	p4_act = list_first_entry_or_null(&act->prealloc_list, struct tcf_p4act,
+					  node);
+	if (p4_act) {
+		list_del_init(&p4_act->node);
+		refcount_set(&p4_act->common.tcfa_refcnt, 1);
+		atomic_set(&p4_act->common.tcfa_bindcnt, 1);
+	}
+	spin_unlock(&act->list_lock);
+
+	return p4_act;
+}
+
+void tcf_p4_set_init_flags(struct tcf_p4act *p4act)
+{
+	struct tc_action *a;
+
+	a = (struct tc_action *)p4act;
+	a->tcfa_flags &= ~TCA_ACT_FLAGS_UNUSED;
+}
+
+static void __tcf_p4_put_prealloc_act(struct p4tc_act *act,
+				      struct tcf_p4act *p4act)
+{
+	struct p4tc_act_param *param;
+	unsigned long param_id, tmp;
+
+	idr_for_each_entry_ul(&p4act->params->params_idr, param, tmp, param_id) {
+		const struct p4tc_type *type = param->type;
+		const u32 type_bytesz = BITS_TO_BYTES(type->container_bitsz);
+
+		memset(param->value, 0, type_bytesz);
+	}
+	p4act->common.tcfa_flags |= TCA_ACT_FLAGS_UNUSED;
+
+	spin_lock(&act->list_lock);
+	list_add_tail(&p4act->node, &act->prealloc_list);
+	spin_unlock(&act->list_lock);
+}
+
+void
+tcf_p4_put_prealloc_act(struct p4tc_act *act, struct tcf_p4act *p4act)
+{
+	if (refcount_read(&p4act->common.tcfa_refcnt) == 1) {
+		__tcf_p4_put_prealloc_act(act, p4act);
+	} else {
+		refcount_dec(&p4act->common.tcfa_refcnt);
+		atomic_dec(&p4act->common.tcfa_bindcnt);
+	}
+}
+
+static const struct nla_policy p4tc_act_params_policy[P4TC_ACT_PARAMS_MAX + 1] = {
+	[P4TC_ACT_PARAMS_NAME] = { .type = NLA_STRING, .len = ACTPARAMNAMSIZ },
+	[P4TC_ACT_PARAMS_ID] = { .type = NLA_U32 },
+	[P4TC_ACT_PARAMS_VALUE] = { .type = NLA_NESTED },
+	[P4TC_ACT_PARAMS_MASK] = { .type = NLA_BINARY },
+	[P4TC_ACT_PARAMS_TYPE] = { .type = NLA_U32 },
+};
+
+static const struct nla_policy p4tc_act_params_value_policy[P4TC_ACT_VALUE_PARAMS_MAX + 1] = {
+	[P4TC_ACT_PARAMS_VALUE_RAW] = { .type = NLA_BINARY },
+};
+
+static int generic_dump_param_value(struct sk_buff *skb, struct p4tc_type *type,
+				    struct p4tc_act_param *param)
+{
+	const u32 bytesz = BITS_TO_BYTES(type->container_bitsz);
+	unsigned char *b = nlmsg_get_pos(skb);
+	struct nlattr *nla_value;
+
+	nla_value = nla_nest_start(skb, P4TC_ACT_PARAMS_VALUE);
+	if (nla_put(skb, P4TC_ACT_PARAMS_VALUE_RAW, bytesz,
+		    param->value))
+		goto out_nlmsg_trim;
+	nla_nest_end(skb, nla_value);
+
+	if (param->mask &&
+	    nla_put(skb, P4TC_ACT_PARAMS_MASK, bytesz, param->mask))
+		goto out_nlmsg_trim;
+
+	return 0;
+
+out_nlmsg_trim:
+	nlmsg_trim(skb, b);
+	return -1;
+}
+
+static int generic_init_param_value(struct p4tc_act_param *nparam,
+				    struct p4tc_type *type, struct nlattr **tb,
+				    struct netlink_ext_ack *extack)
+{
+	const u32 alloc_len = BITS_TO_BYTES(type->container_bitsz);
+	const u32 len = BITS_TO_BYTES(type->bitsz);
+	struct nlattr *tb_value[P4TC_ACT_VALUE_PARAMS_MAX + 1];
+	void *value;
+	int err;
+
+	if (!tb[P4TC_ACT_PARAMS_VALUE]) {
+		NL_SET_ERR_MSG(extack, "Must specify param value");
+		return -EINVAL;
+	}
+
+	err = nla_parse_nested(tb_value, P4TC_ACT_VALUE_PARAMS_MAX,
+			       tb[P4TC_ACT_PARAMS_VALUE],
+			       p4tc_act_params_value_policy, extack);
+	if (err < 0)
+		return err;
+
+	value = nla_data(tb_value[P4TC_ACT_PARAMS_VALUE_RAW]);
+	if (type->ops->validate_p4t) {
+		err = type->ops->validate_p4t(type, value, 0, type->bitsz - 1,
+					      extack);
+		if (err < 0)
+			return err;
+	}
+
+	if (nla_len(tb_value[P4TC_ACT_PARAMS_VALUE_RAW]) != len)
+		return -EINVAL;
+
+	nparam->value = kzalloc(alloc_len, GFP_KERNEL);
+	if (!nparam->value)
+		return -ENOMEM;
+
+	memcpy(nparam->value, value, len);
+
+	if (tb[P4TC_ACT_PARAMS_MASK]) {
+		const void *mask = nla_data(tb[P4TC_ACT_PARAMS_MASK]);
+
+		if (nla_len(tb[P4TC_ACT_PARAMS_MASK]) != len) {
+			NL_SET_ERR_MSG(extack,
+				       "Mask length differs from template's");
+			err = -EINVAL;
+			goto free_value;
+		}
+
+		nparam->mask = kzalloc(alloc_len, GFP_KERNEL);
+		if (!nparam->mask) {
+			err = -ENOMEM;
+			goto free_value;
+		}
+
+		memcpy(nparam->mask, mask, len);
+	}
+
+	return 0;
+
+free_value:
+	kfree(nparam->value);
+	return err;
+}
+
+static struct p4tc_act_param *param_find_byname(struct idr *params_idr,
+						const char *param_name)
+{
+	struct p4tc_act_param *param;
+	unsigned long tmp, id;
+
+	idr_for_each_entry_ul(params_idr, param, tmp, id) {
+		if (param == ERR_PTR(-EBUSY))
+			continue;
+		if (strncmp(param->name, param_name, ACTPARAMNAMSIZ) == 0)
+			return param;
+	}
+
+	return NULL;
+}
+
+struct p4tc_act_param *tcf_param_find_byid(struct idr *params_idr,
+					   const u32 param_id)
+{
+	return idr_find(params_idr, param_id);
+}
+
+struct p4tc_act_param *tcf_param_find_byany(struct p4tc_act *act,
+					    const char *param_name,
+					    const u32 param_id,
+					    struct netlink_ext_ack *extack)
+{
+	struct p4tc_act_param *param;
+	int err;
+
+	if (param_id) {
+		param = tcf_param_find_byid(&act->params_idr, param_id);
+		if (!param) {
+			NL_SET_ERR_MSG(extack, "Unable to find param by id");
+			err = -EINVAL;
 			goto out;
 		}
 	} else {
-		if (act_name) {
-			act = tcf_action_find_byname(act_name, pipeline);
-			if (!act) {
-				NL_SET_ERR_MSG(extack, "Action name not found");
-				err = -ENOENT;
+		if (param_name) {
+			param = param_find_byname(&act->params_idr, param_name);
+			if (!param) {
+				NL_SET_ERR_MSG(extack, "Param name not found");
+				err = -EINVAL;
 				goto out;
 			}
 		} else {
-			NL_SET_ERR_MSG(extack,
-				       "Must specify action name or id");
+			NL_SET_ERR_MSG(extack, "Must specify param name or id");
 			err = -EINVAL;
 			goto out;
 		}
 	}
 
-	return act;
+	return param;
 
 out:
 	return ERR_PTR(err);
@@ -105,9 +624,250 @@ tcf_param_find_byanyattr(struct p4tc_act *act, struct nlattr *name_attr,
 	return tcf_param_find_byany(act, param_name, param_id, extack);
 }
 
-static const struct nla_policy p4tc_act_params_value_policy[P4TC_ACT_VALUE_PARAMS_MAX + 1] = {
-	[P4TC_ACT_PARAMS_VALUE_RAW] = { .type = NLA_BINARY },
-};
+static int tcf_p4_act_init_param(struct net *net,
+				 struct tcf_p4act_params *params,
+				 struct p4tc_act *act, struct nlattr *nla,
+				 struct netlink_ext_ack *extack)
+{
+	u32 param_id = 0;
+	struct nlattr *tb[P4TC_ACT_PARAMS_MAX + 1];
+	struct p4tc_act_param *param, *nparam;
+	struct p4tc_act_param_ops *op;
+	int err;
+
+	err = nla_parse_nested(tb, P4TC_ACT_PARAMS_MAX, nla,
+			       p4tc_act_params_policy, extack);
+	if (err < 0)
+		return err;
+
+	if (tb[P4TC_ACT_PARAMS_ID])
+		param_id = nla_get_u32(tb[P4TC_ACT_PARAMS_ID]);
+
+	param = tcf_param_find_byanyattr(act, tb[P4TC_ACT_PARAMS_NAME],
+					 param_id, extack);
+	if (IS_ERR(param))
+		return PTR_ERR(param);
+
+	if (tb[P4TC_ACT_PARAMS_TYPE]) {
+		u32 typeid = nla_get_u32(tb[P4TC_ACT_PARAMS_TYPE]);
+
+		if (param->type->typeid != typeid) {
+			NL_SET_ERR_MSG(extack,
+				       "Param type differs from template");
+			return -EINVAL;
+		}
+	} else {
+		NL_SET_ERR_MSG(extack, "Must specify param type");
+		return -EINVAL;
+	}
+
+	nparam = kzalloc(sizeof(*nparam), GFP_KERNEL);
+	if (!nparam)
+		return -ENOMEM;
+
+	strscpy(nparam->name, param->name, ACTPARAMNAMSIZ);
+	nparam->type = param->type;
+
+	op = (struct p4tc_act_param_ops *)&param_ops[param->type->typeid];
+	if (op->init_value)
+		err = op->init_value(net, op, nparam, tb, extack);
+	else
+		err = generic_init_param_value(nparam, nparam->type, tb, extack);
+
+	if (err < 0)
+		goto free;
+
+	nparam->id = param->id;
+	nparam->index = param->index;
+
+	err = idr_alloc_u32(&params->params_idr, nparam, &nparam->id,
+			    nparam->id, GFP_KERNEL);
+	if (err < 0)
+		goto free_val;
+
+	params->params_array[param->index] = nparam;
+
+	return 0;
+
+free_val:
+	if (op->free)
+		op->free(nparam);
+	else
+		generic_free_param_value(nparam);
+
+free:
+	kfree(nparam);
+	return err;
+}
+
+static int tcf_p4_act_init_params(struct net *net,
+				  struct tcf_p4act_params *params,
+				  struct p4tc_act *act, struct nlattr *nla,
+				  struct netlink_ext_ack *extack)
+{
+	struct nlattr *tb[P4TC_MSGBATCH_SIZE + 1];
+	int err;
+	int i;
+
+	err = nla_parse_nested(tb, P4TC_MSGBATCH_SIZE, nla, NULL, NULL);
+	if (err < 0)
+		return err;
+
+	for (i = 1; i < P4TC_MSGBATCH_SIZE + 1 && tb[i]; i++) {
+		err = tcf_p4_act_init_param(net, params, act, tb[i], extack);
+		if (err < 0)
+			return err;
+	}
+
+	return 0;
+}
+
+static struct p4tc_act *tcf_action_find_byname(const char *act_name,
+					       struct p4tc_pipeline *pipeline)
+{
+	char full_act_name[ACTPARAMNAMSIZ];
+	unsigned long tmp, id;
+	struct p4tc_act *act;
+
+	snprintf(full_act_name, ACTNAMSIZ, "%s/%s", pipeline->common.name,
+		 act_name);
+	idr_for_each_entry_ul(&pipeline->p_act_idr, act, tmp, id)
+		if (strncmp(act->common.name, full_act_name, ACTNAMSIZ) == 0)
+			return act;
+
+	return NULL;
+}
+
+struct p4tc_act *tcf_p4_find_act(struct net *net,
+				 const struct tc_action_ops *a_o)
+{
+	char *act_name_clone, *act_name, *p_name;
+	struct p4tc_pipeline *pipeline;
+	struct p4tc_act *act;
+	int err;
+
+	act_name_clone = act_name = kstrdup(a_o->kind, GFP_KERNEL);
+	if (!act_name)
+		return ERR_PTR(-ENOMEM);
+
+	p_name = strsep(&act_name, SEPARATOR);
+	pipeline = tcf_pipeline_find_byany(net, p_name, 0, NULL);
+	if (IS_ERR(pipeline)) {
+		err = -ENOENT;
+		goto free_act_name;
+	}
+
+	act = tcf_action_find_byname(act_name, pipeline);
+	if (!act) {
+		err = -ENOENT;
+		goto free_act_name;
+	}
+	kfree(act_name_clone);
+
+	return act;
+
+free_act_name:
+	kfree(act_name_clone);
+	return ERR_PTR(err);
+}
+
+static int tcf_p4_dyna_init(struct net *net, struct nlattr *nla,
+			    struct nlattr *est, struct tc_action **a,
+			    struct tcf_proto *tp, struct tc_action_ops *a_o,
+			    u32 flags, struct netlink_ext_ack *extack)
+{
+	bool bind = flags & TCA_ACT_FLAGS_BIND;
+	struct tcf_chain *goto_ch = NULL;
+	bool exists = false;
+	int ret = 0;
+	struct nlattr *tb[P4TC_ACT_MAX + 1];
+	struct tcf_p4act_params *params;
+	struct tc_act_dyna *parm;
+	struct p4tc_act *act;
+	int err;
+
+	if (flags & TCA_ACT_FLAGS_BIND &&
+	    !(flags & TCA_ACT_FLAGS_FROM_P4TC)) {
+		NL_SET_ERR_MSG(extack,
+			       "Can only bind to dynamic action from P4TC objects");
+		return -EPERM;
+	}
+
+	if (!nla) {
+		NL_SET_ERR_MSG(extack,
+			       "Must specify action netlink attributes");
+		return -EINVAL;
+	}
+
+	err = nla_parse_nested(tb, P4TC_ACT_MAX, nla, NULL, extack);
+	if (err < 0)
+		return err;
+
+	if (!tb[P4TC_ACT_OPT]) {
+		NL_SET_ERR_MSG(extack,
+			       "Must specify option netlink attributes");
+		return -EINVAL;
+	}
+
+	act = tcf_p4_find_act(net, a_o);
+	if (IS_ERR(act))
+		return PTR_ERR(act);
+
+	if (!act->active) {
+		NL_SET_ERR_MSG(extack,
+			       "Dynamic action must be active to create instance");
+		return -EINVAL;
+	}
+
+	parm = nla_data(tb[P4TC_ACT_OPT]);
+
+	ret = __tcf_p4_dyna_init(net, est, act, parm, a, tp, a_o, &goto_ch,
+				 flags, extack);
+	if (ret < 0)
+		return ret;
+	if (bind && !ret)
+		return 0;
+
+	err = tcf_action_check_ctrlact(parm->action, tp, &goto_ch, extack);
+	if (err < 0)
+		goto release_idr;
+
+	params = tcf_p4_act_params_init(act);
+	if (IS_ERR(params)) {
+		err = PTR_ERR(params);
+		goto release_idr;
+	}
+
+	idr_init(&params->params_idr);
+	if (tb[P4TC_ACT_PARMS]) {
+		err = tcf_p4_act_init_params(net, params, act,
+					     tb[P4TC_ACT_PARMS], extack);
+		if (err < 0)
+			goto release_params;
+	} else {
+		if (!idr_is_empty(&act->params_idr)) {
+			NL_SET_ERR_MSG(extack,
+				       "Must specify action parameters");
+			err = -EINVAL;
+			goto release_params;
+		}
+	}
+
+	exists = ret != ACT_P_CREATED;
+	err = __tcf_p4_dyna_init_set(act, a, params, goto_ch, parm, exists,
+				     extack);
+	if (err < 0)
+		goto release_params;
+
+	return ret;
+
+release_params:
+	tcf_p4_act_params_destroy(params);
+
+release_idr:
+	tcf_idr_release(*a, bind);
+	return err;
+}
 
 static int dev_init_param_value(struct net *net, struct p4tc_act_param_ops *op,
 				struct p4tc_act_param *nparam,
@@ -178,70 +938,6 @@ static void dev_free_param_value(struct p4tc_act_param *param)
 	kfree(param->value);
 }
 
-static int generic_init_param_value(struct p4tc_act_param *nparam,
-				    struct p4tc_type *type, struct nlattr **tb,
-				    struct netlink_ext_ack *extack)
-{
-	const u32 alloc_len = BITS_TO_BYTES(type->container_bitsz);
-	struct nlattr *tb_value[P4TC_ACT_VALUE_PARAMS_MAX + 1];
-	const u32 len = BITS_TO_BYTES(type->bitsz);
-	void *value;
-	int err;
-
-	if (!tb[P4TC_ACT_PARAMS_VALUE]) {
-		NL_SET_ERR_MSG(extack, "Must specify param value");
-		return -EINVAL;
-	}
-
-	err = nla_parse_nested(tb_value, P4TC_ACT_VALUE_PARAMS_MAX,
-			       tb[P4TC_ACT_PARAMS_VALUE],
-			       p4tc_act_params_value_policy, extack);
-	if (err < 0)
-		return err;
-
-	value = nla_data(tb_value[P4TC_ACT_PARAMS_VALUE_RAW]);
-	if (type->ops->validate_p4t) {
-		err = type->ops->validate_p4t(type, value, 0, type->bitsz - 1,
-					      extack);
-		if (err < 0)
-			return err;
-	}
-
-	if (nla_len(tb_value[P4TC_ACT_PARAMS_VALUE_RAW]) != len)
-		return -EINVAL;
-
-	nparam->value = kzalloc(alloc_len, GFP_KERNEL);
-	if (!nparam->value)
-		return -ENOMEM;
-
-	memcpy(nparam->value, value, len);
-
-	if (tb[P4TC_ACT_PARAMS_MASK]) {
-		const void *mask = nla_data(tb[P4TC_ACT_PARAMS_MASK]);
-
-		if (nla_len(tb[P4TC_ACT_PARAMS_MASK]) != len) {
-			NL_SET_ERR_MSG(extack,
-				       "Mask length differs from template's");
-			err = -EINVAL;
-			goto free_value;
-		}
-
-		nparam->mask = kzalloc(alloc_len, GFP_KERNEL);
-		if (!nparam->mask) {
-			err = -ENOMEM;
-			goto free_value;
-		}
-
-		memcpy(nparam->mask, mask, len);
-	}
-
-	return 0;
-
-free_value:
-	kfree(nparam->value);
-	return err;
-}
-
 const struct p4tc_act_param_ops param_ops[P4T_MAX + 1] = {
 	[P4T_DEV] = {
 		.init_value = dev_init_param_value,
@@ -250,334 +946,47 @@ const struct p4tc_act_param_ops param_ops[P4T_MAX + 1] = {
 	},
 };
 
-static void p4tc_free_param_value(struct p4tc_act_param *param)
+static int tcf_p4_act_init_params_list(struct p4tc_act *act,
+				       struct tcf_p4act_params *params,
+				       struct list_head *params_list)
 {
-	kfree(param->value);
-	kfree(param->mask);
-}
+	struct p4tc_act_param *nparam, *tmp;
+	u32 tot_params_sz = 0;
+	int err;
 
-static void tcf_p4_act_params_destroy(struct tcf_p4act_params *params)
-{
-	struct p4tc_act_param *param;
-	unsigned long param_id, tmp;
+	list_for_each_entry_safe(nparam, tmp, params_list, head) {
 
-	idr_for_each_entry_ul(&params->params_idr, param, tmp, param_id) {
-		struct p4tc_act_param_ops *op;
-
-		idr_remove(&params->params_idr, param_id);
-		op = (struct p4tc_act_param_ops *)&param_ops[param->type->typeid];
-		if (op->free)
-			op->free(param);
-		else
-			p4tc_free_param_value(param);
-		kfree(param);
+		err = idr_alloc_u32(&params->params_idr, nparam, &nparam->id,
+				    nparam->id, GFP_KERNEL);
+		if (err < 0)
+			return err;
+		list_del(&nparam->head);
+		params->num_params++;
+		tot_params_sz += nparam->type->container_bitsz;
 	}
+	/* Sum act_id */
+	params->tot_params_sz = tot_params_sz + (sizeof(u32) << 3);
 
-	kfree(params->params_array);
-	idr_destroy(&params->params_idr);
-
-	kfree(params);
+	return 0;
 }
 
-static void tcf_p4_act_params_destroy_rcu(struct rcu_head *head)
-{
-	struct tcf_p4act_params *params;
-
-	params = container_of(head, struct tcf_p4act_params, rcu);
-	tcf_p4_act_params_destroy(params);
-}
-
-static void set_param_indices(struct p4tc_act *act)
-{
-	struct p4tc_act_param *param;
-	unsigned long tmp, id;
-	int i = 0;
-
-	idr_for_each_entry_ul(&act->params_idr, param, tmp, id) {
-		param->index = i;
-		i++;
-	}
-}
-
-static int __tcf_p4_dyna_init(struct net *net, struct nlattr *est,
-			      struct p4tc_act *act, struct tc_act_dyna *parm,
-			      struct tc_action **a, struct tcf_proto *tp,
-			      struct tc_action_ops *a_o,
-			      struct tcf_chain **goto_ch, u32 flags,
+/* This is the action instantiation that is invoked from the template code,
+ * specifically when initialising preallocated dynamic actions.
+ * This functions is analogous to tcf_p4_dyna_init.
+ */
+int tcf_p4_dyna_template_init(struct net *net, struct tc_action **a,
+			      struct p4tc_act *act,
+			      struct list_head *params_list,
+			      struct tc_act_dyna *parm, u32 flags,
 			      struct netlink_ext_ack *extack)
 {
 	bool bind = flags & TCA_ACT_FLAGS_BIND;
-	struct p4tc_pipeline *pipeline;
-	bool exists = false;
-	int ret = 0;
-	u32 index;
-	int err;
-
-	index = parm->index;
-
-	err = tcf_idr_check_alloc(act->tn, &index, a, bind);
-	if (err < 0)
-		return err;
-
-	exists = err;
-	if (!exists) {
-		struct tcf_p4act *p;
-
-		ret = tcf_idr_create(act->tn, index, est, a, a_o, bind, true,
-				     flags);
-		if (ret) {
-			tcf_idr_cleanup(act->tn, index);
-			return ret;
-		}
-
-		/* dyn_ref here should never be 0, because if we are here, it
-		 * means that a template action of this kind was created. Thus
-		 * dyn_ref should be at least 1. Also since this operation and
-		 * others that add or delete action templates run with
-		 * rtnl_lock held, we cannot do this op and a deletion op in
-		 * parallel.
-		 */
-		WARN_ON(!refcount_inc_not_zero(&a_o->dyn_ref));
-
-		pipeline = act->pipeline;
-
-		p = to_p4act(*a);
-		p->p_id = pipeline->common.p_id;
-		p->act_id = act->a_id;
-
-		ret = ACT_P_CREATED;
-	} else {
-		if (bind) /* dont override defaults */
-			return 0;
-		if (!(flags & TCA_ACT_FLAGS_REPLACE)) {
-			tcf_idr_cleanup(act->tn, index);
-			return -EEXIST;
-		}
-	}
-
-	err = tcf_action_check_ctrlact(parm->action, tp, goto_ch, extack);
-	if (err < 0) {
-		tcf_idr_release(*a, bind);
-		return err;
-	}
-
-	return ret;
-}
-
-static int __tcf_p4_dyna_init_set(struct p4tc_act *act, struct tc_action **a,
-				  struct tcf_p4act_params *params,
-				  struct tcf_chain *goto_ch,
-				  struct tc_act_dyna *parm, bool exists,
-				  struct netlink_ext_ack *extack)
-{
-	struct tcf_p4act_params *params_old;
-	struct tcf_p4act *p;
-
-	p = to_p4act(*a);
-
-	if (exists)
-		spin_lock_bh(&p->tcf_lock);
-
-	goto_ch = tcf_action_set_ctrlact(*a, parm->action, goto_ch);
-
-	params_old = rcu_replace_pointer(p->params, params, 1);
-	if (exists)
-		spin_unlock_bh(&p->tcf_lock);
-
-	if (goto_ch)
-		tcf_chain_put_by_act(goto_ch);
-
-	if (params_old)
-		call_rcu(&params_old->rcu, tcf_p4_act_params_destroy_rcu);
-
-	return 0;
-}
-
-static struct p4tc_act *tcf_p4_find_act(struct net *net,
-					const struct tc_action_ops *a_o)
-{
-	char *act_name_clone, *act_name, *p_name;
-	struct p4tc_pipeline *pipeline;
-	struct p4tc_act *act;
-	int err;
-
-	act_name_clone = act_name = kstrdup(a_o->kind, GFP_KERNEL);
-	if (!act_name)
-		return ERR_PTR(-ENOMEM);
-
-	p_name = strsep(&act_name, SEPARATOR);
-	pipeline = tcf_pipeline_find_byany(net, p_name, 0, NULL);
-	if (IS_ERR(pipeline)) {
-		err = -ENOENT;
-		goto free_act_name;
-	}
-
-	act = tcf_action_find_byname(act_name, pipeline);
-	if (!act) {
-		err = -ENOENT;
-		goto free_act_name;
-	}
-	kfree(act_name_clone);
-
-	return act;
-
-free_act_name:
-	kfree(act_name_clone);
-	return ERR_PTR(err);
-}
-
-static const struct nla_policy p4tc_act_params_policy[P4TC_ACT_PARAMS_MAX + 1] = {
-	[P4TC_ACT_PARAMS_NAME] = { .type = NLA_STRING, .len = ACTPARAMNAMSIZ },
-	[P4TC_ACT_PARAMS_ID] = { .type = NLA_U32 },
-	[P4TC_ACT_PARAMS_VALUE] = { .type = NLA_NESTED },
-	[P4TC_ACT_PARAMS_MASK] = { .type = NLA_BINARY },
-	[P4TC_ACT_PARAMS_TYPE] = { .type = NLA_U32 },
-};
-
-static int tcf_p4_act_init_param(struct net *net,
-				 struct tcf_p4act_params *params,
-				 struct p4tc_act *act, struct nlattr *nla,
-				 struct netlink_ext_ack *extack)
-{
-	struct nlattr *tb[P4TC_ACT_PARAMS_MAX + 1];
-	struct p4tc_act_param *param, *nparam;
-	struct p4tc_act_param_ops *op;
-	u32 param_id = 0;
-	int err;
-
-	err = nla_parse_nested(tb, P4TC_ACT_PARAMS_MAX, nla,
-			       p4tc_act_params_policy, extack);
-	if (err < 0)
-		return err;
-
-	if (tb[P4TC_ACT_PARAMS_ID])
-		param_id = nla_get_u32(tb[P4TC_ACT_PARAMS_ID]);
-
-	param = tcf_param_find_byanyattr(act, tb[P4TC_ACT_PARAMS_NAME],
-					 param_id, extack);
-	if (IS_ERR(param))
-		return PTR_ERR(param);
-
-	if (tb[P4TC_ACT_PARAMS_TYPE]) {
-		u32 typeid = nla_get_u32(tb[P4TC_ACT_PARAMS_TYPE]);
-
-		if (param->type->typeid != typeid) {
-			NL_SET_ERR_MSG(extack,
-				       "Param type differs from template");
-			return -EINVAL;
-		}
-	} else {
-		NL_SET_ERR_MSG(extack, "Must specify param type");
-		return -EINVAL;
-	}
-
-	nparam = kzalloc(sizeof(*nparam), GFP_KERNEL);
-	if (!nparam)
-		return -ENOMEM;
-
-	strscpy(nparam->name, param->name, ACTPARAMNAMSIZ);
-	nparam->type = param->type;
-
-	op = (struct p4tc_act_param_ops *)&param_ops[param->type->typeid];
-	if (op->init_value)
-		err = op->init_value(net, op, nparam, tb, extack);
-	else
-		err = generic_init_param_value(nparam, nparam->type, tb, extack);
-
-	if (err < 0)
-		goto free;
-
-	nparam->id = param->id;
-	nparam->index = param->index;
-
-	err = idr_alloc_u32(&params->params_idr, nparam, &nparam->id,
-			    nparam->id, GFP_KERNEL);
-	if (err < 0)
-		goto free_val;
-
-	params->params_array[param->index] = nparam;
-
-	return 0;
-
-free_val:
-	if (op->free)
-		op->free(nparam);
-	else
-		p4tc_free_param_value(nparam);
-
-free:
-	kfree(nparam);
-	return err;
-}
-
-static int tcf_p4_act_init_params(struct net *net, struct tcf_p4act_params *params,
-			   struct p4tc_act *act, struct nlattr *nla,
-			   struct netlink_ext_ack *extack)
-{
-	struct nlattr *tb[P4TC_MSGBATCH_SIZE + 1];
-	int err;
-	int i;
-
-	err = nla_parse_nested(tb, P4TC_MSGBATCH_SIZE, nla, NULL, NULL);
-	if (err < 0)
-		return err;
-
-	params->params_array = kcalloc(act->num_params,
-				       sizeof(struct p4tc_act_param *),
-				       GFP_KERNEL);
-	if (!params->params_array)
-		return -ENOMEM;
-
-	for (i = 1; i < P4TC_MSGBATCH_SIZE + 1 && tb[i]; i++) {
-		err = tcf_p4_act_init_param(net, params, act, tb[i], extack);
-		if (err < 0)
-			return err;
-	}
-
-	return 0;
-}
-
-static int tcf_p4_dyna_init(struct net *net, struct nlattr *nla,
-			    struct nlattr *est, struct tc_action **a,
-			    struct tcf_proto *tp, struct tc_action_ops *a_o,
-			    u32 flags, struct netlink_ext_ack *extack)
-{
-	bool bind = flags & TCA_ACT_FLAGS_BIND;
-	struct nlattr *tb[P4TC_ACT_MAX + 1];
+	struct tc_action_ops *a_o = &act->ops;
 	struct tcf_chain *goto_ch = NULL;
-	struct tcf_p4act_params *params;
-	struct tc_act_dyna *parm;
-	struct p4tc_act *act;
 	bool exists = false;
-	int ret = 0;
+	struct tcf_p4act_params *params;
+	int ret;
 	int err;
-
-	if (flags & TCA_ACT_FLAGS_BIND &&
-	    !(flags & TCA_ACT_FLAGS_FROM_P4TC)) {
-		NL_SET_ERR_MSG(extack,
-			       "Can only bind to dynamic action from P4TC objects");
-		return -EPERM;
-	}
-
-	if (!nla) {
-		NL_SET_ERR_MSG(extack,
-			       "Must specify action netlink attributes");
-		return -EINVAL;
-	}
-
-	err = nla_parse_nested(tb, P4TC_ACT_MAX, nla, NULL, extack);
-	if (err < 0)
-		return err;
-
-	if (!tb[P4TC_ACT_OPT]) {
-		NL_SET_ERR_MSG(extack,
-			       "Must specify option netlink attributes");
-		return -EINVAL;
-	}
-
-	act = tcf_p4_find_act(net, a_o);
-	if (IS_ERR(act))
-		return PTR_ERR(act);
 
 	if (!act->active) {
 		NL_SET_ERR_MSG(extack,
@@ -585,29 +994,24 @@ static int tcf_p4_dyna_init(struct net *net, struct nlattr *nla,
 		return -EINVAL;
 	}
 
-	parm = nla_data(tb[P4TC_ACT_OPT]);
-
-	ret = __tcf_p4_dyna_init(net, est, act, parm, a, tp, a_o, &goto_ch,
+	ret = __tcf_p4_dyna_init(net, NULL, act, parm, a, NULL, a_o, &goto_ch,
 				 flags, extack);
 	if (ret < 0)
 		return ret;
-	if (bind && !ret)
-		return 0;
 
-	err = tcf_action_check_ctrlact(parm->action, tp, &goto_ch, extack);
+	err = tcf_action_check_ctrlact(parm->action, NULL, &goto_ch, extack);
 	if (err < 0)
 		goto release_idr;
 
-	params = kzalloc(sizeof(*params), GFP_KERNEL);
-	if (!params) {
-		err = -ENOMEM;
+	params = tcf_p4_act_params_init(act);
+	if (IS_ERR(params)) {
+		err = PTR_ERR(params);
 		goto release_idr;
 	}
 
 	idr_init(&params->params_idr);
-	if (tb[P4TC_ACT_PARMS]) {
-		err = tcf_p4_act_init_params(net, params, act,
-					     tb[P4TC_ACT_PARMS], extack);
+	if (params_list) {
+		err = tcf_p4_act_init_params_list(act, params, params_list);
 		if (err < 0)
 			goto release_params;
 	} else {
@@ -625,7 +1029,7 @@ static int tcf_p4_dyna_init(struct net *net, struct nlattr *nla,
 	if (err < 0)
 		goto release_params;
 
-	return ret;
+	return err;
 
 release_params:
 	tcf_p4_act_params_destroy(params);
@@ -646,30 +1050,6 @@ static int tcf_p4_dyna_act(struct sk_buff *skb, const struct tc_action *a,
 	return 0;
 }
 
-int p4tc_dump_param_value(struct sk_buff *skb, struct p4tc_type *type,
-			     struct p4tc_act_param *param)
-{
-	const u32 bytesz = BITS_TO_BYTES(type->container_bitsz);
-	unsigned char *b = nlmsg_get_pos(skb);
-	struct nlattr *nla_value;
-
-	nla_value = nla_nest_start(skb, P4TC_ACT_PARAMS_VALUE);
-	if (nla_put(skb, P4TC_ACT_PARAMS_VALUE_RAW, bytesz,
-		    param->value))
-		goto out_nlmsg_trim;
-	nla_nest_end(skb, nla_value);
-
-	if (param->mask &&
-	    nla_put(skb, P4TC_ACT_PARAMS_MASK, bytesz, param->mask))
-		goto out_nlmsg_trim;
-
-	return 0;
-
-out_nlmsg_trim:
-	nlmsg_trim(skb, b);
-	return -1;
-}
-
 static int tcf_p4_dyna_dump(struct sk_buff *skb, struct tc_action *a, int bind,
 			    int ref)
 {
@@ -680,11 +1060,11 @@ static int tcf_p4_dyna_dump(struct sk_buff *skb, struct tc_action *a, int bind,
 		.refcnt = refcount_read(&dynact->tcf_refcnt) - ref,
 		.bindcnt = atomic_read(&dynact->tcf_bindcnt) - bind,
 	};
+	int i = 1;
 	struct tcf_p4act_params *params;
 	struct p4tc_act_param *parm;
 	struct nlattr *nest_parms;
 	struct tcf_t t;
-	int i = 1;
 	int id;
 
 	spin_lock_bh(&dynact->tcf_lock);
@@ -726,7 +1106,7 @@ static int tcf_p4_dyna_dump(struct sk_buff *skb, struct tc_action *a, int bind,
 				if (op->dump_value(skb, op, parm) < 0)
 					goto nla_put_failure;
 			} else {
-				if (p4tc_dump_param_value(skb, parm->type, parm))
+				if (generic_dump_param_value(skb, parm->type, parm))
 					goto nla_put_failure;
 			}
 
@@ -753,12 +1133,20 @@ static int tcf_p4_dyna_lookup(struct net *net, const struct tc_action_ops *ops,
 			      struct tc_action **a, u32 index)
 {
 	struct p4tc_act *act;
+	int err;
 
 	act = tcf_p4_find_act(net, ops);
 	if (IS_ERR(act))
 		return PTR_ERR(act);
 
-	return tcf_idr_search(act->tn, a, index);
+	err = tcf_idr_search(act->tn, a, index);
+	if (!err)
+		return err;
+
+	if ((*a)->tcfa_flags & TCA_ACT_FLAGS_UNUSED)
+		return false;
+
+	return err;
 }
 
 static int tcf_p4_dyna_walker(struct net *net, struct sk_buff *skb,
@@ -775,7 +1163,6 @@ static int tcf_p4_dyna_walker(struct net *net, struct sk_buff *skb,
 	return tcf_generic_walker(act->tn, skb, cb, type, ops, extack);
 }
 
-
 static void tcf_p4_dyna_cleanup(struct tc_action *a)
 {
 	struct tc_action_ops *ops = (struct tc_action_ops *)a->ops;
@@ -791,76 +1178,41 @@ static void tcf_p4_dyna_cleanup(struct tc_action *a)
 		call_rcu(&params->rcu, tcf_p4_act_params_destroy_rcu);
 }
 
-
-static struct p4tc_act_param *param_find_byname(struct idr *params_idr,
-						const char *param_name)
+static struct p4tc_act *
+tcf_action_find_byany(struct p4tc_pipeline *pipeline,
+		      const char *act_name, const u32 a_id,
+		      struct netlink_ext_ack *extack)
 {
-	struct p4tc_act_param *param;
-	unsigned long tmp, id;
-
-	idr_for_each_entry_ul(params_idr, param, tmp, id) {
-		if (param == ERR_PTR(-EBUSY))
-			continue;
-		if (strncmp(param->name, param_name, ACTPARAMNAMSIZ) == 0)
-			return param;
-	}
-
-	return NULL;
-}
-
-struct p4tc_act_param *tcf_param_find_byid(struct idr *params_idr,
-					   const u32 param_id)
-{
-	return idr_find(params_idr, param_id);
-}
-
-struct p4tc_act_param *tcf_param_find_byany(struct p4tc_act *act,
-					    const char *param_name,
-					    const u32 param_id,
-					    struct netlink_ext_ack *extack)
-{
-	struct p4tc_act_param *param;
+	struct p4tc_act *act;
 	int err;
 
-	if (param_id) {
-		param = tcf_param_find_byid(&act->params_idr, param_id);
-		if (!param) {
-			NL_SET_ERR_MSG(extack, "Unable to find param by id");
-			err = -EINVAL;
+	if (a_id) {
+		act = tcf_action_find_byid(pipeline, a_id);
+		if (!act) {
+			NL_SET_ERR_MSG(extack, "Unable to find action by id");
+			err = -ENOENT;
 			goto out;
 		}
 	} else {
-		if (param_name) {
-			param = param_find_byname(&act->params_idr, param_name);
-			if (!param) {
-				NL_SET_ERR_MSG(extack, "Param name not found");
-				err = -EINVAL;
+		if (act_name) {
+			act = tcf_action_find_byname(act_name, pipeline);
+			if (!act) {
+				NL_SET_ERR_MSG(extack, "Action name not found");
+				err = -ENOENT;
 				goto out;
 			}
 		} else {
-			NL_SET_ERR_MSG(extack, "Must specify param name or id");
+			NL_SET_ERR_MSG(extack,
+				       "Must specify action name or id");
 			err = -EINVAL;
 			goto out;
 		}
 	}
 
-	return param;
+	return act;
 
 out:
 	return ERR_PTR(err);
-}
-
-static struct p4tc_act *
-tcf_action_find_byanyattr(struct nlattr *act_name_attr, const u32 a_id,
-			  struct p4tc_pipeline *pipeline,
-			  struct netlink_ext_ack *extack)
-{
-	char *act_name = NULL;
-
-	if (act_name_attr)
-		act_name = nla_data(act_name_attr);
-
-	return tcf_action_find_byany(pipeline, act_name, a_id, extack);
 }
 
 struct p4tc_act *tcf_action_find_get(struct p4tc_pipeline *pipeline,
@@ -886,13 +1238,32 @@ void tcf_action_put(struct p4tc_act *act)
 	WARN_ON(!refcount_dec_not_one(&act->a_ref));
 }
 
-void p4_put_many_params(struct idr *params_idr, struct p4tc_act_param *params[],
-			int params_count)
+static struct p4tc_act *
+tcf_action_find_byanyattr(struct nlattr *act_name_attr, const u32 a_id,
+			  struct p4tc_pipeline *pipeline,
+			  struct netlink_ext_ack *extack)
+{
+	char *act_name = NULL;
+
+	if (act_name_attr)
+		act_name = nla_data(act_name_attr);
+
+	return tcf_action_find_byany(pipeline, act_name, a_id, extack);
+}
+
+static void p4_put_param(struct idr *params_idr, struct p4tc_act_param *param)
+{
+	kfree(param);
+}
+
+static void p4_put_many_params(struct idr *params_idr,
+			       struct p4tc_act_param *params[],
+			       int params_count)
 {
 	int i;
 
 	for (i = 0; i < params_count; i++)
-		kfree(params[i]);
+		p4_put_param(params_idr, params[i]);
 }
 
 static struct p4tc_act_param *p4_create_param(struct p4tc_act *act,
@@ -1020,8 +1391,8 @@ static struct p4tc_act_param *p4_act_init_param(struct p4tc_act *act,
 						struct nlattr *nla, bool update,
 						struct netlink_ext_ack *extack)
 {
-	struct nlattr *tb[P4TC_ACT_PARAMS_MAX + 1];
 	u32 param_id = 0;
+	struct nlattr *tb[P4TC_ACT_PARAMS_MAX + 1];
 	int ret;
 
 	ret = nla_parse_nested(tb, P4TC_ACT_PARAMS_MAX, nla, NULL, extack);
@@ -1043,8 +1414,8 @@ out:
 }
 
 static int p4_act_init_params(struct p4tc_act *act, struct nlattr *nla,
-		       struct p4tc_act_param *params[], bool update,
-		       struct netlink_ext_ack *extack)
+			      struct p4tc_act_param *params[], bool update,
+			      struct netlink_ext_ack *extack)
 {
 	struct nlattr *tb[P4TC_MSGBATCH_SIZE + 1];
 	int ret;
@@ -1073,7 +1444,8 @@ params_del:
 }
 
 static int p4_act_init(struct p4tc_act *act, struct nlattr *nla,
-		struct p4tc_act_param *params[], struct netlink_ext_ack *extack)
+		       struct p4tc_act_param *params[],
+		       struct netlink_ext_ack *extack)
 {
 	int num_params = 0;
 	int ret;
@@ -1102,6 +1474,7 @@ static const struct nla_policy p4tc_act_policy[P4TC_ACT_MAX + 1] = {
 	[P4TC_ACT_PARMS] = { .type = NLA_NESTED },
 	[P4TC_ACT_OPT] = { .type = NLA_BINARY,
 			   .len = sizeof(struct tc_act_dyna) },
+	[P4TC_ACT_NUM_PREALLOC] = { .type = NLA_U32 },
 	[P4TC_ACT_ACTIVE] = { .type = NLA_U8 },
 };
 
@@ -1117,6 +1490,7 @@ static int __tcf_act_put(struct net *net, struct p4tc_pipeline *pipeline,
 			 struct netlink_ext_ack *extack)
 {
 	struct p4tc_act_param *act_param;
+	struct tcf_p4act *p4act, *tmp_act;
 	unsigned long param_id, tmp;
 	struct tc_action_net *tn;
 
@@ -1135,6 +1509,11 @@ static int __tcf_act_put(struct net *net, struct p4tc_pipeline *pipeline,
 	}
 
 	tcf_unregister_dyn_action(net, &act->ops);
+	/* Free preallocated acts */
+	list_for_each_entry_safe(p4act, tmp_act, &act->prealloc_list, node) {
+		list_del(&p4act->node);
+		tcf_idr_release(&p4act->common, true);
+	}
 	p4tc_action_net_exit(act->tn);
 
 	idr_remove(&pipeline->p_act_idr, act->a_id);
@@ -1152,10 +1531,10 @@ static int _tcf_act_fill_nlmsg(struct net *net, struct sk_buff *skb,
 			       struct p4tc_act *act)
 {
 	unsigned char *b = nlmsg_get_pos(skb);
+	int i = 1;
 	struct p4tc_act_param *param;
 	struct nlattr *nest, *parms;
 	unsigned long param_id, tmp;
-	int i = 1;
 
 	if (nla_put_u32(skb, P4TC_PATH, act->a_id))
 		goto out_nlmsg_trim;
@@ -1262,9 +1641,9 @@ static int tcf_act_gd(struct net *net, struct sk_buff *skb, struct nlmsghdr *n,
 	const u32 pipeid = ids[P4TC_PID_IDX], a_id = ids[P4TC_AID_IDX];
 	struct nlattr *tb[P4TC_ACT_MAX + 1] = { NULL };
 	unsigned char *b = nlmsg_get_pos(skb);
+	int ret = 0;
 	struct p4tc_pipeline *pipeline;
 	struct p4tc_act *act;
-	int ret = 0;
 
 	if (n->nlmsg_type == RTM_DELP4TEMPLATE)
 		pipeline = tcf_pipeline_find_byany_unsealed(net, nl_pname->data,
@@ -1344,10 +1723,10 @@ static struct p4tc_act *tcf_act_create(struct net *net, struct nlattr **tb,
 {
 	struct p4tc_act_param *params[P4TC_MSGBATCH_SIZE] = { NULL };
 	u32 a_id = ids[P4TC_AID_IDX];
-	struct p4tc_act *act;
 	int num_params = 0;
-	char *act_name;
 	int ret = 0;
+	struct p4tc_act *act;
+	char *act_name;
 
 	if (tb[P4TC_ACT_NAME]) {
 		act_name = nla_data(tb[P4TC_ACT_NAME]);
@@ -1416,6 +1795,12 @@ static struct p4tc_act *tcf_act_create(struct net *net, struct nlattr **tb,
 		}
 	}
 
+	if (tb[P4TC_ACT_NUM_PREALLOC]) {
+		u32 *num_prealloc_acts = nla_data(tb[P4TC_ACT_NUM_PREALLOC]);
+
+		act->num_prealloc_acts = *num_prealloc_acts;
+	}
+
 	refcount_set(&act->ops.dyn_ref, 1);
 	ret = tcf_register_dyn_action(net, &act->ops);
 	if (ret < 0) {
@@ -1445,6 +1830,8 @@ static struct p4tc_act *tcf_act_create(struct net *net, struct nlattr **tb,
 	refcount_set(&act->a_ref, 1);
 
 	list_add_tail(&act->head, &dynact_list);
+	INIT_LIST_HEAD(&act->prealloc_list);
+	spin_lock_init(&act->list_lock);
 
 	return act;
 
@@ -1472,10 +1859,11 @@ static struct p4tc_act *tcf_act_update(struct net *net, struct nlattr **tb,
 {
 	struct p4tc_act_param *params[P4TC_MSGBATCH_SIZE] = { NULL };
 	const u32 a_id = ids[P4TC_AID_IDX];
-	struct p4tc_act *act;
+	u32 *num_prealloc_acts = NULL;
 	int num_params = 0;
 	s8 active = -1;
 	int ret = 0;
+	struct p4tc_act *act;
 
 	act = tcf_action_find_byanyattr(tb[P4TC_ACT_NAME], a_id, pipeline,
 					extack);
@@ -1509,6 +1897,9 @@ static struct p4tc_act *tcf_act_update(struct net *net, struct nlattr **tb,
 		set_param_indices(act);
 	}
 
+	if (tb[P4TC_ACT_NUM_PREALLOC])
+		num_prealloc_acts = nla_data(tb[P4TC_ACT_NUM_PREALLOC]);
+
 	act->pipeline = pipeline;
 	if (active == 1) {
 		act->active = true;
@@ -1517,6 +1908,9 @@ static struct p4tc_act *tcf_act_update(struct net *net, struct nlattr **tb,
 		ret = -EINVAL;
 		goto params_del;
 	}
+
+	if (num_prealloc_acts)
+		act->num_prealloc_acts = *num_prealloc_acts;
 
 	p4tc_params_replace_many(&act->params_idr, params, num_params);
 	return act;

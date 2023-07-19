@@ -253,6 +253,7 @@ enum {
 	P4TC_ACT_OPT, /* action opt */
 	P4TC_ACT_TM, /* action tm */
 	P4TC_ACT_ACTIVE, /* u8 */
+	P4TC_ACT_NUM_PREALLOC, /* u32 num preallocated action instances */
 	P4TC_ACT_PAD,
 	__P4TC_ACT_MAX
 };
