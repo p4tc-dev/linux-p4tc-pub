@@ -289,6 +289,7 @@ struct p4tc_table_entry_tm {
 	__u64 firstused;
 	__u16 who_created;
 	__u16 who_updated;
+	__u16 who_deleted;
 	__u16 permissions;
 };
 
@@ -313,8 +314,11 @@ enum {
 	P4TC_ENTRY_WHODUNNIT, /* tells who's modifying the entry */
 	P4TC_ENTRY_CREATE_WHODUNNIT, /* tells who created the entry */
 	P4TC_ENTRY_UPDATE_WHODUNNIT, /* tells who updated the entry last */
+	P4TC_ENTRY_DELETE_WHODUNNIT, /* tells who deleted the entry */
 	P4TC_ENTRY_PERMISSIONS, /* entry CRUDX permissions */
 	P4TC_ENTRY_TBL_ATTRS, /* nested table attributes */
+	P4TC_ENTRY_STATIC, /* u8 tells if table entry is static */
+	P4TC_ENTRY_AGING, /* u64 table entry aging */
 	P4TC_ENTRY_PAD,
 	__P4TC_ENTRY_MAX
 };
@@ -324,6 +328,7 @@ enum {
 	P4TC_ENTITY_UNSPEC,
 	P4TC_ENTITY_KERNEL,
 	P4TC_ENTITY_TC,
+	P4TC_ENTITY_TIMER,
 	P4TC_ENTITY_MAX
 };
 

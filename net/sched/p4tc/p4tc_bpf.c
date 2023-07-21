@@ -29,8 +29,6 @@ BTF_ID(struct, p4tc_ext_bpf_res)
 BTF_ID(struct, p4tc_table_entry_act_bpf)
 BTF_ID(struct, p4tc_table_entry_create_bpf_params)
 
-#define ENTRY_KEY_OFFSET (offsetof(struct p4tc_table_entry_key, fa_key))
-
 struct p4tc_table_entry_act_bpf *
 __bpf_p4tc_tbl_read(struct net *caller_net,
 		    struct p4tc_table_entry_act_bpf_params *params,
@@ -56,8 +54,6 @@ __bpf_p4tc_tbl_read(struct net *caller_net,
 		defact = rcu_dereference(table->tbl_default_missact);
 		return defact ? defact->defact_bpf : NULL;
 	}
-	value = p4tc_table_entry_value(entry);
-
 	value = p4tc_table_entry_value(entry);
 
 	return value->act_bpf;

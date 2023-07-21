@@ -209,7 +209,7 @@ static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 
 		const_nest = nla_nest_start(skb, P4TC_TABLE_CONST_ENTRY);
 		p4tc_tbl_entry_fill(skb, table, table->tbl_const_entry,
-				    table->tbl_id);
+				    table->tbl_id, P4TC_ENTITY_UNSPEC);
 		nla_nest_end(skb, const_nest);
 	}
 	table->tbl_const_entry = NULL;

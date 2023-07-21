@@ -352,6 +352,9 @@ struct p4tc_table_entry_work {
 	struct work_struct   work;
 	struct p4tc_pipeline *pipeline;
 	struct p4tc_table_entry *entry;
+	struct p4tc_table *table;
+	u16 who_deleted;
+	bool send_event;
 };
 
 struct p4tc_table_entry_key {
@@ -368,8 +371,13 @@ struct p4tc_table_entry_value {
 	struct p4tc_table_entry_act_bpf  *act_bpf;
 	refcount_t                       entries_ref;
 	u32                              permissions;
+	u32                              value_offset;
+	u32                              tbl_id;
+	bool                             is_static;
 	struct p4tc_table_entry_tm __rcu *tm;
 	struct p4tc_table_entry_work     *entry_work;
+	u64                              aging_ms;
+	struct hrtimer                   entry_timer;
 };
 
 struct p4tc_table_entry_mask {
@@ -397,9 +405,21 @@ struct p4tc_entry_key_bpf {
 
 #define P4TC_KEYSZ_BYTES(bits) (round_up(BITS_TO_BYTES(bits), 8))
 
+#define ENTRY_KEY_OFFSET (offsetof(struct p4tc_table_entry_key, fa_key))
+
+#define P4TC_ENTRY_VALUE_OFFSET(entry) \
+	(offsetof(struct p4tc_table_entry, key) + ENTRY_KEY_OFFSET \
+	 + P4TC_KEYSZ_BYTES(entry->key.keysz))
+
 static inline void *p4tc_table_entry_value(struct p4tc_table_entry *entry)
 {
 	return entry->key.fa_key + P4TC_KEYSZ_BYTES(entry->key.keysz);
+}
+
+static inline struct p4tc_table_entry *
+p4tc_table_entry_from_value(struct p4tc_table_entry_value *entry_value)
+{
+	return (void *)entry_value - entry_value->value_offset;
 }
 
 static inline struct p4tc_table_entry_work *
@@ -585,7 +605,8 @@ int p4tc_tbl_entry_dumpit(struct net *net, struct sk_buff *skb,
 			  struct netlink_callback *cb,
 			  struct nlattr *arg, char *p_name);
 int p4tc_tbl_entry_fill(struct sk_buff *skb, struct p4tc_table *table,
-			struct p4tc_table_entry *entry, u32 tbl_id);
+			struct p4tc_table_entry *entry, u32 tbl_id,
+			u16 who_deleted);
 
 struct p4tc_parser *tcf_parser_create(struct p4tc_pipeline *pipeline,
 				      const char *parser_name,
