@@ -283,6 +283,7 @@ struct p4tc_pipeline *tcf_pipeline_find_byid(struct net *net, const u32 pipeid)
 
 	return idr_find(&pipe_net->pipeline_idr, pipeid);
 }
+EXPORT_SYMBOL_GPL(tcf_pipeline_find_byid);
 
 static struct p4tc_pipeline *tcf_pipeline_find_byname(struct net *net,
 						      const char *name)
