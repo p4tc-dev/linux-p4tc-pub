@@ -60,7 +60,7 @@ static void tcf_free_cookie_rcu(struct rcu_head *p)
 static unsigned int dyn_act_net_id;
 
 struct tcf_dyn_act_net {
-	struct idr act_base;
+	struct list_head act_base;
 	rwlock_t act_mod_lock;
 };
 
@@ -69,7 +69,7 @@ static __net_init int tcf_dyn_act_base_init_net(struct net *net)
 	struct tcf_dyn_act_net *dyn_base_net = net_generic(net, dyn_act_net_id);
 	rwlock_t _act_mod_lock = __RW_LOCK_UNLOCKED(_act_mod_lock);
 
-	idr_init(&dyn_base_net->act_base);
+	INIT_LIST_HEAD(&dyn_base_net->act_base);
 	dyn_base_net->act_mod_lock = _act_mod_lock;
 	return 0;
 }
@@ -77,14 +77,11 @@ static __net_init int tcf_dyn_act_base_init_net(struct net *net)
 static void __net_exit tcf_dyn_act_base_exit_net(struct net *net)
 {
 	struct tcf_dyn_act_net *dyn_base_net = net_generic(net, dyn_act_net_id);
-	struct tc_action_ops *ops;
-	unsigned long opid, tmp;
+	struct tc_action_ops *ops, *tmp;
 
-	idr_for_each_entry_ul(&dyn_base_net->act_base, ops, tmp, opid) {
-		idr_remove(&dyn_base_net->act_base, ops->id);
+	list_for_each_entry_safe(ops, tmp, &dyn_base_net->act_base, dyn_head) {
+		list_del(&ops->dyn_head);
 	}
-
-	idr_destroy(&dyn_base_net->act_base);
 }
 
 static struct pernet_operations tcf_dyn_act_base_net_ops = {
@@ -978,27 +975,46 @@ static void tcf_pernet_del_id_list(unsigned int id)
 	mutex_unlock(&act_id_mutex);
 }
 
+static struct tc_action_ops *tc_lookup_dyn_action(struct net *net, char *kind)
+{
+	struct tcf_dyn_act_net *dyn_base_net = net_generic(net, dyn_act_net_id);
+	struct tc_action_ops *a, *res = NULL;
+
+	read_lock(&dyn_base_net->act_mod_lock);
+	list_for_each_entry(a, &dyn_base_net->act_base, dyn_head) {
+		if (strcmp(kind, a->kind) == 0) {
+			if (try_module_get(a->owner))
+				res = a;
+			break;
+		}
+	}
+	read_unlock(&dyn_base_net->act_mod_lock);
+
+	return res;
+}
+
+void tcf_unregister_dyn_action(struct net *net, struct tc_action_ops *act)
+{
+       struct tcf_dyn_act_net *dyn_base_net = net_generic(net, dyn_act_net_id);
+
+       write_lock(&dyn_base_net->act_mod_lock);
+       list_del(&act->dyn_head);
+       write_unlock(&dyn_base_net->act_mod_lock);
+}
+EXPORT_SYMBOL(tcf_unregister_dyn_action);
+
 int tcf_register_dyn_action(struct net *net, struct tc_action_ops *act)
 {
 	struct tcf_dyn_act_net *dyn_base_net = net_generic(net, dyn_act_net_id);
-	int ret;
+
+	if (tc_lookup_dyn_action(net, act->kind))
+		return -EEXIST;
 
 	write_lock(&dyn_base_net->act_mod_lock);
-
-	/* Dynamic actions start counting after TCA_ID_MAX + 1*/
-	act->id = TCA_ID_MAX + 1;
-
-	ret = idr_alloc_u32(&dyn_base_net->act_base, act, &act->id,
-			    USHRT_MAX, GFP_ATOMIC);
-	if (ret < 0)
-		goto err_out;
+	list_add(&act->dyn_head, &dyn_base_net->act_base);
 	write_unlock(&dyn_base_net->act_mod_lock);
 
 	return 0;
-
-err_out:
-	write_unlock(&dyn_base_net->act_mod_lock);
-	return ret;
 }
 
 int tcf_register_action(struct tc_action_ops *act,
@@ -1070,30 +1086,12 @@ int tcf_unregister_action(struct tc_action_ops *act,
 }
 EXPORT_SYMBOL(tcf_unregister_action);
 
-int tcf_unregister_dyn_action(struct net *net, struct tc_action_ops *act)
-{
-	struct tcf_dyn_act_net *dyn_base_net = net_generic(net, dyn_act_net_id);
-	int err = 0;
-
-	write_lock(&dyn_base_net->act_mod_lock);
-	if (!idr_remove(&dyn_base_net->act_base, act->id))
-		err = -EINVAL;
-
-	write_unlock(&dyn_base_net->act_mod_lock);
-
-	return err;
-}
-EXPORT_SYMBOL(tcf_unregister_dyn_action);
-
 /* lookup by name */
 static struct tc_action_ops *tc_lookup_action_n(struct net *net, char *kind)
 {
-	struct tcf_dyn_act_net *dyn_base_net = net_generic(net, dyn_act_net_id);
 	struct tc_action_ops *a, *res = NULL;
 
 	if (kind) {
-		unsigned long tmp, id;
-
 		read_lock(&act_mod_lock);
 		list_for_each_entry(a, &act_base, head) {
 			if (strcmp(kind, a->kind) == 0) {
@@ -1105,16 +1103,9 @@ static struct tc_action_ops *tc_lookup_action_n(struct net *net, char *kind)
 		}
 		read_unlock(&act_mod_lock);
 
-		read_lock(&dyn_base_net->act_mod_lock);
-		idr_for_each_entry_ul(&dyn_base_net->act_base, a, tmp, id) {
-			if (strcmp(kind, a->kind) == 0) {
-				if (try_module_get(a->owner))
-					res = a;
-				break;
-			}
-		}
-		read_unlock(&dyn_base_net->act_mod_lock);
+		return tc_lookup_dyn_action(net, kind);
 	}
+
 	return res;
 }
 
@@ -1126,8 +1117,6 @@ static struct tc_action_ops *tc_lookup_action(struct net *net,
 	struct tc_action_ops *a, *res = NULL;
 
 	if (kind) {
-		unsigned long tmp, id;
-
 		read_lock(&act_mod_lock);
 		list_for_each_entry(a, &act_base, head) {
 			if (nla_strcmp(kind, a->kind) == 0) {
@@ -1140,7 +1129,7 @@ static struct tc_action_ops *tc_lookup_action(struct net *net,
 		read_unlock(&act_mod_lock);
 
 		read_lock(&dyn_base_net->act_mod_lock);
-		idr_for_each_entry_ul(&dyn_base_net->act_base, a, tmp, id) {
+		list_for_each_entry(a, &dyn_base_net->act_base, dyn_head) {
 			if (nla_strcmp(kind, a->kind) == 0) {
 				if (try_module_get(a->owner))
 					res = a;
