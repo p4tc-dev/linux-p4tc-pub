@@ -1119,7 +1119,6 @@ static int __tcf_act_put(struct net *net, struct p4tc_pipeline *pipeline,
 	struct p4tc_act_param *act_param;
 	unsigned long param_id, tmp;
 	struct tc_action_net *tn;
-	int ret;
 
 	if (!teardown && (refcount_read(&act->ops.dyn_ref) > 1 ||
 			  refcount_read(&act->a_ref) > 1)) {
@@ -1135,12 +1134,7 @@ static int __tcf_act_put(struct net *net, struct p4tc_pipeline *pipeline,
 		kfree(act_param);
 	}
 
-	ret = tcf_unregister_dyn_action(net, &act->ops);
-	if (ret < 0) {
-		NL_SET_ERR_MSG(extack,
-			       "Unable to unregister new action template");
-		return ret;
-	}
+	tcf_unregister_dyn_action(net, &act->ops);
 	p4tc_action_net_exit(act->tn);
 
 	idr_remove(&pipeline->p_act_idr, act->a_id);
