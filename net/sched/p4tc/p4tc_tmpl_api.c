@@ -379,7 +379,7 @@ static int tcf_p4_tmpl_cu_n(struct sk_buff *skb, struct nlmsghdr *n,
 	if (!new_skb)
 		return -ENOMEM;
 
-	nlh = nlmsg_put(new_skb, portid, n->nlmsg_seq, RTM_CREATEP4TEMPLATE,
+	nlh = nlmsg_put(new_skb, portid, n->nlmsg_seq, n->nlmsg_type,
 			sizeof(*t), n->nlmsg_flags);
 	if (!nlh)
 		goto out;
@@ -439,7 +439,7 @@ static int tcf_p4_tmpl_cu_n(struct sk_buff *skb, struct nlmsghdr *n,
 			      n->nlmsg_flags & NLM_F_ECHO);
 
 undo_prev:
-	if (!(nlh->nlmsg_flags & NLM_F_REPLACE)) {
+	if (!p4tc_tmpl_msg_is_update(n)) {
 		while (--i > 0) {
 			struct p4tc_template_common *tmpl = tmpls[i - 1];
 
@@ -506,7 +506,7 @@ static int tc_ctl_p4_tmpl_dump_1(struct sk_buff *skb, struct nlattr *arg,
 		return -EINVAL;
 	}
 
-	nlh = nlmsg_put(skb, portid, n->nlmsg_seq, RTM_GETP4TEMPLATE,
+	nlh = nlmsg_put(skb, portid, n->nlmsg_seq, n->nlmsg_type,
 			sizeof(*t), n->nlmsg_flags);
 	if (!nlh)
 		return -ENOSPC;
@@ -577,6 +577,8 @@ static int __init p4tc_template_init(void)
 	u32 obj;
 
 	rtnl_register(PF_UNSPEC, RTM_CREATEP4TEMPLATE, tc_ctl_p4_tmpl_cu, NULL,
+		      0);
+	rtnl_register(PF_UNSPEC, RTM_UPDATEP4TEMPLATE, tc_ctl_p4_tmpl_cu, NULL,
 		      0);
 	rtnl_register(PF_UNSPEC, RTM_DELP4TEMPLATE, tc_ctl_p4_tmpl_delete, NULL,
 		      0);

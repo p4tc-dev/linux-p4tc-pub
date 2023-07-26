@@ -125,6 +125,11 @@ struct p4tc_pipeline_net {
 	struct idr        pipeline_idr;
 };
 
+static inline bool p4tc_tmpl_msg_is_update(struct nlmsghdr *n)
+{
+	return n->nlmsg_type == RTM_UPDATEP4TEMPLATE;
+}
+
 int tcf_p4_tmpl_generic_dump(struct sk_buff *skb, struct p4tc_dump_ctx *ctx,
 			     struct idr *idr, int idx,
 			     struct netlink_ext_ack *extack);

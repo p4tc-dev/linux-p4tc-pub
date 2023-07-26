@@ -482,12 +482,18 @@ tcf_pipeline_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	u32 pipeid = ids[P4TC_PID_IDX];
 	struct p4tc_pipeline *pipeline;
 
-	if (n->nlmsg_flags & NLM_F_REPLACE)
-		pipeline = tcf_pipeline_update(net, n, nla, nl_pname->data,
-					       pipeid, extack);
-	else
+	switch (n->nlmsg_type) {
+	case RTM_CREATEP4TEMPLATE:
 		pipeline = tcf_pipeline_create(net, n, nla, nl_pname->data,
 					       pipeid, extack);
+		break;
+	case RTM_UPDATEP4TEMPLATE:
+		pipeline = tcf_pipeline_update(net, n, nla, nl_pname->data,
+					       pipeid, extack);
+		break;
+	default:
+		return ERR_PTR(-EOPNOTSUPP);
+	}
 
 	if (IS_ERR(pipeline))
 		goto out;
