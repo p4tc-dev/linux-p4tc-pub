@@ -1,0 +1,25 @@
+name: Debug packages
+
+on:
+  push:
+    tags:
+      - "release-*"
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - run: |
+          sudo apt update && sudo apt install -y pahole debhelper gawk flex bison openssl libssl-dev libelf-dev libudev-dev libpci-dev libiberty-dev
+          cp config-guest-p4tc-x86 .config
+          make listnewconfig >> .config
+          make -j$(nproc) deb-pkg
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          body: "Debug debian packages"
+          files: "../*.deb"
