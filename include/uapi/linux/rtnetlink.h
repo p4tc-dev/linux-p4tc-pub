@@ -209,6 +209,8 @@ enum {
 #define RTM_P4TC_DEL		RTM_P4TC_DEL
 	RTM_P4TC_GET,
 #define RTM_P4TC_GET		RTM_P4TC_GET
+	RTM_P4TC_UPDATE,
+#define RTM_P4TC_UPDATE	RTM_P4TC_UPDATE
 
 	__RTM_MAX,
 #define RTM_MAX		(((__RTM_MAX + 3) & ~3) - 1)

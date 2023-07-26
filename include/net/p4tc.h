@@ -551,6 +551,11 @@ struct p4tc_hdrfield *tcf_hdrfield_get(struct p4tc_parser *parser,
 				       struct netlink_ext_ack *extack);
 void tcf_hdrfield_put_ref(struct p4tc_hdrfield *hdrfield);
 
+static inline bool p4tc_runtime_msg_is_update(struct nlmsghdr *n)
+{
+	return n->nlmsg_type == RTM_P4TC_UPDATE;
+}
+
 extern const struct p4tc_act_param_ops param_ops[P4T_MAX + 1];
 
 struct p4tc_user_pipeline_extern {

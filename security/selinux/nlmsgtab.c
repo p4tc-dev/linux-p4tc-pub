@@ -101,6 +101,7 @@ static const struct nlmsg_perm nlmsg_route_perms[] = {
 	{ RTM_P4TC_CREATE,	NETLINK_ROUTE_SOCKET__NLMSG_WRITE },
 	{ RTM_P4TC_DEL,	NETLINK_ROUTE_SOCKET__NLMSG_WRITE },
 	{ RTM_P4TC_GET,	NETLINK_ROUTE_SOCKET__NLMSG_READ },
+	{ RTM_P4TC_UPDATE,	NETLINK_ROUTE_SOCKET__NLMSG_WRITE },
 };
 
 static const struct nlmsg_perm nlmsg_tcpdiag_perms[] = {
