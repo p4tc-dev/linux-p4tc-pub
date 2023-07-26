@@ -1814,7 +1814,7 @@ p4tc_extern_add_notify(struct net *net, struct nlmsghdr *n,
 		return -ENOBUFS;
 
 	if (tce_get_fill(skb, externs, portid, n->nlmsg_seq, n->nlmsg_flags,
-			 pipeid, RTM_P4TC_CREATE, 0, extack) <= 0) {
+			 pipeid, n->nlmsg_type, 0, extack) <= 0) {
 		NL_SET_ERR_MSG(extack,
 			       "Failed to fill netlink attributes while adding TC extern");
 		kfree_skb(skb);
@@ -2013,17 +2013,10 @@ int p4tc_ctl_extern(struct sk_buff *skb, struct nlmsghdr *n, int cmd,
 	/* n->nlmsg_flags & NLM_F_CREATE */
 	switch (n->nlmsg_type) {
 	case RTM_P4TC_CREATE:
-		/* we are going to assume all other flags
-		 * imply create only if it doesn't exist
-		 * Note that CREATE | EXCL implies that
-		 * but since we want avoid ambiguity (eg when flags
-		 * is zero) then just set this
-		 */
-		if (!(n->nlmsg_flags & NLM_F_REPLACE)) {
-			NL_SET_ERR_MSG(extack,
-				       "Create command is not supported");
-			return -EOPNOTSUPP;
-		}
+		NL_SET_ERR_MSG(extack,
+			       "Create command is not supported");
+		return -EOPNOTSUPP;
+	case RTM_P4TC_UPDATE:
 		ret = p4tc_extern_add(net, pipeline, root, n, portid, flags,
 				      extack);
 		break;

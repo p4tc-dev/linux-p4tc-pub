@@ -1702,12 +1702,18 @@ p4tc_tmpl_ext_inst_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	if (IS_ERR(pipeline))
 		return (void *)pipeline;
 
-	if (n->nlmsg_flags & NLM_F_REPLACE)
-		inst = p4tc_tmpl_ext_inst_update(net, n, nla, pipeline, ids,
-						 extack);
-	else
+	switch (n->nlmsg_type) {
+	case RTM_CREATEP4TEMPLATE:
 		inst = p4tc_tmpl_ext_inst_create(net, n, nla, pipeline, ids,
 						 extack);
+		break;
+	case RTM_UPDATEP4TEMPLATE:
+		inst = p4tc_tmpl_ext_inst_update(net, n, nla, pipeline, ids,
+						 extack);
+		break;
+	default:
+		return ERR_PTR(-EOPNOTSUPP);
+	}
 
 	if (IS_ERR(inst))
 		goto out;
@@ -1813,7 +1819,7 @@ p4tc_tmpl_ext_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	struct p4tc_pipeline *pipeline;
 	struct p4tc_tmpl_extern *ext;
 
-	if (n->nlmsg_flags & NLM_F_REPLACE) {
+	if (p4tc_tmpl_msg_is_update(n)) {
 		NL_SET_ERR_MSG(extack, "Extern update not supported");
 		return ERR_PTR(-EOPNOTSUPP);
 	}
