@@ -240,15 +240,6 @@ static int tcf_table_fill_nlmsg(struct net *net, struct sk_buff *skb,
 	return 0;
 }
 
-static inline void p4tc_table_defact_destroy(struct p4tc_table_defact *defact)
-{
-	if (defact) {
-		p4tc_action_destroy(defact->default_acts);
-		kfree(defact->defact_bpf);
-		kfree(defact);
-	}
-}
-
 static void tcf_table_acts_list_destroy(struct list_head *acts_list)
 {
 	struct p4tc_table_act *table_act, *tmp;
@@ -468,10 +459,10 @@ void tcf_table_put_ref(struct p4tc_table *table)
 	WARN_ON(!refcount_dec_not_one(&table->tbl_ctrl_ref));
 }
 
-static int tcf_table_init_default_act(struct net *net, struct nlattr **tb,
-				      struct p4tc_table_defact **default_act,
-				      u32 pipeid, __u16 curr_permissions,
-				      struct netlink_ext_ack *extack)
+static int __tcf_table_init_default_act(struct net *net, struct nlattr **tb,
+					struct p4tc_table_defact **default_act,
+					u32 pipeid, __u16 curr_permissions,
+					struct netlink_ext_ack *extack)
 {
 	int ret;
 
@@ -483,6 +474,18 @@ static int tcf_table_init_default_act(struct net *net, struct nlattr **tb,
 		__u16 *permissions;
 
 		permissions = nla_data(tb[P4TC_TABLE_DEFAULT_PERMISSIONS]);
+		if (!p4tc_ctrl_read_ok(*permissions)) {
+			NL_SET_ERR_MSG(extack,
+				       "Default action must have ctrl path read permissions");
+			ret = -EINVAL;
+			goto default_act_free;
+		}
+		if (!p4tc_data_read_ok(*permissions)) {
+			NL_SET_ERR_MSG(extack,
+				       "Default action must have data path read permissions");
+			ret = -EINVAL;
+			goto default_act_free;
+		}
 		if (!p4tc_data_exec_ok(*permissions)) {
 			NL_SET_ERR_MSG(extack,
 				       "Default action must have data path execute permissions");
@@ -565,95 +568,161 @@ static struct nla_policy p4tc_table_default_policy[P4TC_TABLE_DEFAULT_MAX + 1] =
 };
 
 static int
-tcf_table_init_default_acts(struct net *net, struct nlattr **tb,
+tcf_table_init_default_act(struct net *net, struct nlattr *nla,
+			   struct p4tc_table *table,
+			   u16 curr_permissions,
+			   struct p4tc_table_defact **default_act,
+			   struct list_head *acts_list,
+			   struct netlink_ext_ack *extack)
+{
+	u16 permissions = P4TC_CONTROL_PERMISSIONS | P4TC_DATA_PERMISSIONS;
+	struct nlattr *tb[P4TC_TABLE_DEFAULT_MAX + 1];
+	int ret;
+
+	if (curr_permissions)
+		permissions = curr_permissions;
+
+	ret = nla_parse_nested(tb, P4TC_TABLE_DEFAULT_MAX, nla,
+			       p4tc_table_default_policy, extack);
+	if (ret < 0)
+		return ret;
+
+	if (!tb[P4TC_TABLE_DEFAULT_ACTION] &&
+	    !tb[P4TC_TABLE_DEFAULT_PERMISSIONS])
+		return 0;
+
+	ret = __tcf_table_init_default_act(net, tb,
+					   default_act,
+					   table->common.p_id, permissions,
+					   extack);
+	if (ret < 0)
+		return ret;
+	if ((*default_act)->default_acts &&
+	     !tcf_table_check_defacts((*default_act)->default_acts[0],
+				     acts_list)) {
+		NL_SET_ERR_MSG(extack,
+			       "Action is not allowed as default hit action");
+		p4tc_table_defact_destroy(*default_act);
+		return -EPERM;
+	}
+
+	return 0;
+}
+
+struct p4tc_table_perm *
+tcf_table_init_permissions(struct p4tc_table *table, u16 permissions,
+			   struct netlink_ext_ack *extack)
+{
+	struct p4tc_table_perm *tbl_perm;
+	int ret;
+
+	if (permissions > P4TC_MAX_PERMISSION) {
+		NL_SET_ERR_MSG(extack,
+			       "Permission may only have 10 bits turned on");
+		ret = -EINVAL;
+		goto out;
+	}
+	if (!p4tc_data_exec_ok(permissions)) {
+		NL_SET_ERR_MSG(extack,
+			       "Table must have execute permissions");
+		ret = -EINVAL;
+		goto out;
+	}
+	if (!p4tc_data_read_ok(permissions)) {
+		NL_SET_ERR_MSG(extack,
+			       "Data path read permissions must be set");
+		ret = -EINVAL;
+		goto out;
+	}
+
+	tbl_perm = kzalloc(sizeof(*tbl_perm), GFP_KERNEL);
+	if (!tbl_perm) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	tbl_perm->permissions = permissions;
+
+	return tbl_perm;
+
+out:
+	return ERR_PTR(ret);
+}
+
+void tcf_table_replace_permissions(struct p4tc_table *table,
+				   struct p4tc_table_perm *tbl_perm,
+				   bool lock_rtnl)
+{
+	if (!tbl_perm)
+		return;
+
+	if (lock_rtnl)
+		rtnl_lock();
+	tbl_perm = rcu_replace_pointer_rtnl(table->tbl_permissions, tbl_perm);
+	if (lock_rtnl)
+		rtnl_unlock();
+	kfree_rcu(tbl_perm, rcu);
+}
+
+int
+tcf_table_init_default_acts(struct net *net,
+			    struct p4tc_table_default_act_params *def_params,
 			    struct p4tc_table *table,
-			    struct p4tc_table_defact **default_hitact,
-			    struct p4tc_table_defact **default_missact,
 			    struct list_head *acts_list,
 			    struct netlink_ext_ack *extack)
 {
-	struct nlattr *tb_default[P4TC_TABLE_DEFAULT_MAX + 1];
-	__u16 permissions = P4TC_CONTROL_PERMISSIONS | P4TC_DATA_PERMISSIONS;
+	u16 permissions;
 	int ret;
 
-	*default_missact = NULL;
-	*default_hitact = NULL;
+	def_params->default_missact = NULL;
+	def_params->default_hitact = NULL;
 
-	if (tb[P4TC_TABLE_DEFAULT_HIT]) {
-		struct p4tc_table_defact *defact;
+	if (def_params->default_hit_attr) {
+		struct p4tc_table_defact *tmp_default_hitact;
+
+		permissions = P4TC_CONTROL_PERMISSIONS | P4TC_DATA_PERMISSIONS;
 
 		rcu_read_lock();
-		defact = rcu_dereference(table->tbl_default_hitact);
-		if (defact)
-			permissions = defact->permissions;
+		if (table->tbl_default_hitact) {
+			tmp_default_hitact = rcu_dereference(table->tbl_default_hitact);
+			permissions = tmp_default_hitact->permissions;
+		}
 		rcu_read_unlock();
 
-		ret = nla_parse_nested(tb_default, P4TC_TABLE_DEFAULT_MAX,
-				       tb[P4TC_TABLE_DEFAULT_HIT],
-				       p4tc_table_default_policy, extack);
+		ret = tcf_table_init_default_act(net,
+						 def_params->default_hit_attr,
+						 table, permissions,
+						 &def_params->default_hitact,
+						 acts_list, extack);
 		if (ret < 0)
 			return ret;
-
-		if (!tb_default[P4TC_TABLE_DEFAULT_ACTION] &&
-		    !tb_default[P4TC_TABLE_DEFAULT_PERMISSIONS])
-			return 0;
-
-		ret = tcf_table_init_default_act(net, tb_default,
-						 default_hitact,
-						 table->common.p_id, permissions,
-						 extack);
-		if (ret < 0)
-			return ret;
-		if (!tcf_table_check_defacts((*default_hitact)->default_acts[0],
-					     acts_list)) {
-			ret = -EPERM;
-			NL_SET_ERR_MSG(extack,
-				       "Action is not allowed as default hit action");
-			goto default_hitacts_free;
-		}
 	}
 
-	if (tb[P4TC_TABLE_DEFAULT_MISS]) {
-		struct p4tc_table_defact *defact;
+	if (def_params->default_miss_attr) {
+		struct p4tc_table_defact *tmp_default_missact;
+
+		permissions = P4TC_CONTROL_PERMISSIONS | P4TC_DATA_PERMISSIONS;
 
 		rcu_read_lock();
-		defact = rcu_dereference(table->tbl_default_missact);
-		if (defact)
-			permissions = defact->permissions;
+		if (table->tbl_default_missact) {
+			tmp_default_missact = rcu_dereference(table->tbl_default_missact);
+			permissions = tmp_default_missact->permissions;
+		}
 		rcu_read_unlock();
 
-		ret = nla_parse_nested(tb_default, P4TC_TABLE_DEFAULT_MAX,
-				       tb[P4TC_TABLE_DEFAULT_MISS],
-				       p4tc_table_default_policy, extack);
+		ret = tcf_table_init_default_act(net,
+						 def_params->default_miss_attr,
+						 table, permissions,
+						 &def_params->default_missact,
+						 acts_list, extack);
 		if (ret < 0)
 			goto default_hitacts_free;
-
-		if (!tb_default[P4TC_TABLE_DEFAULT_ACTION] &&
-		    !tb_default[P4TC_TABLE_DEFAULT_PERMISSIONS])
-			return 0;
-
-		ret = tcf_table_init_default_act(net, tb_default,
-						 default_missact,
-						 table->common.p_id, permissions,
-						 extack);
-		if (ret < 0)
-			goto default_hitacts_free;
-		if (!tcf_table_check_defacts((*default_missact)->default_acts[0],
-					     acts_list)) {
-			ret = -EPERM;
-			NL_SET_ERR_MSG(extack,
-				       "Action is not allowed as default miss action");
-			goto default_missact_free;
-		}
 	}
 
 	return 0;
 
-default_missact_free:
-	p4tc_table_defact_destroy(*default_missact);
-
 default_hitacts_free:
-	p4tc_table_defact_destroy(*default_hitact);
+	p4tc_table_defact_destroy(def_params->default_hitact);
 
 	return ret;
 }
@@ -721,6 +790,60 @@ free_table_act:
 	return ERR_PTR(ret);
 }
 
+void
+tcf_table_replace_default_acts(struct p4tc_table *table,
+			       struct p4tc_table_default_act_params *def_params,
+			       bool lock_rtnl)
+{
+	if (def_params->default_hitact) {
+		bool updated_actions = !!def_params->default_hitact->default_acts;
+		struct p4tc_table_defact *hitact;
+
+		if (lock_rtnl)
+			rtnl_lock();
+		if (!updated_actions) {
+			hitact = rcu_dereference_rtnl(table->tbl_default_hitact);
+			tcf_table_defacts_acts_copy(def_params->default_hitact,
+						    hitact);
+		}
+		hitact = rcu_replace_pointer_rtnl(table->tbl_default_hitact,
+						  def_params->default_hitact);
+		if (lock_rtnl)
+			rtnl_unlock();
+		if (hitact) {
+			synchronize_rcu();
+			if (updated_actions)
+				p4tc_table_defact_destroy(hitact);
+			else
+				kfree(hitact);
+		}
+	}
+
+	if (def_params->default_missact) {
+		bool updated_actions = !!def_params->default_missact->default_acts;
+		struct p4tc_table_defact *missact;
+
+		if (lock_rtnl)
+			rtnl_lock();
+		if (!updated_actions) {
+			missact = rcu_dereference_rtnl(table->tbl_default_missact);
+			tcf_table_defacts_acts_copy(def_params->default_missact,
+						    missact);
+		}
+		missact = rcu_replace_pointer_rtnl(table->tbl_default_missact,
+						  def_params->default_missact);
+		if (lock_rtnl)
+			rtnl_unlock();
+		if (missact) {
+			synchronize_rcu();
+			if (updated_actions)
+				p4tc_table_defact_destroy(missact);
+			else
+				kfree(missact);
+		}
+	}
+}
+
 static int tcf_table_acts_list_init(struct nlattr *nla,
 				    struct p4tc_pipeline *pipeline,
 				    struct list_head *acts_list,
@@ -771,6 +894,7 @@ static struct p4tc_table *tcf_table_create(struct net *net, struct nlattr **tb,
 					   struct netlink_ext_ack *extack)
 {
 	struct rhashtable_params table_hlt_params = entry_hlt_params;
+	struct p4tc_table_default_act_params def_params = {0};
 	struct p4tc_table_parm *parm;
 	struct p4tc_table *table;
 	char *tblname;
@@ -885,39 +1009,21 @@ static struct p4tc_table *tcf_table_create(struct net *net, struct nlattr **tb,
 	}
 
 	if (parm->tbl_flags & P4TC_TABLE_FLAGS_PERMISSIONS) {
-		if (parm->tbl_permissions > P4TC_MAX_PERMISSION) {
-			NL_SET_ERR_MSG(extack,
-				       "Permission may only have 10 bits turned on");
-			ret = -EINVAL;
-			goto free;
-		}
-		if (!p4tc_data_exec_ok(parm->tbl_permissions)) {
-			NL_SET_ERR_MSG(extack,
-				       "Table must have execute permissions");
-			ret = -EINVAL;
-			goto free;
-		}
-		if (!p4tc_data_read_ok(parm->tbl_permissions)) {
-			NL_SET_ERR_MSG(extack,
-				       "Data path read permissions must be set");
-			ret = -EINVAL;
-			goto free;
-		}
-		table->tbl_permissions =
-			kzalloc(sizeof(*table->tbl_permissions), GFP_KERNEL);
-		if (!table->tbl_permissions) {
-			ret = -ENOMEM;
-			goto free;
-		}
-		table->tbl_permissions->permissions = parm->tbl_permissions;
+		u16 tbl_perms = parm->tbl_permissions;
+
+		table->tbl_permissions = tcf_table_init_permissions(table,
+								    tbl_perms,
+								    extack);
 	} else {
-		table->tbl_permissions =
-			kzalloc(sizeof(*table->tbl_permissions), GFP_KERNEL);
-		if (!table->tbl_permissions) {
-			ret = -ENOMEM;
-			goto free;
-		}
-		table->tbl_permissions->permissions = P4TC_TABLE_PERMISSIONS;
+		u16 tbl_perms = P4TC_TABLE_PERMISSIONS;
+
+		table->tbl_permissions = tcf_table_init_permissions(table,
+								    tbl_perms,
+								    extack);
+	}
+	if (IS_ERR(table->tbl_permissions)) {
+		ret = PTR_ERR(table->tbl_permissions);
+		goto free;
 	}
 
 	if (parm->tbl_flags & P4TC_TABLE_FLAGS_TYPE) {
@@ -960,12 +1066,32 @@ static struct p4tc_table *tcf_table_create(struct net *net, struct nlattr **tb,
 			goto idr_rm;
 	}
 
-	ret = tcf_table_init_default_acts(net, tb, table,
-					  &table->tbl_default_hitact,
-					  &table->tbl_default_missact,
+	def_params.default_hit_attr = tb[P4TC_TABLE_DEFAULT_HIT];
+	def_params.default_miss_attr = tb[P4TC_TABLE_DEFAULT_MISS];
+
+	ret = tcf_table_init_default_acts(net, &def_params, table,
 					  &table->tbl_acts_list, extack);
 	if (ret < 0)
 		goto idr_rm;
+
+	table->tbl_default_hitact = def_params.default_hitact;
+	table->tbl_default_missact = def_params.default_missact;
+
+	if (table->tbl_default_hitact &&
+	    !table->tbl_default_hitact->default_acts) {
+		NL_SET_ERR_MSG(extack,
+			       "Must specify defaults_hit_actions's action values");
+		ret = -EINVAL;
+		goto defaultacts_destroy;
+	}
+
+	if (table->tbl_default_missact &&
+	    !table->tbl_default_missact->default_acts) {
+		NL_SET_ERR_MSG(extack,
+			       "Must specify defaults_miss_actions's action values");
+		ret = -EINVAL;
+		goto defaultacts_destroy;
+	}
 
 	idr_init(&table->tbl_masks_idr);
 	ida_init(&table->tbl_prio_idr);
@@ -1021,8 +1147,7 @@ static struct p4tc_table *tcf_table_update(struct net *net, struct nlattr **tb,
 					   u32 flags,
 					   struct netlink_ext_ack *extack)
 {
-	struct p4tc_table_defact *default_missact = NULL;
-	struct p4tc_table_defact *default_hitact = NULL;
+	struct p4tc_table_default_act_params def_params = {0};
 	struct list_head *tbl_acts_list = NULL;
 	struct p4tc_table_perm *perm = NULL;
 	struct p4tc_table_parm *parm = NULL;
@@ -1047,15 +1172,16 @@ static struct p4tc_table *tcf_table_update(struct net *net, struct nlattr **tb,
 			goto table_acts_destroy;
 	}
 
+
+
+	def_params.default_hit_attr = tb[P4TC_TABLE_DEFAULT_HIT];
+	def_params.default_miss_attr = tb[P4TC_TABLE_DEFAULT_MISS];
+
 	if (tbl_acts_list)
-		ret = tcf_table_init_default_acts(net, tb, table,
-						  &default_hitact,
-						  &default_missact,
+		ret = tcf_table_init_default_acts(net, &def_params, table,
 						  tbl_acts_list, extack);
 	else
-		ret = tcf_table_init_default_acts(net, tb, table,
-						  &default_hitact,
-						  &default_missact,
+		ret = tcf_table_init_default_acts(net, &def_params, table,
 						  &table->tbl_acts_list,
 						  extack);
 	if (ret < 0)
@@ -1111,31 +1237,13 @@ static struct p4tc_table *tcf_table_update(struct net *net, struct nlattr **tb,
 			table->tbl_max_masks = parm->tbl_max_masks;
 		}
 		if (parm->tbl_flags & P4TC_TABLE_FLAGS_PERMISSIONS) {
-			if (parm->tbl_permissions > P4TC_MAX_PERMISSION) {
-				NL_SET_ERR_MSG(extack,
-					       "Permission may only have 10 bits turned on");
-				ret = -EINVAL;
+			perm = tcf_table_init_permissions(table,
+							  parm->tbl_permissions,
+							  extack);
+			if (IS_ERR(perm)) {
+				ret = PTR_ERR(perm);
 				goto defaultacts_destroy;
 			}
-			if (!p4tc_data_exec_ok(parm->tbl_permissions)) {
-				NL_SET_ERR_MSG(extack,
-					       "Table must have execute permissions");
-				ret = -EINVAL;
-				goto defaultacts_destroy;
-			}
-			if (!p4tc_data_read_ok(parm->tbl_permissions)) {
-				NL_SET_ERR_MSG(extack,
-					       "Data path read permissions must be set");
-				ret = -EINVAL;
-				goto defaultacts_destroy;
-			}
-
-			perm = kzalloc(sizeof(*perm), GFP_KERNEL);
-			if (!perm) {
-				ret = -ENOMEM;
-				goto defaultacts_destroy;
-			}
-			perm->permissions = parm->tbl_permissions;
 		}
 
 		if (parm->tbl_flags & P4TC_TABLE_FLAGS_TYPE) {
@@ -1163,32 +1271,8 @@ static struct p4tc_table *tcf_table_update(struct net *net, struct nlattr **tb,
 		table->tbl_const_entry = entry;
 	}
 
-	if (default_hitact) {
-		struct p4tc_table_defact *hitact;
-
-		hitact = rcu_replace_pointer_rtnl(table->tbl_default_hitact,
-						  default_hitact);
-		if (hitact) {
-			synchronize_rcu();
-			p4tc_table_defact_destroy(hitact);
-		}
-	}
-
-	if (default_missact) {
-		struct p4tc_table_defact *missact;
-
-		missact = rcu_replace_pointer_rtnl(table->tbl_default_missact,
-						   default_missact);
-		if (missact) {
-			synchronize_rcu();
-			p4tc_table_defact_destroy(missact);
-		}
-	}
-
-	if (perm) {
-		perm = rcu_replace_pointer_rtnl(table->tbl_permissions, perm);
-		kfree_rcu(perm, rcu);
-	}
+	tcf_table_replace_default_acts(table, &def_params, false);
+	tcf_table_replace_permissions(table, perm, false);
 
 	return table;
 
@@ -1196,8 +1280,8 @@ free_perm:
 	kfree(perm);
 
 defaultacts_destroy:
-	p4tc_table_defact_destroy(default_missact);
-	p4tc_table_defact_destroy(default_hitact);
+	p4tc_table_defact_destroy(def_params.default_missact);
+	p4tc_table_defact_destroy(def_params.default_hitact);
 
 table_acts_destroy:
 	if (tbl_acts_list) {
@@ -1207,32 +1291,6 @@ table_acts_destroy:
 
 out:
 	return ERR_PTR(ret);
-}
-
-static bool tcf_table_check_runtime_update(struct nlmsghdr *n,
-					   struct nlattr **tb)
-{
-	int i;
-
-	if (n->nlmsg_type == RTM_CREATEP4TEMPLATE &&
-	    !(n->nlmsg_flags & NLM_F_REPLACE))
-		return false;
-
-	if (tb[P4TC_TABLE_INFO]) {
-		struct p4tc_table_parm *info;
-
-		info = nla_data(tb[P4TC_TABLE_INFO]);
-		if ((info->tbl_flags & ~P4TC_TABLE_FLAGS_PERMISSIONS) ||
-		    !(info->tbl_flags & P4TC_TABLE_FLAGS_PERMISSIONS))
-			return false;
-	}
-
-	for (i = P4TC_TABLE_DEFAULT_MISS + 1; i < P4TC_TABLE_MAX; i++) {
-		if (tb[i])
-			return false;
-	}
-
-	return true;
 }
 
 static struct p4tc_template_common *
@@ -1255,8 +1313,7 @@ tcf_table_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	if (ret < 0)
 		return ERR_PTR(ret);
 
-	if (pipeline_sealed(pipeline) &&
-	    !tcf_table_check_runtime_update(n, tb)) {
+	if (pipeline_sealed(pipeline)) {
 		NL_SET_ERR_MSG(extack,
 			       "Only default action updates are allowed in sealed pipeline");
 		return ERR_PTR(-EINVAL);
@@ -1348,8 +1405,7 @@ static int tcf_table_gd(struct net *net, struct sk_buff *skb,
 			return ret;
 	}
 
-	if (n->nlmsg_type == RTM_GETP4TEMPLATE ||
-	    tcf_table_check_runtime_update(n, tb))
+	if (n->nlmsg_type == RTM_GETP4TEMPLATE)
 		pipeline = tcf_pipeline_find_byany(net, nl_pname->data, pipeid,
 						   extack);
 	else
