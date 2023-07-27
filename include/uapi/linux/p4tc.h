@@ -41,6 +41,7 @@ struct p4tcmsg {
 #define P4TC_TABLE_FLAGS_DEFAULT_KEY 0x08
 #define P4TC_TABLE_FLAGS_PERMISSIONS 0x10
 #define P4TC_TABLE_FLAGS_TYPE 0x20
+#define P4TC_TABLE_FLAGS_AGING 0x40
 
 enum {
 	P4TC_TABLE_TYPE_EXACT = 1,
@@ -89,6 +90,7 @@ enum {
 #define p4tc_data_exec_ok(perm)     (perm & P4TC_DATA_PERM_X)
 
 struct p4tc_table_parm {
+	__u64 tbl_aging;
 	__u32 tbl_keysz;
 	__u32 tbl_max_entries;
 	__u32 tbl_max_masks;

@@ -133,6 +133,8 @@ static int _tcf_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 	parm.tbl_max_entries = table->tbl_max_entries;
 	parm.tbl_max_masks = table->tbl_max_masks;
 	parm.tbl_num_entries = refcount_read(&table->tbl_entries_ref) - 1;
+	parm.tbl_type = table->tbl_type;
+	parm.tbl_aging = table->tbl_aging;
 
 	tbl_perm = rcu_dereference_rtnl(table->tbl_permissions);
 	parm.tbl_permissions = tbl_perm->permissions;
@@ -522,7 +524,7 @@ static int __tcf_table_init_default_act(struct net *net, struct nlattr **tb,
 			goto default_act_free;
 		} else if (ret > 1) {
 			NL_SET_ERR_MSG(extack, "Can only have one hit action");
-			tcf_action_destroy(default_acts, TCA_ACT_UNBIND);
+			p4tc_action_destroy(default_acts);
 			kfree(default_acts);
 			ret = -EINVAL;
 			goto default_act_free;
@@ -530,7 +532,7 @@ static int __tcf_table_init_default_act(struct net *net, struct nlattr **tb,
 		act_bpf = tcf_table_entry_create_act_bpf(default_acts[0],
 							 extack);
 		if (IS_ERR(act_bpf)) {
-			tcf_action_destroy(default_acts, TCA_ACT_UNBIND);
+			p4tc_action_destroy(default_acts);
 			kfree(default_acts);
 			ret = -EINVAL;
 			goto default_act_free;
@@ -1037,6 +1039,24 @@ static struct p4tc_table *tcf_table_create(struct net *net, struct nlattr **tb,
 		table->tbl_type = P4TC_TABLE_TYPE_EXACT;
 	}
 
+	if (parm->tbl_flags & P4TC_TABLE_FLAGS_AGING) {
+		if (!parm->tbl_aging) {
+			NL_SET_ERR_MSG(extack,
+				       "Table aging can't be zero");
+			ret = -EINVAL;
+			goto free;
+		}
+		if (parm->tbl_aging > P4TC_MAX_T_AGING) {
+			NL_SET_ERR_MSG(extack,
+				       "Table max_masks exceeds maximum value");
+			ret = -EINVAL;
+			goto free;
+		}
+		table->tbl_aging = parm->tbl_aging;
+	} else {
+		table->tbl_aging = P4TC_DEFAULT_T_AGING;
+	}
+
 	refcount_set(&table->tbl_ctrl_ref, 1);
 
 	if (tbl_id) {
@@ -1152,6 +1172,7 @@ static struct p4tc_table *tcf_table_update(struct net *net, struct nlattr **tb,
 	struct p4tc_table_perm *perm = NULL;
 	struct p4tc_table_parm *parm = NULL;
 	struct p4tc_table *table;
+	u64 tbl_aging = 0;
 	int ret = 0;
 
 	table = tcf_table_find_byanyattr(pipeline, tb[P4TC_TABLE_NAME], tbl_id,
@@ -1254,6 +1275,21 @@ static struct p4tc_table *tcf_table_update(struct net *net, struct nlattr **tb,
 			}
 			table->tbl_type = parm->tbl_type;
 		}
+		if (parm->tbl_flags & P4TC_TABLE_FLAGS_AGING) {
+			if (!parm->tbl_aging) {
+				NL_SET_ERR_MSG(extack,
+					       "Table aging can't be zero");
+				ret = -EINVAL;
+				goto free_perm;
+			}
+			if (parm->tbl_aging > P4TC_MAX_T_AGING) {
+				NL_SET_ERR_MSG(extack,
+					       "Table max_masks exceeds maximum value");
+				ret = -EINVAL;
+				goto free_perm;
+			}
+			tbl_aging = parm->tbl_aging;
+		}
 	}
 
 	if (tb[P4TC_TABLE_CONST_ENTRY]) {
@@ -1273,6 +1309,9 @@ static struct p4tc_table *tcf_table_update(struct net *net, struct nlattr **tb,
 
 	tcf_table_replace_default_acts(table, &def_params, false);
 	tcf_table_replace_permissions(table, perm, false);
+
+	if (tbl_aging)
+		table->tbl_aging = tbl_aging;
 
 	return table;
 

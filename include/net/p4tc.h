@@ -24,6 +24,8 @@
 #define P4TC_MAX_NUM_EXT_INSTS (1 << 10)
 #define P4TC_DEFAULT_NUM_EXT_INST_ELEMS 1
 #define P4TC_MAX_NUM_EXT_INST_ELEMS (1 << 10)
+#define P4TC_MAX_T_AGING 864000000
+#define P4TC_DEFAULT_T_AGING 259200000
 
 #define P4TC_MAX_PERMISSION (GENMASK(P4TC_PERM_MAX_BIT, 0))
 
@@ -267,6 +269,7 @@ struct p4tc_table {
 	struct p4tc_table_perm __rcu        *tbl_permissions;
 	struct p4tc_table_entry_mask __rcu  **tbl_masks_array;
 	unsigned long __rcu                 *tbl_free_masks_bitmap;
+	u64                                 tbl_aging;
 	spinlock_t                          tbl_masks_idr_lock;
 	u32                                 tbl_keysz;
 	u32                                 tbl_id;
