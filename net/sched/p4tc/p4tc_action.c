@@ -1548,11 +1548,18 @@ tcf_act_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	if (ret < 0)
 		return ERR_PTR(ret);
 
-	if (n->nlmsg_flags & NLM_F_REPLACE)
+	switch (n->nlmsg_type) {
+	case RTM_CREATEP4TEMPLATE:
+		act = tcf_act_create(net, tb, pipeline, ids, extack);
+		break;
+	case RTM_UPDATEP4TEMPLATE:
 		act = tcf_act_update(net, tb, pipeline, ids, n->nlmsg_flags,
 				     extack);
-	else
-		act = tcf_act_create(net, tb, pipeline, ids, extack);
+		break;
+	default:
+		return ERR_PTR(-EOPNOTSUPP);
+	}
+
 	if (IS_ERR(act))
 		goto out;
 
