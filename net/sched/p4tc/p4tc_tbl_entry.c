@@ -821,12 +821,7 @@ static int tcf_table_entry_destroy(struct p4tc_table *table,
 static int tcf_table_entry_destroy_noida(struct p4tc_table *table,
 					 struct p4tc_table_entry *entry)
 {
-	struct p4tc_table_entry_value *value = p4tc_table_entry_value(entry);
-
-	/* Entry was deleted in parallel */
-	if (!refcount_dec_if_one(&value->entries_ref))
-		return -EBUSY;
-
+	/* Entry refcount was already decremented */
 	return __tcf_table_entry_destroy(table, entry, true, false, 0);
 }
 
@@ -1636,29 +1631,31 @@ static int __tcf_table_entry_update(struct p4tc_pipeline *pipeline,
 		goto rm_masks_idr;
 	}
 
+	/* In case of parallel update, the thread that arrives here first will
+	 * get the right to update.
+	 */
 	value_old = p4tc_table_entry_value(entry_old);
+	if (!refcount_dec_if_one(&value_old->entries_ref)) {
+		ret = -EAGAIN;
+		goto rm_masks_idr;
+	}
 
 	if (from_control) {
 		if (!p4tc_ctrl_update_ok(value_old->permissions)) {
 			ret = -EPERM;
-			goto rm_masks_idr;
+			goto set_entries_refcount;
 		}
 	} else {
 		if (!p4tc_data_update_ok(value_old->permissions)) {
 			ret = -EPERM;
-			goto rm_masks_idr;
+			goto set_entries_refcount;
 		}
-	}
-
-	if (refcount_read(&value_old->entries_ref) > 1) {
-		ret = -EBUSY;
-		goto rm_masks_idr;
 	}
 
 	tm = kzalloc(sizeof(*tm), GFP_ATOMIC);
 	if (unlikely(!tm)) {
 		ret = -ENOMEM;
-		goto rm_masks_idr;
+		goto set_entries_refcount;
 	}
 
 	tm_old = rcu_dereference_protected(value_old->tm, 1);
@@ -1720,6 +1717,9 @@ free_entry_work:
 
 free_tm:
 	kfree(tm);
+
+set_entries_refcount:
+	refcount_set(&value_old->entries_ref, 1);
 
 rm_masks_idr:
 	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT)
@@ -2162,11 +2162,13 @@ __tcf_table_entry_cu(struct net *net, bool replace, struct nlattr **tb,
 	else
 		ret = __tcf_table_entry_create(pipeline, table, entry, mask,
 					       whodunnit, true);
+	rcu_read_unlock();
 	if (ret < 0) {
-		rcu_read_unlock();
+		if (replace && ret == -EAGAIN)
+			NL_SET_ERR_MSG(extack, "Entry was being updated in parallel");
+
 		goto free_act_bpf;
 	}
-	rcu_read_unlock();
 
 	return entry;
 
