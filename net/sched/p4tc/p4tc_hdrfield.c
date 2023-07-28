@@ -305,7 +305,7 @@ tcf_hdrfield_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 	struct p4tc_hdrfield *hdrfield;
 	struct p4tc_pipeline *pipeline;
 
-	if (n->nlmsg_flags & NLM_F_REPLACE) {
+	if (p4tc_tmpl_msg_is_update(n)) {
 		NL_SET_ERR_MSG(extack, "Header field update not supported");
 		return ERR_PTR(-EOPNOTSUPP);
 	}
