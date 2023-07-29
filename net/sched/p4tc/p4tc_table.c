@@ -624,6 +624,12 @@ tcf_table_init_permissions(struct p4tc_table *table, u16 permissions,
 		ret = -EINVAL;
 		goto out;
 	}
+	if (!p4tc_ctrl_read_ok(permissions)) {
+		NL_SET_ERR_MSG(extack,
+			       "Table must have read permissions");
+		ret = -EINVAL;
+		goto out;
+	}
 	if (!p4tc_data_exec_ok(permissions)) {
 		NL_SET_ERR_MSG(extack,
 			       "Table must have execute permissions");
