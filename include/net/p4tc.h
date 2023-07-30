@@ -461,6 +461,49 @@ struct p4tc_table *tcf_table_find_get(struct p4tc_pipeline *pipeline,
 				      struct netlink_ext_ack *extack);
 void tcf_table_put_ref(struct p4tc_table *table);
 
+struct p4tc_table_default_act_params {
+	struct p4tc_table_defact *default_hitact;
+	struct p4tc_table_defact *default_missact;
+	struct nlattr *default_hit_attr;
+	struct nlattr *default_miss_attr;
+};
+
+int
+tcf_table_init_default_acts(struct net *net,
+			    struct p4tc_table_default_act_params *def_params,
+			    struct p4tc_table *table,
+			    struct list_head *acts_list,
+			    struct netlink_ext_ack *extack);
+
+static inline void p4tc_table_defact_destroy(struct p4tc_table_defact *defact)
+{
+	if (defact) {
+		p4tc_action_destroy(defact->default_acts);
+		kfree(defact->defact_bpf);
+		kfree(defact);
+	}
+}
+
+static inline void
+tcf_table_defacts_acts_copy(struct p4tc_table_defact *defact_copy,
+			    struct p4tc_table_defact *defact_orig)
+{
+	defact_copy->defact_bpf = defact_orig->defact_bpf;
+	defact_copy->default_acts = defact_orig->default_acts;
+}
+
+void
+tcf_table_replace_default_acts(struct p4tc_table *table,
+			       struct p4tc_table_default_act_params *def_params,
+			       bool lock_rtnl);
+
+struct p4tc_table_perm *
+tcf_table_init_permissions(struct p4tc_table *table, u16 permissions,
+			   struct netlink_ext_ack *extack);
+void tcf_table_replace_permissions(struct p4tc_table *table,
+				   struct p4tc_table_perm *tbl_perm,
+				   bool lock_rtnl);
+
 void tcf_table_entry_destroy_hash(void *ptr, void *arg);
 
 struct p4tc_table_entry *

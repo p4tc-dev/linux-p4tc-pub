@@ -291,6 +291,15 @@ struct p4tc_table_entry_tm {
 	__u16 permissions;
 };
 
+enum {
+	P4TC_ENTRY_TBL_ATTRS_UNSPEC,
+	P4TC_ENTRY_TBL_ATTRS_DEFAULT_HIT, /* nested default hit attrs */
+	P4TC_ENTRY_TBL_ATTRS_DEFAULT_MISS, /* nested default miss attrs */
+	P4TC_ENTRY_TBL_ATTRS_PERMISSIONS, /* u16 table permissions */
+	__P4TC_ENTRY_TBL_ATTRS,
+};
+#define P4TC_ENTRY_TBL_ATTRS_MAX (__P4TC_ENTRY_TBL_ATTRS - 1)
+
 /* Table entry attributes */
 enum {
 	P4TC_ENTRY_UNSPEC,
@@ -304,6 +313,7 @@ enum {
 	P4TC_ENTRY_CREATE_WHODUNNIT, /* tells who created the entry */
 	P4TC_ENTRY_UPDATE_WHODUNNIT, /* tells who updated the entry last */
 	P4TC_ENTRY_PERMISSIONS, /* entry CRUDX permissions */
+	P4TC_ENTRY_TBL_ATTRS, /* nested table attributes */
 	P4TC_ENTRY_PAD,
 	__P4TC_ENTRY_MAX
 };

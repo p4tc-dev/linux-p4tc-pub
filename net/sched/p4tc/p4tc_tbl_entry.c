@@ -327,6 +327,7 @@ static const struct nla_policy p4tc_entry_policy[P4TC_ENTRY_MAX + 1] = {
 	[P4TC_ENTRY_CREATE_WHODUNNIT] = { .type = NLA_U8 },
 	[P4TC_ENTRY_UPDATE_WHODUNNIT] = { .type = NLA_U8 },
 	[P4TC_ENTRY_PERMISSIONS] = NLA_POLICY_MAX(NLA_U16, P4TC_MAX_PERMISSION),
+	[P4TC_ENTRY_TBL_ATTRS] = { .type = NLA_NESTED },
 };
 
 static struct p4tc_table_entry_mask *
@@ -1377,6 +1378,57 @@ tcf_table_entry_create_act_bpf(struct tc_action *action,
 	return act_bpf;
 }
 
+static struct nla_policy p4tc_table_attrs_policy[P4TC_ENTRY_TBL_ATTRS_MAX + 1] = {
+	[P4TC_ENTRY_TBL_ATTRS_DEFAULT_HIT] = { .type = NLA_NESTED },
+	[P4TC_ENTRY_TBL_ATTRS_DEFAULT_MISS] = { .type = NLA_NESTED },
+	[P4TC_ENTRY_TBL_ATTRS_PERMISSIONS] = NLA_POLICY_MAX(NLA_U16, P4TC_MAX_PERMISSION),
+};
+
+static int
+update_default_tbl_attrs(struct net *net, struct p4tc_table *table,
+			 struct nlattr *table_attrs,
+			 struct netlink_ext_ack *extack)
+{
+	struct p4tc_table_default_act_params def_params = {0};
+	struct nlattr *tb[P4TC_ENTRY_TBL_ATTRS_MAX + 1];
+	struct p4tc_table_perm *tbl_perm = NULL;
+	int err;
+
+	err = nla_parse_nested(tb, P4TC_ENTRY_TBL_ATTRS_MAX, table_attrs,
+			       p4tc_table_attrs_policy, extack);
+	if (err < 0)
+		return err;
+
+	def_params.default_hit_attr = tb[P4TC_ENTRY_TBL_ATTRS_DEFAULT_HIT];
+	def_params.default_miss_attr = tb[P4TC_ENTRY_TBL_ATTRS_DEFAULT_MISS];
+
+	err = tcf_table_init_default_acts(net, &def_params, table,
+					  &table->tbl_acts_list, extack);
+	if (err < 0)
+		return err;
+
+	if (tb[P4TC_ENTRY_TBL_ATTRS_PERMISSIONS]) {
+		u16 permissions = nla_get_u16(tb[P4TC_ENTRY_TBL_ATTRS_PERMISSIONS]);
+
+		tbl_perm = tcf_table_init_permissions(table, permissions,
+						      extack);
+		if (IS_ERR(tbl_perm)) {
+			err = PTR_ERR(tbl_perm);
+			goto destroy_acts;
+		}
+	}
+
+	tcf_table_replace_default_acts(table, &def_params, true);
+	tcf_table_replace_permissions(table, tbl_perm, true);
+
+	return 0;
+
+destroy_acts:
+	p4tc_table_defact_destroy(def_params.default_hitact);
+	p4tc_table_defact_destroy(def_params.default_missact);
+	return err;
+}
+
 static struct p4tc_table_entry *
 __tcf_table_entry_cu(struct net *net, bool replace, struct nlattr **tb,
 		     struct p4tc_pipeline *pipeline, struct p4tc_table *table,
@@ -1575,11 +1627,6 @@ static int tcf_table_entry_cu(struct net *net, struct sk_buff *skb,
 	if (ret < 0)
 		return ret;
 
-	if (NL_REQ_ATTR_CHECK(extack, arg, tb, P4TC_ENTRY_WHODUNNIT)) {
-		NL_SET_ERR_MSG(extack, "Must specify whodunnit attribute");
-		return -EINVAL;
-	}
-
 	rcu_read_lock();
 	ret = tcf_table_entry_get_table(net, &pipeline, &table, tb, ids,
 					nl_pname->data, extack);
@@ -1592,6 +1639,20 @@ static int tcf_table_entry_cu(struct net *net, struct sk_buff *skb,
 			       "Need to seal pipeline before issuing runtime command");
 		ret = -EINVAL;
 		goto table_put;
+	}
+
+	if (replace && tb[P4TC_ENTRY_TBL_ATTRS]) {
+		ret = update_default_tbl_attrs(net, table,
+						tb[P4TC_ENTRY_TBL_ATTRS],
+						extack);
+		goto table_put;
+	} else {
+		if (NL_REQ_ATTR_CHECK(extack, arg, tb, P4TC_ENTRY_WHODUNNIT)) {
+			NL_SET_ERR_MSG(extack,
+				       "Must specify whodunnit attribute");
+			ret = -EINVAL;
+			goto table_put;
+		}
 	}
 
 	entry = __tcf_table_entry_cu(net, replace, tb, pipeline, table, extack);
