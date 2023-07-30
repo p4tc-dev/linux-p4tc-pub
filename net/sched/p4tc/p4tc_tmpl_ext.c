@@ -1183,7 +1183,8 @@ struct p4tc_extern_ops *p4tc_extern_ops_get(char *kind)
 
 void p4tc_extern_ops_put(const struct p4tc_extern_ops *ops)
 {
-	module_put(ops->owner);
+	if (ops)
+		module_put(ops->owner);
 }
 
 int p4tc_register_extern(struct p4tc_extern_ops *ext)
@@ -1734,7 +1735,6 @@ p4tc_tmpl_ext_create(struct nlmsghdr *n, struct nlattr *nla,
 {
 	struct nlattr *tb[P4TC_TMPL_EXT_MAX + 1];
 	struct p4tc_tmpl_extern *ext;
-	struct p4tc_extern_ops *ops;
 	char *extern_name = NULL;
 	u32 ext_id = 0;
 	int ret;
@@ -1795,30 +1795,10 @@ p4tc_tmpl_ext_create(struct nlmsghdr *n, struct nlattr *nla,
 	ext->common.p_id = pipeline->common.p_id;
 	ext->common.ops = (struct p4tc_template_ops *)&p4tc_tmpl_ext_ops;
 
-	ops = p4tc_extern_ops_get(extern_name);
-	if (ops) {
-		ext->ops = ops;
-		return ext;
-	}
-
-#ifdef CONFIG_MODULES
-	rtnl_unlock();
-	request_module("ext_%s", extern_name);
-	rtnl_lock();
-#endif
-
-	ops = p4tc_extern_ops_get(extern_name);
-	if (!ops) {
-		NL_SET_ERR_MSG(extack, "Failed to load TC extern module");
-		ret = -ENOENT;
-		goto idr_rm;
-	}
-	ext->ops = ops;
+	/* Extern module is not mandatory */
+	ext->ops = p4tc_extern_ops_get(extern_name);
 
 	return ext;
-
-idr_rm:
-	idr_remove(&pipeline->p_ext_idr, ext->ext_id);
 
 free_extern:
 	kfree(ext);
