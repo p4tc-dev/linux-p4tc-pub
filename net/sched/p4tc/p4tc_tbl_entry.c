@@ -1305,6 +1305,119 @@ out:
 	return ret;
 }
 
+struct p4tc_table_entry_create_state {
+	struct p4tc_act *act;
+	struct tcf_p4act *p4_act;
+	struct p4tc_table_entry *entry;
+	u64 aging_ms;
+	u16 permissions;
+};
+
+static int
+tcf_table_entry_init_bpf(struct p4tc_pipeline *pipeline,
+			 struct p4tc_table *table, u32 entry_key_sz,
+			 struct p4tc_table_entry_act_bpf *act_bpf,
+			 struct p4tc_table_entry_create_state *state)
+{
+	const u32 keysz_bytes = P4TC_KEYSZ_BYTES(table->tbl_keysz);
+	struct p4tc_table_entry_value *entry_value;
+	const u32 keysz_bits = table->tbl_keysz;
+	u32 act_id = act_bpf->act_id;
+	struct p4tc_table_entry *entry;
+	struct tcf_p4act *p4_act;
+	struct p4tc_act *act;
+	u32 entrysz;
+	int err;
+
+	err = -EINVAL;
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT)
+		goto out;
+
+	if (keysz_bytes != P4TC_KEYSZ_BYTES(entry_key_sz))
+		goto out;
+
+	if (refcount_read(&table->tbl_entries_ref) > table->tbl_max_entries)
+		goto out;
+
+	act = tcf_action_find_byid(pipeline, act_id);
+	if (!act) {
+		err = -ENOENT;
+		goto out;
+	}
+
+	if (!refcount_inc_not_zero(&act->a_ref)) {
+		err = -EBUSY;
+		goto out;
+	}
+
+	entrysz = sizeof(*entry) + keysz_bytes +
+		  sizeof(struct p4tc_table_entry_value);
+
+	entry = kzalloc(entrysz, GFP_ATOMIC);
+	if (unlikely(!entry)) {
+		err = -ENOMEM;
+		goto act_ref_dec;
+	}
+	entry->key.keysz = keysz_bits;
+
+	entry_value = p4tc_table_entry_value(entry);
+	err = tcf_table_entry_alloc_new_prio(table);
+	if (err < 0)
+		goto free_entry;
+	entry_value->prio = err;
+	entry_value->permissions = state->permissions;
+	entry_value->aging_ms = state->aging_ms;
+
+	p4_act = tcf_p4_get_next_prealloc_act(act);
+	if (!p4_act) {
+		err = -ENOENT;
+		goto idr_rm;
+	}
+
+	err = tcf_table_tc_act_from_bpf_act(p4_act, entry_value, act_bpf);
+	if (err < 0)
+		goto free_prealloc;
+
+	state->act = act;
+	state->p4_act = p4_act;
+	state->entry = entry;
+
+	return 0;
+
+free_prealloc:
+	tcf_p4_put_prealloc_act(act, p4_act);
+
+idr_rm:
+	tcf_table_entry_free_prio(table, entry_value->prio);
+
+free_entry:
+	kfree(entry);
+
+act_ref_dec:
+	WARN_ON_ONCE(!refcount_dec_not_one(&act->a_ref));
+out:
+	return err;
+}
+
+static inline void
+tcf_table_entry_create_state_put(struct p4tc_table *table,
+				 struct p4tc_table_entry_create_state *state)
+{
+	struct p4tc_table_entry_value *value;
+
+	tcf_p4_put_prealloc_act(state->act, state->p4_act);
+
+	value = p4tc_table_entry_value(state->entry);
+	tcf_table_entry_free_prio(table, value->prio);
+
+	kfree(value->act_bpf);
+	kfree(value->acts);
+
+	kfree(state->entry);
+
+	WARN_ON_ONCE(!refcount_dec_not_one(&state->act->a_ref));
+}
+
 /* Invoked from both control and data path  */
 static int __tcf_table_entry_update(struct p4tc_pipeline *pipeline,
 				    struct p4tc_table *table,
@@ -1419,6 +1532,119 @@ out:
 #define P4TC_DEFAULT_TENTRY_PERMISSIONS                           \
 	(P4TC_CTRL_PERM_R | P4TC_CTRL_PERM_U | P4TC_CTRL_PERM_D | \
 	 P4TC_DATA_PERM_R | P4TC_DATA_PERM_X)
+
+int tcf_table_entry_create_on_miss(struct p4tc_pipeline *pipeline,
+				   struct p4tc_table *table,
+				   struct p4tc_table_entry_key *key,
+				   struct p4tc_table_entry_act_bpf *act_bpf,
+				   u64 aging_ms)
+{
+	u8 __mask[sizeof(struct p4tc_table_entry_mask) +
+		  BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
+	struct p4tc_table_entry_mask *mask = (void *)&__mask;
+	struct p4tc_table_entry_create_state state = {0};
+	int err;
+
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT)
+		return -EINVAL;
+
+	state.aging_ms = aging_ms;
+	state.permissions = P4TC_DEFAULT_TENTRY_PERMISSIONS;
+	err = tcf_table_entry_init_bpf(pipeline, table, key->keysz,
+					   act_bpf, &state);
+	if (err < 0)
+		return err;
+
+	tcf_table_entry_assign_key_exact(&state.entry->key, key->fa_key);
+
+	err = __tcf_table_entry_create(pipeline, table, state.entry, mask,
+				       P4TC_ENTITY_KERNEL, false);
+	if (err < 0)
+		goto put_state;
+
+	tcf_p4_set_init_flags(state.p4_act);
+
+	return 0;
+
+put_state:
+	tcf_table_entry_create_state_put(table, &state);
+
+	return err;
+}
+
+int tcf_table_entry_create_bpf(struct p4tc_pipeline *pipeline,
+			       struct p4tc_table *table,
+			       struct p4tc_entry_key_bpf *key,
+			       struct p4tc_table_entry_act_bpf *act_bpf,
+			       u64 aging_ms)
+{
+	u8 __mask[sizeof(struct p4tc_table_entry_mask) +
+		  BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
+	struct p4tc_table_entry_mask *mask = (void *)&__mask;
+	struct p4tc_table_entry_create_state state = {0};
+	int err;
+
+	state.aging_ms = aging_ms;
+	state.permissions = P4TC_DEFAULT_TENTRY_PERMISSIONS;
+	err = tcf_table_entry_init_bpf(pipeline, table, key->key_sz,
+					   act_bpf, &state);
+	if (err < 0)
+		return err;
+
+	tcf_table_entry_assign_key(table, &state.entry->key, mask, key->key,
+				   key->mask);
+
+	err = __tcf_table_entry_create(pipeline, table, state.entry, mask,
+				       P4TC_ENTITY_KERNEL, false);
+	if (err < 0)
+		goto put_state;
+
+	tcf_p4_set_init_flags(state.p4_act);
+
+	return 0;
+
+put_state:
+	tcf_table_entry_create_state_put(table, &state);
+
+	return err;
+}
+
+int tcf_table_entry_update_bpf(struct p4tc_pipeline *pipeline,
+			       struct p4tc_table *table,
+			       struct p4tc_table_entry_key *key,
+			       struct p4tc_table_entry_act_bpf *act_bpf,
+			       u64 aging_ms)
+{
+	struct p4tc_table_entry_create_state state = {0};
+	struct p4tc_table_entry_value *value;
+	int err;
+
+	state.aging_ms = aging_ms;
+	state.permissions = P4TC_PERMISSIONS_UNINIT;
+	err = tcf_table_entry_init_bpf(pipeline, table, key->keysz, act_bpf,
+				       &state);
+	if (err < 0)
+		return err;
+
+	tcf_table_entry_assign_key_exact(&state.entry->key, key->fa_key);
+
+	value = p4tc_table_entry_value(state.entry);
+	value->is_static = false;
+	err = __tcf_table_entry_update(pipeline, table, state.entry, NULL,
+				       P4TC_ENTITY_KERNEL, false);
+
+	if (err < 0)
+		goto put_state;
+
+	tcf_p4_set_init_flags(state.p4_act);
+
+	return 0;
+
+put_state:
+	tcf_table_entry_create_state_put(table, &state);
+
+	return err;
+}
 
 static bool tcf_table_check_entry_acts(struct p4tc_table *table,
 				       struct tc_action *entry_acts[],

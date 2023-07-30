@@ -341,6 +341,12 @@ struct p4tc_table_entry_act_bpf_params {
 	u32 tblid;
 };
 
+struct p4tc_table_entry_create_bpf_params {
+	u64 aging_ms;
+	u32 pipeid;
+	u32 tblid;
+};
+
 struct p4tc_table_entry;
 struct p4tc_table_entry_work {
 	struct work_struct   work;
@@ -382,6 +388,13 @@ struct p4tc_table_entry {
 	/* fallthrough: key data + value */
 };
 
+struct p4tc_entry_key_bpf {
+	void *key;
+	u32 key_sz;
+	void *mask;
+	u32 mask_sz;
+};
+
 #define P4TC_KEYSZ_BYTES(bits) (round_up(BITS_TO_BYTES(bits), 8))
 
 static inline void *p4tc_table_entry_value(struct p4tc_table_entry *entry)
@@ -413,6 +426,21 @@ struct p4tc_table_entry_act_bpf *
 tcf_table_entry_create_act_bpf(struct tc_action *action,
 			       struct netlink_ext_ack *extack);
 int register_p4tc_tbl_bpf(void);
+int tcf_table_entry_create_bpf(struct p4tc_pipeline *pipeline,
+			       struct p4tc_table *table,
+			       struct p4tc_entry_key_bpf *key,
+			       struct p4tc_table_entry_act_bpf *act_bpf,
+			       u64 aging_ms);
+int tcf_table_entry_create_on_miss(struct p4tc_pipeline *pipeline,
+				   struct p4tc_table *table,
+				   struct p4tc_table_entry_key *key,
+				   struct p4tc_table_entry_act_bpf *act_bpf,
+				   u64 aging_ms);
+int tcf_table_entry_update_bpf(struct p4tc_pipeline *pipeline,
+			       struct p4tc_table *table,
+			       struct p4tc_table_entry_key *key,
+			       struct p4tc_table_entry_act_bpf *act_bpf,
+			       u64 aging_ms);
 
 struct p4tc_parser {
 	char parser_name[PARSERNAMSIZ];

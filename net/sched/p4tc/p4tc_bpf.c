@@ -26,6 +26,8 @@ BTF_ID(struct, p4tc_table_entry_act_bpf)
 BTF_ID(struct, p4tc_table_entry_act_bpf_params)
 BTF_ID(struct, p4tc_ext_bpf_params)
 BTF_ID(struct, p4tc_ext_bpf_res)
+BTF_ID(struct, p4tc_table_entry_act_bpf)
+BTF_ID(struct, p4tc_table_entry_create_bpf_params)
 
 #define ENTRY_KEY_OFFSET (offsetof(struct p4tc_table_entry_key, fa_key))
 
@@ -54,6 +56,7 @@ __bpf_p4tc_tbl_read(struct net *caller_net,
 		defact = rcu_dereference(table->tbl_default_missact);
 		return defact ? defact->defact_bpf : NULL;
 	}
+	value = p4tc_table_entry_value(entry);
 
 	value = p4tc_table_entry_value(entry);
 
@@ -87,6 +90,117 @@ bpf_xdp_p4tc_tbl_read(struct xdp_md *xdp_ctx,
 	caller_net = dev_net(ctx->rxq->dev);
 
 	return __bpf_p4tc_tbl_read(caller_net, params, key, key__sz);
+}
+
+static int
+__bpf_p4tc_entry_create(struct net *net,
+			struct p4tc_table_entry_create_bpf_params *params,
+			struct p4tc_entry_key_bpf *key,
+			struct p4tc_table_entry_act_bpf *act_bpf)
+{
+	const u32 pipeid = params->pipeid;
+	const u32 tblid = params->tblid;
+	struct p4tc_pipeline *pipeline;
+	struct p4tc_table *table;
+
+	/* Need to optimise and create a p4tc_pipeline_cache_lookup */
+	pipeline = tcf_pipeline_find_byid(net, pipeid);
+	if (!pipeline)
+		return -ENOENT;
+
+	table = p4tc_tbl_cache_lookup(net, pipeid, tblid);
+	if (!table)
+		return -ENOENT;
+
+	return tcf_table_entry_create_bpf(pipeline, table, key, act_bpf,
+					  params->aging_ms);
+}
+
+__bpf_kfunc int
+bpf_skb_p4tc_entry_create(struct __sk_buff *skb_ctx,
+			  struct p4tc_table_entry_create_bpf_params *params,
+			  void *bpf_key_mask, u32 bpf_key_mask__sz,
+			  struct p4tc_table_entry_act_bpf *act_bpf)
+{
+	struct sk_buff *skb = (struct sk_buff *)skb_ctx;
+	const u32 bpf_key_sz = bpf_key_mask__sz / 2;
+	const u32 bpf_mask_sz = bpf_key_sz;
+	struct p4tc_entry_key_bpf key = {0};
+	struct net *net;
+
+	key.key = bpf_key_mask;
+	key.key_sz = bpf_key_sz;
+
+	key.mask = bpf_key_mask + bpf_key_sz;
+	key.mask_sz = bpf_mask_sz;
+
+	net = skb->dev ? dev_net(skb->dev) : sock_net(skb->sk);
+
+	return __bpf_p4tc_entry_create(net, params, &key, act_bpf);
+}
+
+__bpf_kfunc int
+bpf_skb_p4tc_entry_create_on_miss(struct __sk_buff *skb_ctx,
+				  struct p4tc_table_entry_create_bpf_params *params,
+				  void *key, const u32 key__sz,
+				  struct p4tc_table_entry_act_bpf *act_bpf)
+{
+	struct p4tc_table_entry_key *entry_key = (struct p4tc_table_entry_key *)key;
+	struct sk_buff *skb = (struct sk_buff *)skb_ctx;
+	struct p4tc_table_entry *entry;
+	struct p4tc_pipeline *pipeline;
+	struct p4tc_table *table;
+	struct net *net;
+
+	net = skb->dev ? dev_net(skb->dev) : sock_net(skb->sk);
+
+	/* Need to optimise and create a p4tc_pipeline_cache_lookup */
+	pipeline = tcf_pipeline_find_byid(net, params->pipeid);
+	if (!pipeline)
+		return -ENOENT;
+
+	table = p4tc_tbl_cache_lookup(net, params->pipeid, params->tblid);
+	if (!table)
+		return -ENOENT;
+
+	entry_key->keysz = (key__sz - ENTRY_KEY_OFFSET) << 3;
+
+	entry = p4tc_table_entry_lookup_direct(table, entry_key);
+	/* Key already exists, so don't create it */
+	if (entry)
+		return -EEXIST;
+
+	return tcf_table_entry_create_on_miss(pipeline, table, entry_key,
+					      act_bpf, params->aging_ms);
+}
+
+__bpf_kfunc int
+bpf_skb_p4tc_entry_update(struct __sk_buff *skb_ctx,
+			  struct p4tc_table_entry_create_bpf_params *params,
+			  void *key, const u32 key__sz,
+			  struct p4tc_table_entry_act_bpf *act_bpf)
+{
+	struct p4tc_table_entry_key *entry_key = (struct p4tc_table_entry_key *)key;
+	struct sk_buff *skb = (struct sk_buff *)skb_ctx;
+	struct p4tc_pipeline *pipeline;
+	struct p4tc_table *table;
+	struct net *net;
+
+	net = skb->dev ? dev_net(skb->dev) : sock_net(skb->sk);
+
+	/* Need to optimise and create a p4tc_pipeline_cache_lookup */
+	pipeline = tcf_pipeline_find_byid(net, params->pipeid);
+	if (!pipeline)
+		return -ENOENT;
+
+	table = p4tc_tbl_cache_lookup(net, params->pipeid, params->tblid);
+	if (!table)
+		return -ENOENT;
+
+	entry_key->keysz = (key__sz - ENTRY_KEY_OFFSET) << 3;
+
+	return tcf_table_entry_update_bpf(pipeline, table, entry_key,
+					  act_bpf, params->aging_ms);
 }
 
 __bpf_kfunc int bpf_p4tc_extern_md_read_skb(struct __sk_buff *skb_ctx,
@@ -135,6 +249,9 @@ __diag_pop();
 
 BTF_SET8_START(p4tc_kfunc_check_tbl_set_skb)
 BTF_ID_FLAGS(func, bpf_skb_p4tc_tbl_read, KF_RET_NULL);
+BTF_ID_FLAGS(func, bpf_skb_p4tc_entry_create);
+BTF_ID_FLAGS(func, bpf_skb_p4tc_entry_create_on_miss);
+BTF_ID_FLAGS(func, bpf_skb_p4tc_entry_update);
 BTF_SET8_END(p4tc_kfunc_check_tbl_set_skb)
 
 static const struct btf_kfunc_id_set p4tc_kfunc_tbl_set_skb = {
