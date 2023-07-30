@@ -81,7 +81,7 @@ static int tc_ctl_p4_cu(struct sk_buff *skb, struct nlmsghdr *n,
 	if (!netlink_capable(skb, CAP_NET_ADMIN))
 		return -EPERM;
 
-	ret = tc_ctl_p4_root(skb, n, RTM_P4TC_CREATE, extack);
+	ret = tc_ctl_p4_root(skb, n, n->nlmsg_type, extack);
 
 	return ret;
 }
@@ -136,6 +136,8 @@ static int tc_ctl_p4_dump(struct sk_buff *skb, struct netlink_callback *cb)
 static int __init p4tc_tbl_init(void)
 {
 	rtnl_register(PF_UNSPEC, RTM_P4TC_CREATE, tc_ctl_p4_cu, NULL,
+		      RTNL_FLAG_DOIT_UNLOCKED);
+	rtnl_register(PF_UNSPEC, RTM_P4TC_UPDATE, tc_ctl_p4_cu, NULL,
 		      RTNL_FLAG_DOIT_UNLOCKED);
 	rtnl_register(PF_UNSPEC, RTM_P4TC_DEL, tc_ctl_p4_delete, NULL,
 		      RTNL_FLAG_DOIT_UNLOCKED);

@@ -1847,8 +1847,9 @@ static int __p4tc_tbl_entry_doit(struct net *net, struct sk_buff *skb,
 		if (cmd == RTM_P4TC_GET)
 			ret = p4tc_tbl_entry_get_1(net, nskb, ids, p4tca[i],
 						   &nl_pname, extack);
-		else if (cmd == RTM_P4TC_CREATE) {
-			bool replace = nlh->nlmsg_flags & NLM_F_REPLACE;
+		else if (cmd == RTM_P4TC_CREATE ||
+			 cmd == RTM_P4TC_UPDATE) {
+			bool replace = cmd == RTM_P4TC_UPDATE;
 
 			ret = p4tc_tbl_entry_cu_1(net, nskb, replace, ids,
 						  p4tca[i], &nl_pname, extack);
@@ -1915,8 +1916,9 @@ static int __p4tc_tbl_entry_doit_fast(struct net *net, struct nlmsghdr *n,
 	}
 
 	for (i = 1; i < P4TC_MSGBATCH_SIZE + 1 && p4tca[i]; i++) {
-		if (cmd == RTM_P4TC_CREATE) {
-			bool replace = n->nlmsg_flags & NLM_F_REPLACE;
+		if (cmd == RTM_P4TC_CREATE ||
+		    cmd == RTM_P4TC_UPDATE) {
+			bool replace = cmd == RTM_P4TC_UPDATE;
 
 			ret = p4tc_tbl_entry_cu_1(net, NULL, replace, ids,
 						  p4tca[i], &nl_pname, extack);

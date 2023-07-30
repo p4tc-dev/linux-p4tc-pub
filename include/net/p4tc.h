@@ -125,6 +125,11 @@ struct p4tc_pipeline_net {
 	struct idr        pipeline_idr;
 };
 
+static inline bool p4tc_tmpl_msg_is_update(struct nlmsghdr *n)
+{
+	return n->nlmsg_type == RTM_UPDATEP4TEMPLATE;
+}
+
 int tcf_p4_tmpl_generic_dump(struct sk_buff *skb, struct p4tc_dump_ctx *ctx,
 			     struct idr *idr, int idx,
 			     struct netlink_ext_ack *extack);
@@ -545,6 +550,11 @@ struct p4tc_hdrfield *tcf_hdrfield_get(struct p4tc_parser *parser,
 				       u32 hdrfield_id,
 				       struct netlink_ext_ack *extack);
 void tcf_hdrfield_put_ref(struct p4tc_hdrfield *hdrfield);
+
+static inline bool p4tc_runtime_msg_is_update(struct nlmsghdr *n)
+{
+	return n->nlmsg_type == RTM_P4TC_UPDATE;
+}
 
 extern const struct p4tc_act_param_ops param_ops[P4T_MAX + 1];
 

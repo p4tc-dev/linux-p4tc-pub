@@ -1319,11 +1319,17 @@ tcf_table_cu(struct net *net, struct nlmsghdr *n, struct nlattr *nla,
 		return ERR_PTR(-EINVAL);
 	}
 
-	if (n->nlmsg_flags & NLM_F_REPLACE)
+	switch (n->nlmsg_type) {
+	case RTM_CREATEP4TEMPLATE:
+		table = tcf_table_create(net, tb, tbl_id, pipeline, extack);
+		break;
+	case RTM_UPDATEP4TEMPLATE:
 		table = tcf_table_update(net, tb, tbl_id, pipeline,
 					 n->nlmsg_flags, extack);
-	else
-		table = tcf_table_create(net, tb, tbl_id, pipeline, extack);
+		break;
+	default:
+		return ERR_PTR(-EOPNOTSUPP);
+	}
 
 	if (IS_ERR(table))
 		goto out;
