@@ -44,9 +44,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2 srcPort  80 dstPort  443",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort  80 dstPort  443",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -57,7 +57,7 @@
                 "entries": [
                     {
                         "tblid": 2,
-                        "prio": 16,
+                        "prio": 64000,
                         "key": [
                             {
                                 "keyfield": "srcPort",
@@ -84,7 +84,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16",
+                "$TC p4 del ptables/table/cb/tname2 srcPort  80 dstPort  443",
                 0
             ],
             [
@@ -142,7 +142,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2 srcPort  80 dstPort  443",
         "expExitCode": "0",
         "verifyCmd": "$TC -j p4template get table/ptables/cb/tname2",
         "matchCount": "1",
@@ -166,7 +166,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16",
+                "$TC p4 del ptables/table/cb/tname2 srcPort  80 dstPort  443",
                 0
             ],
             [
@@ -321,9 +321,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -334,7 +334,7 @@
                 "entries": [
                     {
                         "tblid": 3,
-                        "prio": 1,
+                        "prio": 64000,
                         "key": [
                             {
                                 "keyfield": "randomKey1",
@@ -367,7 +367,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
                 0
             ],
             [
@@ -425,9 +425,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/ randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "cmdUnderTest": "$TC p4 create ptables/table/ randomKey1  255 randomKey2  92 randomKey3  127",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -488,7 +488,7 @@
         ],
         "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3 prio 1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -549,7 +549,7 @@
         ],
         "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -560,7 +560,7 @@
                 "entries": [
                     {
                         "tblid": 3,
-                        "prio": 1,
+                        "prio": 64000,
                         "key": [
                             {
                                 "keyfield": "randomKey1",
@@ -594,88 +594,7 @@
         ],
         "teardown": [
             [
-                "$TC -j p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-                0
-            ],
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "dff1",
-        "name": "Try to get table entry without specifying priority",
-        "category": [
-            "p4tc",
-            "entries"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 numtables 1",
-                0
-            ],
-            [
-                "$TC p4template create action/ptables/cb/send_nh actid 1 param smac type macaddr id 1 param dmac type macaddr id 2",
-                0
-            ],
-            [
-                "$TC p4template update action/ptables/cb/send_nh state active",
-                0
-            ],
-            [
-                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104 table_acts act name ptables/cb/send_nh flags tableonly",
-                0
-            ],
-            [
-                "$TC p4template update pipeline/ptables state ready",
-                0
-            ],
-            [
-                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action send_nh param smac b8:ce:f6:4b:68:35 param dmac ac:1f:6b:e4:ff:93",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 2  action send_nh index 1",
-        "expExitCode": "0",
-        "verifyCmd": "$TC p4 get ptables/table/cb/tname3/ randomKey1  255 randomKey2  92 randomKey3  127",
-        "matchCount": "1",
-        "matchPattern": "Error: Must specify table entry priority.*",
-        "teardown": [
-            [
-                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 2",
-                0
-            ],
-            [
-                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC -j p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
                 0
             ],
             [
@@ -1324,9 +1243,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16 action noexist index 1",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2 srcPort  80 dstPort  443 action noexist index 1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort  80 dstPort  443",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -1385,13 +1304,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16",
+                "$TC p4 create ptables/table/cb/tname2 srcPort  80 dstPort  443",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16 action noexist index 1",
+        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname2 srcPort  80 dstPort  443 action noexist index 1",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort  80 dstPort  443",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -1402,7 +1321,7 @@
                 "entries": [
                     {
                         "tblid": 2,
-                        "prio": 16,
+                        "prio": 64000,
                         "key": [
                             {
                                 "keyfield": "srcPort",
@@ -1494,13 +1413,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action send_nh param smac b8:ce:f6:4b:68:35 param dmac ac:1f:6b:e4:ff:93 index 1",
+        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 action send_nh param smac b8:ce:f6:4b:68:35 param dmac ac:1f:6b:e4:ff:93 index 1",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -1511,7 +1430,7 @@
                 "entries": [
                     {
                         "tblid": 3,
-                        "prio": 1,
+                        "prio": 64000,
                         "key": [
                             {
                                 "keyfield": "randomKey1",
@@ -1571,7 +1490,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
                 0
             ],
             [
@@ -1637,13 +1556,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action send_nh param smac b8:ce:f6:4b:68:34 param dmac ac:1f:6b:e4:ff:92",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 action send_nh param smac b8:ce:f6:4b:68:34 param dmac ac:1f:6b:e4:ff:92",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action send_nh param smac b8:ce:f6:4b:68:35 param dmac ac:1f:6b:e4:ff:93",
+        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 action send_nh param smac b8:ce:f6:4b:68:35 param dmac ac:1f:6b:e4:ff:93",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -1654,7 +1573,7 @@
                 "entries": [
                     {
                         "tblid": 3,
-                        "prio": 1,
+                        "prio": 64000,
                         "key": [
                             {
                                 "keyfield": "randomKey1",
@@ -1714,7 +1633,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
                 0
             ],
             [
@@ -1784,7 +1703,7 @@
                 0
             ],
             [
-                "$TC p4runtime create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action send_nh index 1",
+                "$TC p4runtime create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 action send_nh index 1",
                 0
             ],
             [
@@ -1792,7 +1711,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4runtime update ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action send_nh index 2; sleep 1;",
+        "cmdUnderTest": "$TC p4runtime update ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 action send_nh index 2; sleep 1;",
         "expExitCode": "0",
         "verifyCmd": "$TC -j actions get action ptables/cb/send_nh index 1",
         "matchCount": "1",
@@ -1828,7 +1747,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
                 0
             ],
             [
@@ -1886,13 +1805,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname3 randomKey1  255 randomKey2  1 randomKey3  127 prio 1",
+        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname3 randomKey1  255 randomKey2  1 randomKey3  127",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -1903,7 +1822,7 @@
                 "entries": [
                     {
                         "tblid": 3,
-                        "prio": 1,
+                        "prio": 64000,
                         "key": [
                             {
                                 "keyfield": "randomKey1",
@@ -1937,7 +1856,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
                 0
             ],
             [
@@ -2003,13 +1922,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
                 0
             ]
         ],
         "cmdUnderTest": "$TC p4 update ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 action send_nh",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -2020,7 +1939,7 @@
                 "entries": [
                     {
                         "tblid": 3,
-                        "prio": 1,
+                        "prio": 64000,
                         "key": [
                             {
                                 "keyfield": "randomKey1",
@@ -2054,7 +1973,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
                 0
             ],
             [
@@ -2112,13 +2031,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/ randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action gact index 2",
+        "cmdUnderTest": "$TC p4 update ptables/table/ randomKey1  255 randomKey2  92 randomKey3  127 action gact index 2",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -2129,7 +2048,7 @@
                 "entries": [
                     {
                         "tblid": 3,
-                        "prio": 1,
+                        "prio": 64000,
                         "key": [
                             {
                                 "keyfield": "randomKey1",
@@ -2163,7 +2082,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
                 0
             ],
             [
@@ -2221,13 +2140,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -2286,13 +2205,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 del ptables/table/ randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "cmdUnderTest": "$TC p4 del ptables/table/ randomKey1  255 randomKey2  92 randomKey3  127",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3/ randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3/ randomKey1  255 randomKey2  92 randomKey3  127",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -2303,7 +2222,7 @@
                 "entries": [
                     {
                         "tblid": 3,
-                        "prio": 1,
+                        "prio": 64000,
                         "key": [
                             {
                                 "keyfield": "randomKey1",
@@ -2336,80 +2255,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-                0
-            ],
-            [
-                "$TC p4template del pipeline/ptables",
-                0
-            ],
-            [
-                "$TC actions flush action gact",
-                0
-            ]
-        ]
-    },
-    {
-        "id": "e79d",
-        "name": "Try to delete table entry without specifying prio",
-        "category": [
-            "p4tc",
-            "entries"
-        ],
-        "setup": [
-            [
-                "$TC p4template del pipeline/ptables",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions flush action gact",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 1",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC actions add action pass index 2",
-                0,
-                1,
-                255
-            ],
-            [
-                "$TC p4template create pipeline/ptables pipeid 22 numtables 1",
-                0
-            ],
-            [
-                "$TC p4template create table/ptables/cb/tname3 tblid 3 keysz 104",
-                0
-            ],
-            [
-                "$TC p4template update pipeline/ptables state ready",
-                0
-            ],
-            [
-                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
-                0
-            ]
-        ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 2",
-        "expExitCode": "0",
-        "verifyCmd": "$TC p4 del ptables/table/cb/tname3/ randomKey1  255 randomKey2  92 randomKey3  127",
-        "matchCount": "1",
-        "matchPattern": "Error: Must specify table entry priority.*",
-        "teardown": [
-            [
-                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 2",
-                0
-            ],
-            [
-                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+                "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
                 0
             ],
             [
@@ -2479,11 +2325,11 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1 action send_nh index 1",
+                "$TC p4 create ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 action send_nh index 1",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1; sleep 1",
+        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127; sleep 1",
         "expExitCode": "0",
         "verifyCmd": "$TC -j actions get action ptables/cb/send_nh index 1",
         "matchCount": "1",
@@ -2573,9 +2419,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127 prio 1",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname3 randomKey1  255 randomKey2  92 randomKey3  127",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -3642,9 +3488,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2 srcPort 80 dstPort 443 prio 16",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2 srcPort 80 dstPort 443",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort 80 dstPort 443 prio 16",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort 80 dstPort 443",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -3710,9 +3556,9 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2 srcPort 80 dstPort 443 prio 16 permissions 0x1CF",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2 srcPort 80 dstPort 443 permissions 0x1CF",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort 80 dstPort 443 prio 16",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort 80 dstPort 443",
         "matchCount": "1",
         "matchPattern": "Error: Unable to find entry.*",
         "teardown": [
@@ -3778,13 +3624,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname2 srcPort 80 dstPort 443 prio 16 permissions 0x16F",
+                "$TC p4 create ptables/table/cb/tname2 srcPort 80 dstPort 443 permissions 0x16F",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname2 srcPort 80 dstPort 443 prio 16",
+        "cmdUnderTest": "$TC p4 update ptables/table/cb/tname2 srcPort 80 dstPort 443",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort 80 dstPort 443 prio 16",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort 80 dstPort 443",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -3795,7 +3641,7 @@
                 "entries": [
                     {
                         "tblid": 2,
-                        "prio": 16,
+                        "prio": 64000,
                         "key": [
                             {
                                 "keyfield": "srcPort",
@@ -3887,13 +3733,13 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname2 srcPort 80 dstPort 443 prio 16 permissions 0x1AF",
+                "$TC p4 create ptables/table/cb/tname2 srcPort 80 dstPort 443 permissions 0x1AF",
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname2 srcPort 80 dstPort 443 prio 16",
+        "cmdUnderTest": "$TC p4 del ptables/table/cb/tname2 srcPort 80 dstPort 443",
         "expExitCode": "255",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort 80 dstPort 443 prio 16",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort 80 dstPort 443",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -3904,7 +3750,7 @@
                 "entries": [
                     {
                         "tblid": 2,
-                        "prio": 16,
+                        "prio": 64000,
                         "key": [
                             {
                                 "keyfield": "srcPort",
@@ -3931,7 +3777,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 update ptables/table/cb/tname2 srcPort 80 dstPort 443 prio 16 permissions 0x1EF",
+                "$TC p4 update ptables/table/cb/tname2 srcPort 80 dstPort 443 permissions 0x1EF",
                 0
             ],
             [
@@ -4000,7 +3846,7 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname2 srcPort 80 dstPort 443 prio 16",
+                "$TC p4 create ptables/table/cb/tname2 srcPort 80 dstPort 443",
                 0
             ]
         ],
@@ -4017,7 +3863,7 @@
                 "entries": [
                     {
                         "tblid": 2,
-                        "prio": 16,
+                        "prio": 64000,
                         "key": [
                             {
                                 "keyfield": "srcPort",
@@ -4108,7 +3954,7 @@
                 0
             ],
             [
-                "$TC p4 create ptables/table/cb/tname2 srcPort 80 dstPort 443 prio 16",
+                "$TC p4 create ptables/table/cb/tname2 srcPort 80 dstPort 443",
                 0
             ],
             [
@@ -4116,7 +3962,7 @@
                 0
             ]
         ],
-        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2 srcPort 53 dstPort 53 prio 17",
+        "cmdUnderTest": "$TC p4 create ptables/table/cb/tname2 srcPort 53 dstPort 53",
         "expExitCode": "255",
         "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2/",
         "matchCount": "1",
@@ -4129,7 +3975,7 @@
                 "entries": [
                     {
                         "tblid": 2,
-                        "prio": 16,
+                        "prio": 64000,
                         "key": [
                             {
                                 "keyfield": "srcPort",
@@ -4209,13 +4055,13 @@
                 0
             ],
             [
-                "$TC p4template update table/ptables/cb/tname2 entry srcPort  80 dstPort  443 prio 16",
+                "$TC p4template update table/ptables/cb/tname2 entry srcPort  80 dstPort  443",
                 0
             ]
         ],
         "cmdUnderTest": "$TC p4template update pipeline/ptables state ready",
         "expExitCode": "0",
-        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort 80 dstPort 443 prio 16",
+        "verifyCmd": "$TC -j p4 get ptables/table/cb/tname2 srcPort 80 dstPort 443",
         "matchCount": "1",
         "matchJSON": [
             {
@@ -4226,7 +4072,7 @@
                 "entries": [
                     {
                         "tblid": 2,
-                        "prio": 16,
+                        "prio": 64000,
                         "key": [
                             {
                                 "keyfield": "srcPort",
@@ -4253,7 +4099,7 @@
         ],
         "teardown": [
             [
-                "$TC p4 del ptables/table/cb/tname2 srcPort  80 dstPort  443 prio 16",
+                "$TC p4 del ptables/table/cb/tname2 srcPort  80 dstPort  443",
                 0
             ],
             [
