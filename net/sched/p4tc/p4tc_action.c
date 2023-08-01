@@ -28,6 +28,7 @@
 #include <net/p4tc.h>
 #include <net/sch_generic.h>
 #include <net/sock.h>
+
 #include <net/tc_act/p4tc.h>
 
 static LIST_HEAD(dynact_list);
@@ -286,29 +287,83 @@ static void tcf_p4_act_params_destroy_rcu(struct rcu_head *head)
 	tcf_p4_act_params_destroy(params);
 }
 
+static struct p4tc_table_entry_act_bpf_kern *
+p4tc_create_act_bpf(struct tcf_p4act *p4act,
+		    struct tcf_p4act_params *act_params,
+		    struct netlink_ext_ack *extack)
+{
+	struct p4tc_act_param *params[P4TC_ACT_MAX_NUM_PARAMS];
+	struct p4tc_table_entry_act_bpf_kern *act_bpf;
+	struct p4tc_act_param *param;
+	unsigned long param_id, tmp;
+	size_t tot_params_sz = 0;
+	u8 *params_cursor;
+	int nparams = 0;
+	int i;
+
+	act_bpf = kzalloc(sizeof(*act_bpf), GFP_KERNEL);
+	if (!act_bpf)
+		return ERR_PTR(-ENOMEM);
+
+	idr_for_each_entry_ul(&act_params->params_idr, param, tmp, param_id) {
+		const struct p4tc_type *type = param->type;
+
+		if (tot_params_sz > P4TC_MAX_PARAM_DATA_SIZE) {
+			NL_SET_ERR_MSG(extack, "Maximum parameter byte size reached");
+			kfree(act_bpf);
+			return ERR_PTR(-EINVAL);
+		}
+
+		tot_params_sz += BITS_TO_BYTES(type->container_bitsz);
+		params[nparams++] = param;
+	}
+
+	act_bpf->act_bpf.act_id = p4act->act_id;
+	params_cursor = act_bpf->act_bpf.params;
+	for (i = 0; i < nparams; i++) {
+		const struct p4tc_act_param *param = params[i];
+		const struct p4tc_type *type = param->type;
+		const u32 type_bytesz = BITS_TO_BYTES(type->container_bitsz);
+
+		memcpy(params_cursor, param->value, type_bytesz);
+		params_cursor += type_bytesz;
+	}
+
+	return act_bpf;
+}
+
 static int __tcf_p4_dyna_init_set(struct p4tc_act *act, struct tc_action **a,
 				  struct tcf_p4act_params *params,
 				  struct tcf_chain *goto_ch,
 				  struct tc_act_dyna *parm, bool exists,
 				  struct netlink_ext_ack *extack)
 {
+	struct p4tc_table_entry_act_bpf_kern *act_bpf = NULL, *act_bpf_old;
 	struct tcf_p4act_params *params_old;
 	struct tcf_p4act *p;
 
 	p = to_p4act(*a);
 
+	if (!((*a)->tcfa_flags & TCA_ACT_FLAGS_UNREFERENCED)) {
+		act_bpf = p4tc_create_act_bpf(p, params, extack);
+		if (IS_ERR(act_bpf))
+			return PTR_ERR(act_bpf);
+	}
+
 	/* sparse is fooled by lock under conditionals.
-	 * To avoid false positives, we are repeating these two lines in both
+	 * To avoid false positives, we are repeating these 3 lines in both
 	 * branches of the if-statement
 	 */
 	if (exists) {
 		spin_lock_bh(&p->tcf_lock);
 		goto_ch = tcf_action_set_ctrlact(*a, parm->action, goto_ch);
 		params_old = rcu_replace_pointer(p->params, params, 1);
+		act_bpf_old = rcu_replace_pointer(p->act_bpf, act_bpf, 1);
 		spin_unlock_bh(&p->tcf_lock);
 	} else {
 		goto_ch = tcf_action_set_ctrlact(*a, parm->action, goto_ch);
 		params_old = rcu_replace_pointer(p->params, params, 1);
+		act_bpf_old = rcu_replace_pointer(p->act_bpf, act_bpf, 1);
 	}
 
 	if (goto_ch)
@@ -316,6 +371,9 @@ static int __tcf_p4_dyna_init_set(struct p4tc_act *act, struct tc_action **a,
 
 	if (params_old)
 		call_rcu(&params_old->rcu, tcf_p4_act_params_destroy_rcu);
+
+	if (act_bpf_old)
+		kfree_rcu(act_bpf_old, rcu);
 
 	return 0;
 }
@@ -495,7 +553,7 @@ tcf_p4_get_next_prealloc_act(struct p4tc_act *act)
 {
 	struct tcf_p4act *p4_act;
 
-	spin_lock(&act->list_lock);
+	spin_lock_bh(&act->list_lock);
 	p4_act = list_first_entry_or_null(&act->prealloc_list, struct tcf_p4act,
 					  node);
 	if (p4_act) {
@@ -503,7 +561,7 @@ tcf_p4_get_next_prealloc_act(struct p4tc_act *act)
 		refcount_set(&p4_act->common.tcfa_refcnt, 1);
 		atomic_set(&p4_act->common.tcfa_bindcnt, 1);
 	}
-	spin_unlock(&act->list_lock);
+	spin_unlock_bh(&act->list_lock);
 
 	return p4_act;
 }
@@ -519,6 +577,7 @@ void tcf_p4_set_init_flags(struct tcf_p4act *p4act)
 static void __tcf_p4_put_prealloc_act(struct p4tc_act *act,
 				      struct tcf_p4act *p4act)
 {
+	struct p4tc_table_entry_act_bpf_kern *act_bpf_old;
 	struct p4tc_act_param *param;
 	unsigned long param_id, tmp;
 
@@ -533,9 +592,13 @@ static void __tcf_p4_put_prealloc_act(struct p4tc_act *act,
 	}
 	p4act->common.tcfa_flags |= TCA_ACT_FLAGS_UNREFERENCED;
 
-	spin_lock(&act->list_lock);
+	act_bpf_old = rcu_replace_pointer(p4act->act_bpf, NULL, 1);
+	if (act_bpf_old)
+		kfree_rcu(act_bpf_old, rcu);
+
+	spin_lock_bh(&act->list_lock);
 	list_add_tail(&p4act->node, &act->prealloc_list);
-	spin_unlock(&act->list_lock);
+	spin_unlock_bh(&act->list_lock);
 }
 
 void
@@ -1269,16 +1332,21 @@ static int tcf_p4_dyna_walker(struct net *net, struct sk_buff *skb,
 static void tcf_p4_dyna_cleanup(struct tc_action *a)
 {
 	struct tc_action_ops *ops = (struct tc_action_ops *)a->ops;
+	struct p4tc_table_entry_act_bpf_kern *act_bpf;
 	struct tcf_p4act *m = to_p4act(a);
 	struct tcf_p4act_params *params;
 
 	params = rcu_dereference_protected(m->params, 1);
+	act_bpf = rcu_dereference_protected(m->act_bpf, 1);
 
 	if (refcount_read(&ops->dyn_ref) > 1)
 		refcount_dec(&ops->dyn_ref);
 
 	if (params)
 		call_rcu(&params->rcu, tcf_p4_act_params_destroy_rcu);
+
+	if (act_bpf)
+		kfree_rcu(act_bpf, rcu);
 }
 
 static struct p4tc_act *

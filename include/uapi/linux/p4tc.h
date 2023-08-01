@@ -17,6 +17,8 @@ struct p4tcmsg {
 #define P4TC_MINTABLES_COUNT 0
 #define P4TC_MSGBATCH_SIZE 16
 
+#define P4TC_ACT_MAX_NUM_PARAMS P4TC_MSGBATCH_SIZE
+
 #define P4TC_MAX_KEYSZ 512
 #define HEADER_MAX_LEN 512
 #define P4TC_DEFAULT_NUM_PREALLOC 16
@@ -77,7 +79,7 @@ enum {
 #define p4tc_ctrl_exec_ok(perm)     (perm & P4TC_CTRL_PERM_X)
 
 #define p4tc_ctrl_perm_rm_create(perm) \
-	((perm & ~P4TC_CTRL_PERM_C_BIT))
+	((perm & ~P4TC_CTRL_PERM_C))
 
 #define p4tc_data_create_ok(perm)   (perm & P4TC_DATA_PERM_C)
 #define p4tc_data_read_ok(perm)     (perm & P4TC_DATA_PERM_R)
@@ -86,7 +88,7 @@ enum {
 #define p4tc_data_exec_ok(perm)     (perm & P4TC_DATA_PERM_X)
 
 #define p4tc_data_perm_rm_create(perm) \
-	((perm & ~P4TC_DATA_PERM_C_BIT))
+	((perm & ~P4TC_DATA_PERM_C))
 
 struct p4tc_table_parm {
 	__u64 tbl_aging;
