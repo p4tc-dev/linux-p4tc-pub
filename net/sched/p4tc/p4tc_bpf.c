@@ -16,6 +16,7 @@
 #include <linux/btf_ids.h>
 #include <linux/net_namespace.h>
 #include <net/p4tc.h>
+#include <net/p4tc_ext_api.h>
 #include <linux/netdevice.h>
 #include <net/sock.h>
 #include <linux/filter.h>
@@ -26,6 +27,8 @@ BTF_ID(struct, p4tc_table_entry_act_bpf)
 BTF_ID(struct, p4tc_table_entry_act_bpf_params)
 BTF_ID(struct, p4tc_table_entry_act_bpf)
 BTF_ID(struct, p4tc_table_entry_create_bpf_params)
+BTF_ID(struct, p4tc_ext_bpf_params)
+BTF_ID(struct, p4tc_ext_bpf_res)
 
 static struct p4tc_table_entry_act_bpf *
 __bpf_p4tc_tbl_read(struct net *caller_net,
@@ -268,6 +271,50 @@ xdp_p4tc_entry_delete(struct xdp_md *xdp_ctx,
 	return __bpf_p4tc_entry_delete(net, params, key, key__sz);
 }
 
+__bpf_kfunc int bpf_p4tc_extern_md_read(struct __sk_buff *skb_ctx,
+					struct p4tc_ext_bpf_res *res,
+					struct p4tc_ext_bpf_params *params)
+{
+	struct sk_buff *skb = (struct sk_buff *)skb_ctx;
+	struct net *net;
+
+	net = skb->dev ? dev_net(skb->dev) : sock_net(skb->sk);
+
+	return __bpf_p4tc_extern_md_read(net, res, params);
+}
+
+__bpf_kfunc int bpf_p4tc_extern_md_write(struct __sk_buff *skb_ctx,
+					 struct p4tc_ext_bpf_params *params)
+{
+	struct sk_buff *skb = (struct sk_buff *)skb_ctx;
+	struct net *net;
+
+	net = skb->dev ? dev_net(skb->dev) : sock_net(skb->sk);
+
+	return __bpf_p4tc_extern_md_write(net, params);
+}
+
+__bpf_kfunc int xdp_p4tc_extern_md_read(struct xdp_md *xdp_ctx,
+					struct p4tc_ext_bpf_res *res,
+					struct p4tc_ext_bpf_params *params)
+{
+	struct xdp_buff *ctx = (struct xdp_buff *)xdp_ctx;
+	struct net *net;
+
+	net = dev_net(ctx->rxq->dev);
+
+	return __bpf_p4tc_extern_md_read(net, res, params);
+}
+
+__bpf_kfunc int xdp_p4tc_extern_md_write(struct xdp_md *xdp_ctx,
+					 struct p4tc_ext_bpf_params *params)
+{
+	struct xdp_buff *ctx = (struct xdp_buff *)xdp_ctx;
+	struct net *net = dev_net(ctx->rxq->dev);
+
+	return __bpf_p4tc_extern_md_write(net, params);
+}
+
 __diag_pop();
 
 BTF_SET8_START(p4tc_kfunc_check_tbl_set_skb)
@@ -296,6 +343,26 @@ static const struct btf_kfunc_id_set p4tc_kfunc_tbl_set_xdp = {
 	.set = &p4tc_kfunc_check_tbl_set_xdp,
 };
 
+BTF_SET8_START(p4tc_kfunc_check_ext_set_skb)
+BTF_ID_FLAGS(func, bpf_p4tc_extern_md_write);
+BTF_ID_FLAGS(func, bpf_p4tc_extern_md_read);
+BTF_SET8_END(p4tc_kfunc_check_ext_set_skb)
+
+static const struct btf_kfunc_id_set p4tc_kfunc_ext_set_skb = {
+	.owner = THIS_MODULE,
+	.set = &p4tc_kfunc_check_ext_set_skb,
+};
+
+BTF_SET8_START(p4tc_kfunc_check_ext_set_xdp)
+BTF_ID_FLAGS(func, xdp_p4tc_extern_md_write);
+BTF_ID_FLAGS(func, xdp_p4tc_extern_md_read);
+BTF_SET8_END(p4tc_kfunc_check_ext_set_xdp)
+
+static const struct btf_kfunc_id_set p4tc_kfunc_ext_set_xdp = {
+	.owner = THIS_MODULE,
+	.set = &p4tc_kfunc_check_ext_set_xdp,
+};
+
 int register_p4tc_tbl_bpf(void)
 {
 	int ret;
@@ -306,6 +373,16 @@ int register_p4tc_tbl_bpf(void)
 		return ret;
 
 	/* There is no unregister_btf_kfunc_id_set function */
+	ret = register_btf_kfunc_id_set(BPF_PROG_TYPE_XDP,
+					&p4tc_kfunc_tbl_set_xdp);
+	if (ret < 0)
+		return ret;
+
+	ret = register_btf_kfunc_id_set(BPF_PROG_TYPE_SCHED_ACT,
+					&p4tc_kfunc_ext_set_skb);
+	if (ret < 0)
+		return ret;
+
 	return register_btf_kfunc_id_set(BPF_PROG_TYPE_XDP,
-					 &p4tc_kfunc_tbl_set_xdp);
+					 &p4tc_kfunc_ext_set_xdp);
 }
