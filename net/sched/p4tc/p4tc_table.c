@@ -156,6 +156,10 @@ static const struct nla_policy p4tc_table_policy[P4TC_TABLE_MAX + 1] = {
 	[P4TC_TABLE_NUM_TIMER_PROFILES] =
 		NLA_POLICY_RANGE(NLA_U32, 1, P4TC_MAX_NUM_TIMER_PROFILES),
 	[P4TC_TABLE_ENTRY] = { .type = NLA_NESTED },
+	[P4TC_TABLE_COUNTER] = {
+		.type = NLA_STRING,
+		.len = P4TC_EXTERN_INST_NAMSIZ * 2 + 1
+	},
 };
 
 static int _p4tc_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
@@ -182,6 +186,12 @@ static int _p4tc_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 
 	if (nla_put_string(skb, P4TC_TABLE_NAME, table->common.name))
 		goto out_nlmsg_trim;
+
+	if (table->tbl_counter) {
+		if (nla_put_string(skb, P4TC_TABLE_COUNTER,
+				   table->tbl_counter->common.name) < 0)
+			goto out_nlmsg_trim;
+	}
 
 	if (table->tbl_dflt_hitact) {
 		struct p4tc_table_defact *hitact;
@@ -1263,8 +1273,10 @@ static struct p4tc_table *p4tc_table_create(struct net *net, struct nlattr **tb,
 {
 	struct rhashtable_params table_hlt_params = entry_hlt_params;
 	u32 num_profiles = P4TC_DEFAULT_NUM_TIMER_PROFILES;
+	struct p4tc_user_pipeline_extern *pipe_ext = NULL;
 	struct p4tc_table_perm *tbl_init_perms = NULL;
 	struct p4tc_table_defact_params dflt = { 0 };
+	struct p4tc_extern_inst *inst = NULL;
 	struct p4tc_table *table;
 	char *tblname;
 	int ret;
@@ -1371,13 +1383,25 @@ static struct p4tc_table *p4tc_table_create(struct net *net, struct nlattr **tb,
 
 	refcount_set(&table->tbl_ctrl_ref, 1);
 
+	if (tb[P4TC_TABLE_COUNTER]) {
+		const char *ext_inst_path = nla_data(tb[P4TC_TABLE_COUNTER]);
+
+		inst = p4tc_ext_inst_table_bind(pipeline, &pipe_ext,
+						ext_inst_path, extack);
+		if (IS_ERR(inst)) {
+			ret = PTR_ERR(inst);
+			goto free_permissions;
+		}
+		table->tbl_counter = inst;
+	}
+
 	if (tbl_id) {
 		table->tbl_id = tbl_id;
 		ret = idr_alloc_u32(&pipeline->p_tbl_idr, table, &table->tbl_id,
 				    table->tbl_id, GFP_KERNEL);
 		if (ret < 0) {
 			NL_SET_ERR_MSG(extack, "Unable to allocate table id");
-			goto free_permissions;
+			goto put_inst;
 		}
 	} else {
 		table->tbl_id = 1;
@@ -1385,7 +1409,7 @@ static struct p4tc_table *p4tc_table_create(struct net *net, struct nlattr **tb,
 				    UINT_MAX, GFP_KERNEL);
 		if (ret < 0) {
 			NL_SET_ERR_MSG(extack, "Unable to allocate table id");
-			goto free_permissions;
+			goto put_inst;
 		}
 	}
 
@@ -1463,10 +1487,14 @@ defaultacts_destroy:
 idr_rm:
 	idr_remove(&pipeline->p_tbl_idr, table->tbl_id);
 
+	p4tc_table_acts_list_destroy(&table->tbl_acts_list);
+
+put_inst:
+	if (inst)
+		p4tc_ext_inst_table_unbind(table, pipe_ext, inst);
+
 free_permissions:
 	kfree(tbl_init_perms);
-
-	p4tc_table_acts_list_destroy(&table->tbl_acts_list);
 
 free:
 	kfree(table);
@@ -1482,7 +1510,9 @@ static struct p4tc_table *p4tc_table_update(struct net *net, struct nlattr **tb,
 					    struct netlink_ext_ack *extack)
 {
 	u32 tbl_max_masks = 0, tbl_max_entries = 0, tbl_keysz = 0;
+	struct p4tc_user_pipeline_extern *pipe_ext = NULL;
 	struct p4tc_table_defact_params dflt = { 0 };
+	struct p4tc_extern_inst *inst = NULL;
 	struct p4tc_table_perm *perm = NULL;
 	struct list_head *tbl_acts_list;
 	struct p4tc_table *table;
@@ -1550,6 +1580,17 @@ static struct p4tc_table *p4tc_table_update(struct net *net, struct nlattr **tb,
 		}
 	}
 
+	if (tb[P4TC_TABLE_COUNTER]) {
+		const char *ext_inst_path = nla_data(tb[P4TC_TABLE_COUNTER]);
+
+		inst = p4tc_ext_inst_table_bind(pipeline, &pipe_ext,
+						ext_inst_path, extack);
+		if (IS_ERR(inst)) {
+			ret = PTR_ERR(inst);
+			goto free_perm;
+		}
+	}
+
 	if (tb[P4TC_TABLE_TYPE])
 		tbl_type = nla_get_u8(tb[P4TC_TABLE_TYPE]);
 
@@ -1564,11 +1605,17 @@ static struct p4tc_table *p4tc_table_update(struct net *net, struct nlattr **tb,
 		table->tbl_max_masks = tbl_max_masks;
 	table->tbl_type = tbl_type;
 
+	if (inst)
+		table->tbl_counter = inst;
+
 	if (tb[P4TC_TABLE_ACTS_LIST])
 		p4tc_table_acts_list_replace(&table->tbl_acts_list,
 					     tbl_acts_list);
 
 	return table;
+
+free_perm:
+	kfree(perm);
 
 defaultacts_destroy:
 	p4tc_table_defact_destroy(dflt.missact);

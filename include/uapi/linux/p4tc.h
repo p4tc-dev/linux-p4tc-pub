@@ -20,6 +20,8 @@ struct p4tcmsg {
 #define P4TC_MSGBATCH_SIZE 16
 
 #define P4TC_ACT_MAX_NUM_PARAMS P4TC_MSGBATCH_SIZE
+#define EXTPARAMNAMSIZ 256
+#define P4TC_MAX_EXTERN_METHODS 32
 
 #define P4TC_MAX_KEYSZ 512
 #define P4TC_DEFAULT_NUM_PREALLOC 16
@@ -29,6 +31,8 @@ struct p4tcmsg {
 #define P4TC_ACT_TMPL_NAMSZ P4TC_TMPL_NAMSZ
 #define P4TC_ACT_PARAM_NAMSIZ P4TC_TMPL_NAMSZ
 #define P4TC_TABLE_NAMSIZ P4TC_TMPL_NAMSZ
+#define P4TC_EXTERN_NAMSIZ P4TC_TMPL_NAMSZ
+#define P4TC_EXTERN_INST_NAMSIZ P4TC_TMPL_NAMSZ
 
 enum {
 	P4TC_TABLE_TYPE_UNSPEC,
@@ -101,6 +105,8 @@ enum {
 	P4TC_ROOT_UNSPEC,
 	P4TC_ROOT, /* nested messages */
 	P4TC_ROOT_PNAME, /* string - mandatory for pipeline create */
+	P4TC_ROOT_COUNT,
+	P4TC_ROOT_FLAGS,
 	__P4TC_ROOT_MAX,
 };
 
@@ -112,6 +118,8 @@ enum {
 	P4TC_OBJ_PIPELINE,
 	P4TC_OBJ_ACT,
 	P4TC_OBJ_TABLE,
+	P4TC_OBJ_EXT,
+	P4TC_OBJ_EXT_INST,
 	__P4TC_OBJ_MAX,
 };
 
@@ -121,6 +129,7 @@ enum {
 enum {
 	P4TC_OBJ_RUNTIME_UNSPEC,
 	P4TC_OBJ_RUNTIME_TABLE,
+	P4TC_OBJ_RUNTIME_EXTERN,
 	__P4TC_OBJ_RUNTIME_MAX,
 };
 
@@ -225,6 +234,7 @@ enum {
 				    * kernel -> user space only
 				    */
 	P4TC_TABLE_ENTRY, /* nested template table entry*/
+	P4TC_TABLE_COUNTER, /* string */
 	__P4TC_TABLE_MAX
 };
 
@@ -463,6 +473,7 @@ enum {
 	P4TC_ENTRY_AGING, /* u64 table entry aging */
 	P4TC_ENTRY_PROFILE_ID, /* u32 table entry profile ID */
 	P4TC_ENTRY_FILTER, /* nested filter */
+	P4TC_ENTRY_COUNTER, /* nested extern associated with entry counter */
 	P4TC_ENTRY_PAD,
 	__P4TC_ENTRY_MAX
 };
@@ -476,6 +487,56 @@ enum {
 	P4TC_ENTITY_TIMER,
 	P4TC_ENTITY_MAX
 };
+
+/* P4 Extern attributes */
+enum {
+	P4TC_TMPL_EXT_UNSPEC,
+	P4TC_TMPL_EXT_NAME, /* string - mandatory for create */
+	P4TC_TMPL_EXT_NUM_INSTS, /* u16 */
+	P4TC_TMPL_EXT_HAS_EXEC_METHOD, /* u8 */
+	__P4TC_TMPL_EXT_MAX
+};
+
+#define P4TC_TMPL_EXT_MAX (__P4TC_TMPL_EXT_MAX - 1)
+
+enum {
+	P4TC_TMPL_EXT_INST_UNSPEC,
+	P4TC_TMPL_EXT_INST_EXT_NAME, /* string */
+	P4TC_TMPL_EXT_INST_NAME, /* string - mandatory for create */
+	P4TC_TMPL_EXT_INST_NUM_ELEMS, /* u32 */
+	P4TC_TMPL_EXT_INST_CONTROL_PARAMS, /* nested control params */
+	P4TC_TMPL_EXT_INST_TABLE_BINDABLE, /* bool */
+	P4TC_TMPL_EXT_INST_CONSTR_PARAMS, /* nested constructor params */
+	__P4TC_TMPL_EXT_INST_MAX
+};
+
+#define P4TC_TMPL_EXT_INST_MAX (__P4TC_TMPL_EXT_INST_MAX - 1)
+
+/* Extern params attributes */
+enum {
+	P4TC_EXT_PARAMS_VALUE_UNSPEC,
+	P4TC_EXT_PARAMS_VALUE_RAW, /* binary - mandatory for runtime params create */
+	__P4TC_EXT_PARAMS_VALUE_MAX
+};
+
+#define P4TC_EXT_VALUE_PARAMS_MAX (__P4TC_EXT_PARAMS_VALUE_MAX - 1)
+
+#define P4TC_EXT_PARAMS_FLAG_ISKEY 0x1
+#define P4TC_EXT_PARAMS_FLAG_IS_DATASCALAR 0x2
+
+/* Extern params attributes */
+enum {
+	P4TC_EXT_PARAMS_UNSPEC,
+	P4TC_EXT_PARAMS_NAME, /* string - mandatory for create */
+	P4TC_EXT_PARAMS_ID, /* u32 */
+	P4TC_EXT_PARAMS_VALUE, /* bytes - mandatory for runtime params create */
+	P4TC_EXT_PARAMS_TYPE, /* u32 - mandatory for create */
+	P4TC_EXT_PARAMS_BITSZ, /* u16 - mandatory for create */
+	P4TC_EXT_PARAMS_FLAGS, /* u8 */
+	__P4TC_EXT_PARAMS_MAX
+};
+
+#define P4TC_EXT_PARAMS_MAX (__P4TC_EXT_PARAMS_MAX - 1)
 
 #define P4TC_RTA(r) \
 	((struct rtattr *)(((char *)(r)) + NLMSG_ALIGN(sizeof(struct p4tcmsg))))
