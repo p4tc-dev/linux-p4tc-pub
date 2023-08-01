@@ -362,8 +362,7 @@ static inline int _tcf_table_put(struct net *net, struct nlattr **tb,
 	idr_remove(&pipeline->p_tbl_idr, table->tbl_id);
 	pipeline->curr_tables -= 1;
 
-	kfree(table->tbl_masks_array);
-	bitmap_free(table->tbl_free_masks_bitmap);
+	__tcf_table_put_mask_array(table);
 
 	kfree(table);
 
