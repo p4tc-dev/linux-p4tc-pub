@@ -134,6 +134,7 @@ static int _p4tc_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 	parm.tbl_max_masks = table->tbl_max_masks;
 	parm.tbl_type = table->tbl_type;
 	parm.tbl_aging = table->tbl_aging;
+	parm.tbl_num_entries = atomic_read(&table->tbl_nelems);
 
 	tbl_perm = rcu_dereference_rtnl(table->tbl_permissions);
 	parm.tbl_permissions = tbl_perm->permissions;
@@ -205,6 +206,16 @@ static int _p4tc_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 	}
 	nla_nest_end(skb, nested_tbl_acts);
 
+	if (table->tbl_const_entry) {
+		struct nlattr *const_nest;
+
+		const_nest = nla_nest_start(skb, P4TC_TABLE_CONST_ENTRY);
+		p4tc_tbl_entry_fill(skb, table, table->tbl_const_entry,
+				    table->tbl_id, P4TC_ENTITY_UNSPEC);
+		nla_nest_end(skb, const_nest);
+	}
+	table->tbl_const_entry = NULL;
+
 	if (nla_put(skb, P4TC_TABLE_INFO, sizeof(parm), &parm))
 		goto out_nlmsg_trim;
 	nla_nest_end(skb, nest);
@@ -229,14 +240,6 @@ static int p4tc_table_fill_nlmsg(struct net *net, struct sk_buff *skb,
 	}
 
 	return 0;
-}
-
-static inline void p4tc_table_defact_destroy(struct p4tc_table_defact *defact)
-{
-	if (defact) {
-		p4tc_action_destroy(defact->default_acts);
-		kfree(defact);
-	}
 }
 
 static void p4tc_table_acts_list_destroy(struct list_head *acts_list)
@@ -359,8 +362,11 @@ static inline int _p4tc_table_put(struct net *net, struct nlattr **tb,
 
 	p4tc_table_acts_list_destroy(&table->tbl_acts_list);
 
+	rhltable_free_and_destroy(&table->tbl_entries,
+				  p4tc_table_entry_destroy_hash, table);
+
 	idr_destroy(&table->tbl_masks_idr);
-	idr_destroy(&table->tbl_prio_idr);
+	ida_destroy(&table->tbl_prio_idr);
 
 	perm = rcu_replace_pointer_rtnl(table->tbl_permissions, NULL);
 	kfree_rcu(perm, rcu);
@@ -619,13 +625,13 @@ p4tc_table_init_permissions(struct p4tc_table *table, u16 permissions,
 	}
 	if (!p4tc_ctrl_read_ok(permissions)) {
 		NL_SET_ERR_MSG(extack,
-			       "Table must have read permissions");
+			       "Control read permissions must be set");
 		ret = -EINVAL;
 		goto out;
 	}
 	if (!p4tc_data_exec_ok(permissions)) {
 		NL_SET_ERR_MSG(extack,
-			       "Table must have execute permissions");
+			       "Data path exec permissions must be set");
 		ret = -EINVAL;
 		goto out;
 	}
@@ -894,6 +900,7 @@ static struct p4tc_table *p4tc_table_create(struct net *net, struct nlattr **tb,
 					    struct p4tc_pipeline *pipeline,
 					    struct netlink_ext_ack *extack)
 {
+	struct rhashtable_params table_hlt_params = entry_hlt_params;
 	struct p4tc_table_default_act_params def_params = {0};
 	struct p4tc_table_parm *parm;
 	struct p4tc_table *table;
@@ -1107,12 +1114,24 @@ static struct p4tc_table *p4tc_table_create(struct net *net, struct nlattr **tb,
 	}
 
 	idr_init(&table->tbl_masks_idr);
-	idr_init(&table->tbl_prio_idr);
+	ida_init(&table->tbl_prio_idr);
 	spin_lock_init(&table->tbl_masks_idr_lock);
+
+	table_hlt_params.max_size = table->tbl_max_entries;
+	if (table->tbl_max_entries > U16_MAX)
+		table_hlt_params.nelem_hint = U16_MAX / 4 * 3;
+	else
+		table_hlt_params.nelem_hint = table->tbl_max_entries / 4 * 3;
+
+	if (rhltable_init(&table->tbl_entries, &table_hlt_params) < 0) {
+		ret = -EINVAL;
+		goto defaultacts_destroy;
+	}
 
 	pipeline->curr_tables += 1;
 
 	table->common.ops = (struct p4tc_template_ops *)&p4tc_table_ops;
+	atomic_set(&table->tbl_nelems, 0);
 
 	return table;
 
@@ -1267,6 +1286,21 @@ static struct p4tc_table *p4tc_table_update(struct net *net, struct nlattr **tb,
 			}
 			tbl_aging = parm->tbl_aging;
 		}
+	}
+
+	if (tb[P4TC_TABLE_CONST_ENTRY]) {
+		struct p4tc_table_entry *entry;
+
+		/* Workaround to make this work */
+		entry = p4tc_table_const_entry_cu(net,
+						  tb[P4TC_TABLE_CONST_ENTRY],
+						  pipeline, table, extack);
+		if (IS_ERR(entry)) {
+			ret = PTR_ERR(entry);
+			goto free_perm;
+		}
+
+		table->tbl_const_entry = entry;
 	}
 
 	p4tc_table_replace_default_acts(table, &def_params, false);
