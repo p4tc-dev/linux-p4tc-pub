@@ -98,6 +98,9 @@ static void tcf_pipeline_teardown(struct p4tc_pipeline *pipeline,
 
 	idr_remove(&pipe_net->pipeline_idr, pipeline->common.p_id);
 
+	if (pipeline->parser)
+		tcf_parser_del(net, pipeline, pipeline->parser, extack);
+
 	/* If we are on netns cleanup we can't touch the pipeline_idr.
 	 * On pre_exit we will destroy the idr but never call into teardown
 	 * if filters are active which makes pipeline pointers dangle until
@@ -247,6 +250,8 @@ static struct p4tc_pipeline *tcf_pipeline_create(struct net *net,
 			nla_get_u16(tb[P4TC_PIPELINE_NUMTABLES]);
 	else
 		pipeline->num_tables = P4TC_DEFAULT_NUM_TABLES;
+
+	pipeline->parser = NULL;
 
 	pipeline->p_state = P4TC_STATE_NOT_READY;
 
