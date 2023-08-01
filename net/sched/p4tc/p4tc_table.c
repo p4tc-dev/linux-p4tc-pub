@@ -364,6 +364,7 @@ static inline int _p4tc_table_put(struct net *net, struct nlattr **tb,
 
 	rhltable_free_and_destroy(&table->tbl_entries,
 				  p4tc_table_entry_destroy_hash, table);
+	p4tc_tbl_cache_remove(net, table);
 
 	idr_destroy(&table->tbl_masks_idr);
 	ida_destroy(&table->tbl_prio_idr);
@@ -1127,12 +1128,19 @@ static struct p4tc_table *p4tc_table_create(struct net *net, struct nlattr **tb,
 		goto defaultacts_destroy;
 	}
 
+	ret = p4tc_tbl_cache_insert(net, pipeline->common.p_id, table);
+	if (ret < 0)
+		goto entries_hashtable_destroy;
+
 	pipeline->curr_tables += 1;
 
 	table->common.ops = (struct p4tc_template_ops *)&p4tc_table_ops;
 	atomic_set(&table->tbl_nelems, 0);
 
 	return table;
+
+entries_hashtable_destroy:
+	rhltable_destroy(&table->tbl_entries);
 
 defaultacts_destroy:
 	p4tc_table_defact_destroy(table->tbl_default_missact);
