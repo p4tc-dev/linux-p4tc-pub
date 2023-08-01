@@ -93,8 +93,26 @@ struct p4tc_pipeline {
 	refcount_t                  p_hdrs_used;
 };
 
+#define P4TC_PIPELINE_MAX_ARRAY 32
+
+struct p4tc_table;
+
+struct p4tc_tbl_cache_key {
+	u32 pipeid;
+	u32 tblid;
+};
+
+extern const struct rhashtable_params tbl_cache_ht_params;
+
+int p4tc_tbl_cache_insert(struct net *net, u32 pipeid, struct p4tc_table *table);
+void p4tc_tbl_cache_remove(struct net *net, struct p4tc_table *table);
+struct p4tc_table *p4tc_tbl_cache_lookup(struct net *net, u32 pipeid, u32 tblid);
+
+#define P4TC_TBLS_CACHE_SIZE 32
+
 struct p4tc_pipeline_net {
-	struct idr pipeline_idr;
+	struct list_head  tbls_cache[P4TC_TBLS_CACHE_SIZE];
+	struct idr        pipeline_idr;
 };
 
 static inline bool p4tc_tmpl_msg_is_update(struct nlmsghdr *n)
@@ -182,8 +200,14 @@ static inline int p4tc_action_destroy(struct tc_action **acts)
 
 #define P4TC_MAX_PARAM_DATA_SIZE 124
 
+struct p4tc_table_entry_act_bpf {
+	u32 act_id;
+	u8 params[P4TC_MAX_PARAM_DATA_SIZE];
+} __packed;
+
 struct p4tc_table_defact {
 	struct tc_action **default_acts;
+	struct p4tc_table_entry_act_bpf *defact_bpf;
 	/* Will have 2 5 bits blocks containing CRUDX (Create, read, update,
 	 * delete, execute) permissions for control plane and data plane.
 	 * The first 5 bits are for control and the next five are for data plane.
@@ -200,6 +224,7 @@ struct p4tc_table_perm {
 
 struct p4tc_table {
 	struct p4tc_template_common         common;
+	struct list_head                    tbl_cache_node;
 	struct list_head                    tbl_acts_list;
 	struct idr                          tbl_masks_idr;
 	struct ida                          tbl_prio_idr;
@@ -280,6 +305,17 @@ extern const struct p4tc_template_ops p4tc_act_ops;
 
 extern const struct rhashtable_params entry_hlt_params;
 
+struct p4tc_table_entry_act_bpf_params {
+	u32 pipeid;
+	u32 tblid;
+};
+
+struct p4tc_table_entry_create_bpf_params {
+	u64 aging_ms;
+	u32 pipeid;
+	u32 tblid;
+};
+
 struct p4tc_table_entry;
 struct p4tc_table_entry_work {
 	struct work_struct   work;
@@ -301,6 +337,7 @@ struct p4tc_table_entry_value {
 	u32                              prio;
 	int                              num_acts;
 	struct tc_action                 **acts;
+	struct p4tc_table_entry_act_bpf  *act_bpf;
 	refcount_t                       entries_ref;
 	u32                              permissions;
 	u32                              value_offset;
@@ -326,6 +363,13 @@ struct p4tc_table_entry {
 	struct rhlist_head ht_node;
 	struct p4tc_table_entry_key key;
 	/* fallthrough: key data + value */
+};
+
+struct p4tc_entry_key_bpf {
+	void *key;
+	u32 key_sz;
+	void *mask;
+	u32 mask_sz;
 };
 
 #define P4TC_KEYSZ_BYTES(bits) (round_up(BITS_TO_BYTES(bits), 8))
@@ -362,6 +406,29 @@ struct p4tc_table_entry *
 p4tc_table_entry_lookup_direct(struct p4tc_table *table,
 			       struct p4tc_table_entry_key *key);
 
+struct p4tc_table_entry_act_bpf *
+tcf_table_entry_create_act_bpf(struct tc_action *action,
+			       struct netlink_ext_ack *extack);
+int register_p4tc_tbl_bpf(void);
+int tcf_table_entry_create_bpf(struct p4tc_pipeline *pipeline,
+			       struct p4tc_table *table,
+			       struct p4tc_entry_key_bpf *key,
+			       struct p4tc_table_entry_act_bpf *act_bpf,
+			       u64 aging_ms);
+int tcf_table_entry_create_on_miss(struct p4tc_pipeline *pipeline,
+				   struct p4tc_table *table,
+				   struct p4tc_table_entry_key *key,
+				   struct p4tc_table_entry_act_bpf *act_bpf,
+				   u64 aging_ms);
+int tcf_table_entry_update_bpf(struct p4tc_pipeline *pipeline,
+			       struct p4tc_table *table,
+			       struct p4tc_table_entry_key *key,
+			       struct p4tc_table_entry_act_bpf *act_bpf,
+			       u64 aging_ms);
+
+int tcf_table_entry_del_bpf(struct p4tc_pipeline *pipeline,
+			    struct p4tc_table *table,
+			    struct p4tc_table_entry_key *key);
 struct p4tc_parser {
 	char parser_name[PARSERNAMSIZ];
 	struct idr hdrfield_idr;
@@ -474,6 +541,7 @@ static inline void p4tc_table_defact_destroy(struct p4tc_table_defact *defact)
 {
 	if (defact) {
 		p4tc_action_destroy(defact->default_acts);
+		kfree(defact->defact_bpf);
 		kfree(defact);
 	}
 }
@@ -483,6 +551,7 @@ tcf_table_defacts_acts_copy(struct p4tc_table_defact *defact_copy,
 			    struct p4tc_table_defact *defact_orig)
 {
 	defact_copy->default_acts = defact_orig->default_acts;
+	defact_copy->defact_bpf = defact_orig->defact_bpf;
 }
 
 void

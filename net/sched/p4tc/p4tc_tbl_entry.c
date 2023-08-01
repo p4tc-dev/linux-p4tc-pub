@@ -674,8 +674,10 @@ static void __tcf_table_entry_put(struct p4tc_table_entry *entry)
 
 	value = p4tc_table_entry_value(entry);
 
-	if (value->acts)
+	if (value->acts) {
 		p4tc_action_destroy(value->acts);
+		kfree(value->act_bpf);
+	}
 
 	kfree(value->entry_work);
 	tm = rcu_dereference(value->tm);
@@ -1004,6 +1006,48 @@ static int ___tcf_table_entry_del(struct p4tc_pipeline *pipeline,
 	return 0;
 }
 
+/* Internal function which will be called by the data path */
+static int __tcf_table_entry_del(struct p4tc_pipeline *pipeline,
+				 struct p4tc_table *table,
+				 struct p4tc_table_entry_key *key,
+				 struct p4tc_table_entry_mask *mask, u32 prio)
+{
+	struct p4tc_table_entry *entry;
+	int ret;
+
+	tcf_table_entry_build_key(table, key, mask);
+
+	entry = p4tc_entry_lookup(table, key, prio);
+	if (!entry)
+		return -ENOENT;
+
+	ret = ___tcf_table_entry_del(pipeline, table, entry, false);
+
+	return ret;
+}
+
+int tcf_table_entry_del_bpf(struct p4tc_pipeline *pipeline,
+			    struct p4tc_table *table,
+			    struct p4tc_table_entry_key *key)
+{
+	u8 __mask[sizeof(struct p4tc_table_entry_mask) +
+		  BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
+	const u32 keysz_bytes = P4TC_KEYSZ_BYTES(table->tbl_keysz);
+	struct p4tc_table_entry_mask *mask = (void *)&__mask;
+	const u32 keysz_bits = table->tbl_keysz;
+	struct p4tc_table_entry entry = {0};
+
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT)
+		return -EINVAL;
+
+	if (keysz_bytes != P4TC_KEYSZ_BYTES(key->keysz))
+		return -EINVAL;
+
+	entry.key.keysz = keysz_bits;
+
+	return __tcf_table_entry_del(pipeline, table, key, mask, 0);
+}
+
 static int tcf_table_entry_gd(struct net *net, struct sk_buff *skb, bool del,
 			      struct nlattr *arg, u32 *ids,
 			      struct p4tc_nl_pname *nl_pname,
@@ -1259,6 +1303,49 @@ table_put:
 	return ret;
 }
 
+static int
+tcf_table_tc_act_from_bpf_act(struct tcf_p4act *p4act,
+			      struct p4tc_table_entry_value *value,
+			      struct p4tc_table_entry_act_bpf *act_bpf)
+{
+	struct p4tc_act_param *param;
+	unsigned long param_id, tmp;
+	u8 *params_cursor;
+	int err;
+
+	/* Skip act_id */
+	params_cursor = (u8 *)act_bpf + sizeof(act_bpf->act_id);
+	idr_for_each_entry_ul(&p4act->params->params_idr, param, tmp, param_id) {
+		const struct p4tc_type *type = param->type;
+		const u32 type_bytesz = BITS_TO_BYTES(type->container_bitsz);
+
+		memcpy(param->value, params_cursor, type_bytesz);
+		params_cursor += type_bytesz;
+	}
+
+	value->act_bpf = kzalloc(sizeof(*act_bpf), GFP_ATOMIC);
+	if (unlikely(!value->act_bpf))
+		return -ENOMEM;
+
+	value->acts = kcalloc(TCA_ACT_MAX_PRIO, sizeof(struct tc_action *),
+			      GFP_ATOMIC);
+	if (unlikely(!value->acts)) {
+		err = -ENOMEM;
+		goto free_act_bpf;
+	}
+
+	value->num_acts = 1;
+	value->acts[0] = (struct tc_action *)p4act;
+
+	*value->act_bpf = *act_bpf;
+
+	return 0;
+
+free_act_bpf:
+	kfree(value->act_bpf);
+	return err;
+}
+
 static enum hrtimer_restart entry_timer_handle(struct hrtimer *timer)
 {
 	struct p4tc_table_entry_value *value =
@@ -1391,6 +1478,119 @@ rm_masks_idr:
 
 out:
 	return ret;
+}
+
+struct p4tc_table_entry_create_state {
+	struct p4tc_act *act;
+	struct tcf_p4act *p4_act;
+	struct p4tc_table_entry *entry;
+	u64 aging_ms;
+	u16 permissions;
+};
+
+static int
+tcf_table_entry_init_bpf(struct p4tc_pipeline *pipeline,
+			 struct p4tc_table *table, u32 entry_key_sz,
+			 struct p4tc_table_entry_act_bpf *act_bpf,
+			 struct p4tc_table_entry_create_state *state)
+{
+	const u32 keysz_bytes = P4TC_KEYSZ_BYTES(table->tbl_keysz);
+	struct p4tc_table_entry_value *entry_value;
+	const u32 keysz_bits = table->tbl_keysz;
+	struct p4tc_table_entry *entry;
+	u32 act_id = act_bpf->act_id;
+	struct tcf_p4act *p4_act;
+	struct p4tc_act *act;
+	u32 entrysz;
+	int err;
+
+	err = -EINVAL;
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT)
+		goto out;
+
+	if (keysz_bytes != P4TC_KEYSZ_BYTES(entry_key_sz))
+		goto out;
+
+	if (refcount_read(&table->tbl_entries_ref) > table->tbl_max_entries)
+		goto out;
+
+	act = tcf_action_find_byid(pipeline, act_id);
+	if (!act) {
+		err = -ENOENT;
+		goto out;
+	}
+
+	if (!refcount_inc_not_zero(&act->a_ref)) {
+		err = -EBUSY;
+		goto out;
+	}
+
+	entrysz = sizeof(*entry) + keysz_bytes +
+		  sizeof(struct p4tc_table_entry_value);
+
+	entry = kzalloc(entrysz, GFP_ATOMIC);
+	if (unlikely(!entry)) {
+		err = -ENOMEM;
+		goto act_ref_dec;
+	}
+	entry->key.keysz = keysz_bits;
+
+	entry_value = p4tc_table_entry_value(entry);
+	err = tcf_table_entry_alloc_new_prio(table);
+	if (err < 0)
+		goto free_entry;
+	entry_value->prio = err;
+	entry_value->permissions = state->permissions;
+	entry_value->aging_ms = state->aging_ms;
+
+	p4_act = tcf_p4_get_next_prealloc_act(act);
+	if (!p4_act) {
+		err = -ENOENT;
+		goto idr_rm;
+	}
+
+	err = tcf_table_tc_act_from_bpf_act(p4_act, entry_value, act_bpf);
+	if (err < 0)
+		goto free_prealloc;
+
+	state->act = act;
+	state->p4_act = p4_act;
+	state->entry = entry;
+
+	return 0;
+
+free_prealloc:
+	tcf_p4_put_prealloc_act(act, p4_act);
+
+idr_rm:
+	tcf_table_entry_free_prio(table, entry_value->prio);
+
+free_entry:
+	kfree(entry);
+
+act_ref_dec:
+	WARN_ON_ONCE(!refcount_dec_not_one(&act->a_ref));
+out:
+	return err;
+}
+
+static inline void
+tcf_table_entry_create_state_put(struct p4tc_table *table,
+				 struct p4tc_table_entry_create_state *state)
+{
+	struct p4tc_table_entry_value *value;
+
+	tcf_p4_put_prealloc_act(state->act, state->p4_act);
+
+	value = p4tc_table_entry_value(state->entry);
+	tcf_table_entry_free_prio(table, value->prio);
+
+	kfree(value->act_bpf);
+	kfree(value->acts);
+
+	kfree(state->entry);
+
+	WARN_ON_ONCE(!refcount_dec_not_one(&state->act->a_ref));
 }
 
 /* Invoked from both control and data path  */
@@ -1531,6 +1731,119 @@ out:
 	(P4TC_CTRL_PERM_R | P4TC_CTRL_PERM_U | P4TC_CTRL_PERM_D | \
 	 P4TC_DATA_PERM_R | P4TC_DATA_PERM_X)
 
+int tcf_table_entry_create_on_miss(struct p4tc_pipeline *pipeline,
+				   struct p4tc_table *table,
+				   struct p4tc_table_entry_key *key,
+				   struct p4tc_table_entry_act_bpf *act_bpf,
+				   u64 aging_ms)
+{
+	u8 __mask[sizeof(struct p4tc_table_entry_mask) +
+		  BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
+	struct p4tc_table_entry_mask *mask = (void *)&__mask;
+	struct p4tc_table_entry_create_state state = {0};
+	int err;
+
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT)
+		return -EINVAL;
+
+	state.aging_ms = aging_ms;
+	state.permissions = P4TC_DEFAULT_TENTRY_PERMISSIONS;
+	err = tcf_table_entry_init_bpf(pipeline, table, key->keysz,
+				       act_bpf, &state);
+	if (err < 0)
+		return err;
+
+	tcf_table_entry_assign_key_exact(&state.entry->key, key->fa_key);
+
+	err = __tcf_table_entry_create(pipeline, table, state.entry, mask,
+				       P4TC_ENTITY_KERNEL, false);
+	if (err < 0)
+		goto put_state;
+
+	tcf_p4_set_init_flags(state.p4_act);
+
+	return 0;
+
+put_state:
+	tcf_table_entry_create_state_put(table, &state);
+
+	return err;
+}
+
+int tcf_table_entry_create_bpf(struct p4tc_pipeline *pipeline,
+			       struct p4tc_table *table,
+			       struct p4tc_entry_key_bpf *key,
+			       struct p4tc_table_entry_act_bpf *act_bpf,
+			       u64 aging_ms)
+{
+	u8 __mask[sizeof(struct p4tc_table_entry_mask) +
+		  BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
+	struct p4tc_table_entry_mask *mask = (void *)&__mask;
+	struct p4tc_table_entry_create_state state = {0};
+	int err;
+
+	state.aging_ms = aging_ms;
+	state.permissions = P4TC_DEFAULT_TENTRY_PERMISSIONS;
+	err = tcf_table_entry_init_bpf(pipeline, table, key->key_sz,
+				       act_bpf, &state);
+	if (err < 0)
+		return err;
+
+	tcf_table_entry_assign_key(table, &state.entry->key, mask, key->key,
+				   key->mask);
+
+	err = __tcf_table_entry_create(pipeline, table, state.entry, mask,
+				       P4TC_ENTITY_KERNEL, false);
+	if (err < 0)
+		goto put_state;
+
+	tcf_p4_set_init_flags(state.p4_act);
+
+	return 0;
+
+put_state:
+	tcf_table_entry_create_state_put(table, &state);
+
+	return err;
+}
+
+int tcf_table_entry_update_bpf(struct p4tc_pipeline *pipeline,
+			       struct p4tc_table *table,
+			       struct p4tc_table_entry_key *key,
+			       struct p4tc_table_entry_act_bpf *act_bpf,
+			       u64 aging_ms)
+{
+	struct p4tc_table_entry_create_state state = {0};
+	struct p4tc_table_entry_value *value;
+	int err;
+
+	state.aging_ms = aging_ms;
+	state.permissions = P4TC_PERMISSIONS_UNINIT;
+	err = tcf_table_entry_init_bpf(pipeline, table, key->keysz, act_bpf,
+				       &state);
+	if (err < 0)
+		return err;
+
+	tcf_table_entry_assign_key_exact(&state.entry->key, key->fa_key);
+
+	value = p4tc_table_entry_value(state.entry);
+	value->is_static = false;
+	err = __tcf_table_entry_update(pipeline, table, state.entry, NULL,
+				       P4TC_ENTITY_KERNEL, false);
+
+	if (err < 0)
+		goto put_state;
+
+	tcf_p4_set_init_flags(state.p4_act);
+
+	return 0;
+
+put_state:
+	tcf_table_entry_create_state_put(table, &state);
+
+	return err;
+}
+
 static bool tcf_table_check_entry_acts(struct p4tc_table *table,
 				       struct tc_action *entry_acts[],
 				       int num_entry_acts)
@@ -1552,6 +1865,56 @@ static bool tcf_table_check_entry_acts(struct p4tc_table *table,
 	}
 
 	return false;
+}
+
+struct p4tc_table_entry_act_bpf *
+tcf_table_entry_create_act_bpf(struct tc_action *action,
+			       struct netlink_ext_ack *extack)
+{
+	struct p4tc_act_param *params[P4TC_MSGBATCH_SIZE];
+	struct p4tc_table_entry_act_bpf *act_bpf;
+	struct tcf_p4act_params *act_params;
+	struct p4tc_act_param *param;
+	unsigned long param_id, tmp;
+	size_t tot_params_sz = 0;
+	struct tcf_p4act *p4act;
+	int num_params = 0;
+	u8 *params_cursor;
+	int i;
+
+	p4act = to_p4act(action);
+
+	act_params = rcu_dereference(p4act->params);
+
+	idr_for_each_entry_ul(&act_params->params_idr, param, tmp, param_id) {
+		const struct p4tc_type *type = param->type;
+
+		if (tot_params_sz > P4TC_MAX_PARAM_DATA_SIZE) {
+			NL_SET_ERR_MSG(extack, "Maximum parameter byte size reached");
+			return ERR_PTR(-EINVAL);
+		}
+
+		tot_params_sz += BITS_TO_BYTES(type->container_bitsz);
+		params[num_params] = param;
+		num_params++;
+	}
+
+	act_bpf = kzalloc(sizeof(*act_bpf), GFP_KERNEL);
+	if (!act_bpf)
+		return ERR_PTR(-ENOMEM);
+
+	act_bpf->act_id = p4act->act_id;
+	params_cursor = (u8 *)act_bpf + sizeof(act_bpf->act_id);
+	for (i = 0; i < num_params; i++) {
+		const struct p4tc_act_param *param = params[i];
+		const struct p4tc_type *type = param->type;
+		const u32 type_bytesz = BITS_TO_BYTES(type->container_bitsz);
+
+		memcpy(params_cursor, param->value, type_bytesz);
+		params_cursor += type_bytesz;
+	}
+
+	return act_bpf;
 }
 
 static struct nla_policy p4tc_table_attrs_policy[P4TC_ENTRY_TBL_ATTRS_MAX + 1] = {
@@ -1733,6 +2096,8 @@ __tcf_table_entry_cu(struct net *net, bool replace, struct nlattr **tb,
 	}
 
 	if (tb[P4TC_ENTRY_ACT]) {
+		struct p4tc_table_entry_act_bpf *act_bpf;
+
 		value->acts = kcalloc(TCA_ACT_MAX_PRIO,
 				      sizeof(struct tc_action *), GFP_KERNEL);
 		if (unlikely(!value->acts)) {
@@ -1757,6 +2122,14 @@ __tcf_table_entry_cu(struct net *net, bool replace, struct nlattr **tb,
 				       "Action is not allowed as entry action");
 			goto free_acts;
 		}
+
+		act_bpf = tcf_table_entry_create_act_bpf(value->acts[0],
+							 extack);
+		if (IS_ERR(act_bpf)) {
+			ret = PTR_ERR(act_bpf);
+			goto free_acts;
+		}
+		value->act_bpf = act_bpf;
 	}
 
 	if (tb[P4TC_ENTRY_AGING]) {
@@ -1765,14 +2138,14 @@ __tcf_table_entry_cu(struct net *net, bool replace, struct nlattr **tb,
 		ret = -EINVAL;
 		if (!aging_ms) {
 			NL_SET_ERR_MSG(extack, "Aging time can't be zero");
-			goto free_acts;
+			goto free_act_bpf;
 		}
 
 		if (aging_ms > P4TC_MAX_T_AGING) {
 			NL_SET_ERR_MSG_FMT(extack,
 					   "Aging time can't be larger then %llu\n",
 					   aging_ms);
-			goto free_acts;
+			goto free_act_bpf;
 		}
 
 		value->aging_ms = aging_ms;
@@ -1793,10 +2166,13 @@ __tcf_table_entry_cu(struct net *net, bool replace, struct nlattr **tb,
 		if (replace && ret == -EAGAIN)
 			NL_SET_ERR_MSG(extack, "Entry was being updated in parallel");
 
-		goto free_acts;
+		goto free_act_bpf;
 	}
 
 	return entry;
+
+free_act_bpf:
+	kfree(value->act_bpf);
 
 free_acts:
 	p4tc_action_destroy(value->acts);
