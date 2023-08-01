@@ -310,6 +310,7 @@ static struct p4tc_pipeline *tcf_pipeline_create(struct net *net,
 	pipeline->net = net;
 
 	refcount_set(&pipeline->p_ctrl_ref, 1);
+	refcount_set(&pipeline->p_hdrs_used, 1);
 
 	pipeline->common.ops = (struct p4tc_template_ops *)&p4tc_pipeline_ops;
 

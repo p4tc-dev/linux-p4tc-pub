@@ -127,6 +127,14 @@ enum {
 };
 #define P4TC_OBJ_MAX __P4TC_OBJ_MAX
 
+/* P4 runtime Object types */
+enum {
+	P4TC_OBJ_RUNTIME_UNSPEC,
+	P4TC_OBJ_RUNTIME_TABLE,
+	__P4TC_OBJ_RUNTIME_MAX,
+};
+#define P4TC_OBJ_RUNTIMEMAX __P4TC_OBJ_RUNTIMEMAX
+
 /* P4 attributes */
 enum {
 	P4TC_UNSPEC,
@@ -206,7 +214,7 @@ enum {
 	P4TC_TABLE_INFO, /* struct tc_p4_table_type_parm */
 	P4TC_TABLE_DEFAULT_HIT, /* nested default hit action attributes */
 	P4TC_TABLE_DEFAULT_MISS, /* nested default miss action attributes */
-	P4TC_TABLE_OPT_ENTRY, /* nested const table entry*/
+	P4TC_TABLE_CONST_ENTRY, /* nested const table entry*/
 	P4TC_TABLE_ACTS_LIST, /* nested table actions list */
 	__P4TC_TABLE_MAX
 };
@@ -264,6 +272,55 @@ enum {
 
 struct tc_act_dyna {
 	tc_gen;
+};
+
+struct p4tc_table_entry_tm {
+	__u64 created;
+	__u64 lastused;
+	__u64 firstused;
+	__u16 who_created;
+	__u16 who_updated;
+	__u16 who_deleted;
+	__u16 permissions;
+};
+
+enum {
+	P4TC_ENTRY_TBL_ATTRS_UNSPEC,
+	P4TC_ENTRY_TBL_ATTRS_DEFAULT_HIT, /* nested default hit attrs */
+	P4TC_ENTRY_TBL_ATTRS_DEFAULT_MISS, /* nested default miss attrs */
+	P4TC_ENTRY_TBL_ATTRS_PERMISSIONS, /* u16 table permissions */
+	__P4TC_ENTRY_TBL_ATTRS,
+};
+#define P4TC_ENTRY_TBL_ATTRS_MAX (__P4TC_ENTRY_TBL_ATTRS - 1)
+
+/* Table entry attributes */
+enum {
+	P4TC_ENTRY_UNSPEC,
+	P4TC_ENTRY_TBLNAME, /* string */
+	P4TC_ENTRY_KEY_BLOB, /* Key blob */
+	P4TC_ENTRY_MASK_BLOB, /* Mask blob */
+	P4TC_ENTRY_PRIO, /* u32 */
+	P4TC_ENTRY_ACT, /* nested actions */
+	P4TC_ENTRY_TM, /* entry data path timestamps */
+	P4TC_ENTRY_WHODUNNIT, /* tells who's modifying the entry */
+	P4TC_ENTRY_CREATE_WHODUNNIT, /* tells who created the entry */
+	P4TC_ENTRY_UPDATE_WHODUNNIT, /* tells who updated the entry last */
+	P4TC_ENTRY_DELETE_WHODUNNIT, /* tells who deleted the entry */
+	P4TC_ENTRY_PERMISSIONS, /* entry CRUDX permissions */
+	P4TC_ENTRY_TBL_ATTRS, /* nested table attributes */
+	P4TC_ENTRY_STATIC, /* u8 tells if table entry is static */
+	P4TC_ENTRY_AGING, /* u64 table entry aging */
+	P4TC_ENTRY_PAD,
+	__P4TC_ENTRY_MAX
+};
+#define P4TC_ENTRY_MAX (__P4TC_ENTRY_MAX - 1)
+
+enum {
+	P4TC_ENTITY_UNSPEC,
+	P4TC_ENTITY_KERNEL,
+	P4TC_ENTITY_TC,
+	P4TC_ENTITY_TIMER,
+	P4TC_ENTITY_MAX
 };
 
 #define P4TC_RTA(r) \
