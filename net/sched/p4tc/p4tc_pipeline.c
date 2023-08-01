@@ -27,6 +27,7 @@
 #include <net/netlink.h>
 #include <net/flow_offload.h>
 #include <net/p4tc_types.h>
+#include <net/p4tc_ext_api.h>
 
 static unsigned int pipeline_net_id;
 static struct p4tc_pipeline *root_pipeline;
@@ -99,6 +100,7 @@ static void __net_exit pipeline_exit_net(struct net *net)
 		__p4tc_pipeline_put(pipeline, &pipeline->common, NULL);
 	}
 	idr_destroy(&pipe_net->pipeline_idr);
+
 	rtnl_unlock();
 }
 
@@ -119,6 +121,7 @@ static void p4tc_pipeline_destroy(struct p4tc_pipeline *pipeline)
 {
 	idr_destroy(&pipeline->p_act_idr);
 	idr_destroy(&pipeline->p_tbl_idr);
+	idr_destroy(&pipeline->user_ext_idr);
 
 	kfree(pipeline);
 }
@@ -141,7 +144,8 @@ static void p4tc_pipeline_teardown(struct p4tc_pipeline *pipeline,
 	struct net *net = pipeline->net;
 	struct p4tc_pipeline_net *pipe_net = net_generic(net, pipeline_net_id);
 	struct net *pipeline_net = maybe_get_net(net);
-	unsigned long iter_act_id, tmp;
+	struct p4tc_user_pipeline_extern *pipe_ext;
+	unsigned long iter_act_id, ext_id, tmp;
 	struct p4tc_table *table;
 	struct p4tc_act *act;
 	unsigned long tbl_id;
@@ -151,6 +155,19 @@ static void p4tc_pipeline_teardown(struct p4tc_pipeline *pipeline,
 
 	idr_for_each_entry_ul(&pipeline->p_act_idr, act, tmp, iter_act_id)
 		act->common.ops->put(pipeline, &act->common, extack);
+
+	idr_for_each_entry_ul(&pipeline->user_ext_idr, pipe_ext, tmp, ext_id) {
+		unsigned long tmp_in, inst_id;
+		struct p4tc_extern_inst *inst;
+
+		idr_for_each_entry_ul(&pipe_ext->e_inst_idr, inst, tmp_in, inst_id) {
+			struct p4tc_template_common *common = &inst->common;
+
+			common->ops->put(pipeline, common, extack);
+		}
+
+		pipe_ext->free(pipe_ext, &pipeline->user_ext_idr);
+	}
 
 	if (pipeline->parser)
 		tcf_parser_del(net, pipeline, pipeline->parser, extack);
@@ -213,9 +230,18 @@ static inline int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 	if (ret < 0)
 		return ret;
 
+	ret = p4tc_extern_inst_init_elems(&pipeline->user_ext_idr);
+	if (ret < 0)
+		goto unset_table_state_ready;
+
 	pipeline->p_state = P4TC_STATE_READY;
 
 	return true;
+
+unset_table_state_ready:
+	p4tc_table_put_mask_array(pipeline);
+
+	return ret;
 }
 
 struct p4tc_pipeline *p4tc_pipeline_find_byid(struct net *net, const u32 pipeid)
@@ -313,6 +339,9 @@ static struct p4tc_pipeline *p4tc_pipeline_create(struct net *net,
 
 	idr_init(&pipeline->p_tbl_idr);
 	pipeline->curr_tables = 0;
+	idr_init(&pipeline->p_tbl_idr);
+
+	idr_init(&pipeline->user_ext_idr);
 
 	pipeline->num_created_acts = 0;
 
@@ -642,6 +671,8 @@ static void __p4tc_pipeline_init(void)
 	}
 
 	strscpy(root_pipeline->common.name, "kernel", PIPELINENAMSIZ);
+
+	idr_init(&root_pipeline->p_ext_idr);
 
 	root_pipeline->common.ops =
 		(struct p4tc_template_ops *)&p4tc_pipeline_ops;

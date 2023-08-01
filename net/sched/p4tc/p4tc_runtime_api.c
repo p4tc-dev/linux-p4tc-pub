@@ -27,11 +27,13 @@
 #include <net/p4tc.h>
 #include <net/netlink.h>
 #include <net/flow_offload.h>
+#include <net/p4tc_ext_api.h>
 
 static int tc_ctl_p4_root(struct sk_buff *skb, struct nlmsghdr *n, int cmd,
 			  struct netlink_ext_ack *extack)
 {
 	struct p4tcmsg *t = (struct p4tcmsg *)nlmsg_data(n);
+	int ret;
 
 	switch (t->obj) {
 	case P4TC_OBJ_RUNTIME_TABLE: {
@@ -50,6 +52,11 @@ static int tc_ctl_p4_root(struct sk_buff *skb, struct nlmsghdr *n, int cmd,
 
 		return ret;
 	}
+	case P4TC_OBJ_RUNTIME_EXTERN:
+		rtnl_lock();
+		ret = p4tc_ctl_extern(skb, n, cmd, extack);
+		rtnl_unlock();
+		return ret;
 	default:
 		NL_SET_ERR_MSG(extack, "Unknown P4 runtime object type");
 		return -EOPNOTSUPP;
@@ -125,6 +132,8 @@ static int tc_ctl_p4_dump(struct sk_buff *skb, struct netlink_callback *cb)
 
 		return ret;
 	}
+	case P4TC_OBJ_RUNTIME_EXTERN:
+		return p4tc_ctl_extern_dump(skb, cb, tb, p_name);
 	default:
 		NL_SET_ERR_MSG_FMT(cb->extack,
 				   "Unknown p4 runtime object type %u\n",

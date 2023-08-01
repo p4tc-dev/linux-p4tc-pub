@@ -11,6 +11,7 @@
 #include <linux/rhashtable-types.h>
 #include <net/tc_act/p4tc.h>
 #include <net/p4tc_types.h>
+#include <linux/bpf.h>
 
 #define P4TC_DEFAULT_NUM_TABLES P4TC_MINTABLES_COUNT
 #define P4TC_DEFAULT_MAX_RULES 1
@@ -21,6 +22,10 @@
 #define P4TC_DEFAULT_TMASKS 8
 #define P4TC_MAX_T_AGING 864000000
 #define P4TC_DEFAULT_T_AGING 259200000
+#define P4TC_DEFAULT_NUM_EXT_INSTS 1
+#define P4TC_MAX_NUM_EXT_INSTS (1 << 10)
+#define P4TC_DEFAULT_NUM_EXT_INST_ELEMS 1
+#define P4TC_MAX_NUM_EXT_INST_ELEMS (1 << 10)
 
 #define P4TC_MAX_PERMISSION (GENMASK(P4TC_PERM_MAX_BIT, 0))
 
@@ -31,6 +36,8 @@
 #define P4TC_AID_IDX 1
 #define P4TC_PARSEID_IDX 1
 #define P4TC_HDRFIELDID_IDX 2
+#define P4TC_TMPL_EXT_IDX 1
+#define P4TC_TMPL_EXT_INST_IDX 2
 
 #define P4TC_HDRFIELD_IS_VALIDITY_BIT 0x1
 
@@ -82,10 +89,15 @@ struct p4tc_pipeline {
 	struct p4tc_template_common common;
 	struct idr                  p_act_idr;
 	struct idr                  p_tbl_idr;
+	/* IDR where the externs are stored globally in the root pipeline */
+	struct idr                  p_ext_idr;
+	/* IDR where the per user pipeline data related to externs is stored */
+	struct idr                  user_ext_idr;
 	struct rcu_head             rcu;
 	struct net                  *net;
 	struct p4tc_parser          *parser;
 	u32                         num_created_acts;
+	u32                         num_created_ext_elems;
 	refcount_t                  p_ctrl_ref;
 	u16                         num_tables;
 	u16                         curr_tables;
@@ -199,6 +211,27 @@ static inline int p4tc_action_destroy(struct tc_action **acts)
 
 #define P4TC_MAX_PARAM_DATA_SIZE 124
 
+#define P4TC_EXT_FLAGS_UNSPEC 0x0
+#define P4TC_EXT_FLAGS_CONTROL_READ 0x1
+#define P4TC_EXT_FLAGS_CONTROL_WRITE 0x2
+
+struct p4tc_ext_bpf_params {
+	u32 pipe_id;
+	u32 ext_id;
+	u32 inst_id;
+	u32 index;
+	u32 param_id;
+	u32 flags;
+	u8  in_params[128]; /* extern specific params if any */
+};
+
+struct p4tc_ext_bpf_res {
+	u32 ext_id;
+	u32 index;
+	u32 verdict;
+	u8 out_params[128]; /* specific values if any */
+};
+
 struct p4tc_table_defact {
 	struct tc_action **default_acts;
 	/* Will have 2 5 bits blocks containing CRUDX (Create, read, update,
@@ -228,6 +261,7 @@ struct p4tc_table {
 	struct p4tc_table_perm __rcu        *tbl_permissions;
 	struct p4tc_table_entry_mask __rcu  **tbl_masks_array;
 	unsigned long __rcu                 *tbl_free_masks_bitmap;
+	struct p4tc_extern_inst             *tbl_counter;
 	u64                                 tbl_aging;
 	spinlock_t                          tbl_masks_idr_lock;
 	u32                                 tbl_keysz;
@@ -331,6 +365,7 @@ struct p4tc_table_entry_key {
 struct p4tc_table_entry_value {
 	u32                              prio;
 	int                              num_acts;
+	struct p4tc_extern_common        *counter;
 	struct tc_action                 **acts;
 	struct p4tc_table_entry_act_bpf  *act_bpf;
 	refcount_t                       entries_ref;
@@ -611,9 +646,122 @@ static inline bool p4tc_runtime_msg_is_update(struct nlmsghdr *n)
 	return n->nlmsg_type == RTM_P4TC_UPDATE;
 }
 
+struct p4tc_user_pipeline_extern {
+	struct idr		e_inst_idr;
+	struct p4tc_tmpl_extern	*tmpl_ext;
+	void (*free)(struct p4tc_user_pipeline_extern *pipe_ext,
+		     struct idr *tmpl_exts_idr);
+	u32			ext_id;
+	refcount_t		ext_ref;
+	atomic_t                curr_insts_num;
+	u32                     PAD0;
+	char			ext_name[EXTERNNAMSIZ];
+};
+
+struct p4tc_tmpl_extern {
+	struct p4tc_template_common  common;
+	struct idr                   params_idr;
+	const struct p4tc_extern_ops *ops;
+	u32                          ext_id;
+	u32                          num_params;
+	u32                          max_num_insts;
+	refcount_t                   tmpl_ref;
+	char                         mod_name[MODULE_NAME_LEN];
+	bool                         has_exec_method;
+};
+
+struct p4tc_extern_inst {
+	struct p4tc_template_common      common;
+	struct p4tc_extern_params        *params;
+	const struct p4tc_extern_ops     *ops;
+	struct idr                       control_elems_idr;
+	struct list_head                 unused_elems;
+	spinlock_t                       available_list_lock;
+	refcount_t                       inst_ref;
+	struct p4tc_user_pipeline_extern *pipe_ext;
+	char                             *ext_name;
+	atomic_t                         curr_num_elems;
+	u32                              max_num_elems;
+	u32                              ext_id;
+	u32                              ext_inst_id;
+	u32                              num_control_params;
+	u32				 flags;
+	bool                             tbl_bindable;
+	bool				 is_scalar;
+};
+
+int p4tc_pipeline_create_extern_net(struct p4tc_tmpl_extern *tmpl_ext);
+int p4tc_pipeline_del_extern_net(struct p4tc_tmpl_extern *tmpl_ext);
+struct p4tc_extern_inst *
+p4tc_ext_inst_find_bynames(struct net *net, struct p4tc_pipeline *pipeline,
+			   const char *extname, const char *instname,
+			   struct netlink_ext_ack *extack);
+struct p4tc_user_pipeline_extern *
+p4tc_pipe_ext_find_bynames(struct net *net, struct p4tc_pipeline *pipeline,
+			   const char *extname, struct netlink_ext_ack *extack);
+struct p4tc_extern_inst *
+p4tc_ext_inst_table_bind(struct p4tc_pipeline *pipeline,
+			 struct p4tc_user_pipeline_extern **pipe_ext,
+			 const char *ext_inst_path,
+			 struct netlink_ext_ack *extack);
+void
+p4tc_ext_inst_table_unbind(struct p4tc_table *table,
+			   struct p4tc_user_pipeline_extern *pipe_ext,
+			   struct p4tc_extern_inst *inst);
+struct p4tc_extern_inst *
+p4tc_ext_inst_get_byids(struct net *net, struct p4tc_pipeline **pipeline,
+			struct p4tc_ext_bpf_params *params);
+struct p4tc_extern_inst *
+p4tc_ext_find_byids(struct p4tc_pipeline *pipeline,
+		    const u32 ext_id, const u32 inst_id);
+struct p4tc_extern_inst *
+p4tc_ext_inst_alloc(const struct p4tc_extern_ops *ops, const u32 max_num_elems,
+		    const bool tbl_bindable, char *ext_name);
+
+int __bpf_p4tc_extern_md_write(struct net *net,
+			       struct p4tc_ext_bpf_params *params);
+int __bpf_p4tc_extern_md_read(struct net *net,
+			      struct p4tc_ext_bpf_res *res,
+			      struct p4tc_ext_bpf_params *params);
+struct p4tc_extern_params *
+p4tc_ext_params_copy(struct p4tc_extern_params *params_orig);
+
+extern const struct p4tc_template_ops p4tc_tmpl_ext_ops;
+extern const struct p4tc_template_ops p4tc_ext_inst_ops;
+
+struct p4tc_extern_param {
+	struct p4tc_extern_param_ops    *ops;
+	struct p4tc_extern_param_ops    *mod_ops;
+	void				*value;
+	struct p4tc_type		*type;
+	struct p4tc_type_mask_shift	*mask_shift;
+	u32				id;
+	u32				index;
+	u32                             bitsz;
+	u32				flags;
+	char				name[EXTPARAMNAMSIZ];
+	struct rcu_head			rcu;
+};
+
+struct p4tc_extern_param_ops {
+	int (*init_value)(struct net *net,
+			  struct p4tc_extern_param *nparam, void *value,
+			  struct netlink_ext_ack *extack);
+	/* Only for bit<X> parameter types */
+	void (*default_value)(struct p4tc_extern_param *nparam);
+	int (*dump_value)(struct sk_buff *skb, struct p4tc_extern_param_ops *op,
+			  struct p4tc_extern_param *param);
+	void (*free)(struct p4tc_extern_param *param);
+	u32 len;
+	u32 alloc_len;
+};
+
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
 #define to_hdrfield(t) ((struct p4tc_hdrfield *)t)
 #define to_act(t) ((struct p4tc_act *)t)
 #define to_table(t) ((struct p4tc_table *)t)
+
+#define to_extern(t) ((struct p4tc_tmpl_extern *)t)
+#define to_extern_inst(t) ((struct p4tc_extern_inst *)t)
 
 #endif

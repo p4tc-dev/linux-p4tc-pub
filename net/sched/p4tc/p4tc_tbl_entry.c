@@ -27,6 +27,7 @@
 #include <net/p4tc.h>
 #include <net/netlink.h>
 #include <net/flow_offload.h>
+#include <net/p4tc_ext_api.h>
 
 #define SIZEOF_MASKID (sizeof(((struct p4tc_table_entry_key *)0)->maskid))
 
@@ -319,6 +320,7 @@ int p4tc_tbl_entry_fill(struct sk_buff *skb, struct p4tc_table *table,
 	struct p4tc_table_entry_tm dtm, *tm;
 	struct nlattr *nest, *nest_acts;
 	u32 ids[P4TC_ENTRY_MAX_IDS];
+	struct nlattr *nest_counter;
 	int ret = -ENOMEM;
 
 	ids[P4TC_TBLID_IDX - 1] = tbl_id;
@@ -380,6 +382,10 @@ int p4tc_tbl_entry_fill(struct sk_buff *skb, struct p4tc_table *table,
 				      P4TC_ENTRY_PAD))
 			goto out_nlmsg_trim;
 	}
+	nest_counter = nla_nest_start(skb, P4TC_ENTRY_COUNTER);
+	if (value->counter)
+		p4tc_ext_elem_dump_1(skb, value->counter);
+	nla_nest_end(skb, nest_counter);
 
 	nla_nest_end(skb, nest);
 
@@ -1515,11 +1521,20 @@ __must_hold(RCU)
 		goto free_work;
 	}
 
+	if (table->tbl_counter) {
+		value->counter = p4tc_ext_elem_get(table->tbl_counter);
+		if (!value->counter) {
+			atomic_dec(&table->tbl_nelems);
+			ret = -ENOENT;
+			goto free_work;
+		}
+	}
+
 	if (rhltable_insert(&table->tbl_entries, &entry->ht_node,
 			    entry_hlt_params) < 0) {
 		atomic_dec(&table->tbl_nelems);
 		ret = -EBUSY;
-		goto free_work;
+		goto put_ext;
 	}
 
 	if (value->is_dyn) {
@@ -1538,6 +1553,10 @@ __must_hold(RCU)
 					  GFP_ATOMIC);
 
 	return 0;
+
+put_ext:
+	if (value->counter)
+		p4tc_ext_elem_put_list(table->tbl_counter, value->counter);
 
 free_work:
 	kfree(entry_work);
@@ -1758,6 +1777,9 @@ __must_hold(RCU)
 		hrtimer_start(&value->entry_timer, ms_to_ktime(value->aging_ms),
 			      HRTIMER_MODE_REL);
 	}
+
+	if (value_old->counter)
+		value->counter = value_old->counter;
 
 	INIT_WORK(&entry_work->work, p4tc_table_entry_del_work);
 
