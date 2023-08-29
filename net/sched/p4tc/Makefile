@@ -10,4 +10,5 @@ obj-m += externs/ext_Counter.o
 obj-m += externs/ext_csum.o
 obj-m += externs/ext_Digest.o
 obj-m += externs/ext_Meter.o
+obj-m += externs/ext_is_net_or_host_port.o
 obj-$(CONFIG_DEBUG_INFO_BTF) += p4tc_bpf.o
