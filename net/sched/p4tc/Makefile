@@ -6,4 +6,5 @@ obj-y := p4tc_types.o p4tc_tmpl_api.o p4tc_pipeline.o \
 	p4tc_action.o p4tc_table.o p4tc_tbl_entry.o \
 	p4tc_filter.o p4tc_runtime_api.o trace.o p4tc_ext.o \
 	p4tc_tmpl_ext.o
+obj-m += externs/ext_Counter.o
 obj-$(CONFIG_DEBUG_INFO_BTF) += p4tc_bpf.o

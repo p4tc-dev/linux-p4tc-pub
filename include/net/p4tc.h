@@ -820,6 +820,11 @@ struct p4tc_extern_inst {
 	bool				 is_scalar;
 };
 
+struct p4tc_table_counters {
+	u64 bytes;
+	u32 pkts;
+};
+
 int p4tc_pipeline_create_extern_net(struct p4tc_tmpl_extern *tmpl_ext);
 int p4tc_pipeline_del_extern_net(struct p4tc_tmpl_extern *tmpl_ext);
 struct p4tc_extern_inst *
