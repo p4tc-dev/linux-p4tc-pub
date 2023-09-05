@@ -266,6 +266,7 @@ p4tc_table_entry_lookup_direct(struct p4tc_table *table,
 
 	return entry;
 }
+EXPORT_SYMBOL_GPL(p4tc_table_entry_lookup_direct);
 
 #define p4tc_table_entry_mask_find_byid(table, id) \
 	(idr_find(&(table)->tbl_masks_idr, id))
@@ -871,7 +872,8 @@ free_skb:
 	return err;
 }
 
-static void __p4tc_table_entry_put(struct p4tc_table_entry *entry)
+static void __p4tc_table_entry_put(struct p4tc_table *table,
+				   struct p4tc_table_entry *entry)
 {
 	struct p4tc_table_entry_value_proc *value_proc;
 	struct p4tc_table_entry_value *value;
@@ -881,6 +883,9 @@ static void __p4tc_table_entry_put(struct p4tc_table_entry *entry)
 
 	if (value->acts[0])
 		p4tc_action_destroy(value->acts);
+
+	if (value->counter)
+		p4tc_ext_elem_put_list(table->tbl_counter, value->counter);
 
 	kfree(value->entry_work);
 	tm = rcu_dereference_protected(value->tm, 1);
@@ -911,15 +916,15 @@ static void p4tc_table_entry_del_work(struct work_struct *work)
 	put_net(pipeline->net);
 	p4tc_pipeline_put_ref(pipeline);
 
-	__p4tc_table_entry_put(entry);
+	__p4tc_table_entry_put(entry_work->table, entry);
 }
 
 static void p4tc_table_entry_put(struct p4tc_table_entry *entry, bool deferred)
 {
 	struct p4tc_table_entry_value *value = p4tc_table_entry_value(entry);
+	struct p4tc_table_entry_work *entry_work = value->entry_work;
 
 	if (deferred) {
-		struct p4tc_table_entry_work *entry_work = value->entry_work;
 		/* We have to free tc actions
 		 * in a sleepable context
 		 */
@@ -933,7 +938,7 @@ static void p4tc_table_entry_put(struct p4tc_table_entry *entry, bool deferred)
 		if (value->is_dyn)
 			hrtimer_cancel(&value->entry_timer);
 
-		__p4tc_table_entry_put(entry);
+		__p4tc_table_entry_put(entry_work->table, entry);
 	}
 }
 

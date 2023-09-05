@@ -370,6 +370,7 @@ struct p4tc_ext_bpf_params {
 	u32 pipe_id;
 	u32 ext_id;
 	u32 inst_id;
+	u32 tbl_id;
 	u32 index;
 	u32 flags;
 	u8  in_params[P4TC_EXT_MAX_PARAM_DATA_SIZE]; /* extern specific params if any */
@@ -381,6 +382,9 @@ struct p4tc_ext_bpf_val {
 	u32 verdict;
 	u8 out_params[P4TC_EXT_MAX_PARAM_DATA_SIZE]; /* specific values if any */
 };
+
+#define P4TC_EXT_CNT_DIRECT BIT(0)
+#define P4TC_EXT_CNT_INDIRECT BIT(1)
 
 struct p4tc_table_defact {
 	struct tc_action *acts[2];
@@ -524,7 +528,7 @@ struct p4tc_table_entry_create_bpf_params {
 enum {
 	P4TC_ENTRY_CREATE_BPF_PARAMS_SZ = 160,
 	P4TC_ENTRY_ACT_BPF_PARAMS_SZ = 8,
-	P4TC_EXT_BPF_PARAMS_SZ = 84,
+	P4TC_EXT_BPF_PARAMS_SZ = 88,
 	P4TC_EXT_BPF_RES_SZ = 76,
 };
 
@@ -939,6 +943,11 @@ struct p4tc_extern_inst {
 	u32				 flags;
 	bool                             tbl_bindable;
 	bool				 is_scalar;
+};
+
+struct p4tc_table_counters {
+	u64 bytes;
+	u32 pkts;
 };
 
 struct p4tc_extern_inst *

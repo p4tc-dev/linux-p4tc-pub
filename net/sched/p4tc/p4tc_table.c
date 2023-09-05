@@ -27,6 +27,7 @@
 #include <net/p4tc.h>
 #include <net/netlink.h>
 #include <net/flow_offload.h>
+#include <net/p4tc_ext/ext_counter.h>
 
 static int __p4tc_table_try_set_state_ready(struct net *net,
 					    struct p4tc_table *table,
@@ -739,6 +740,7 @@ struct p4tc_table *p4tc_table_find_byid(struct p4tc_pipeline *pipeline,
 {
 	return idr_find(&pipeline->p_tbl_idr, tbl_id);
 }
+EXPORT_SYMBOL_GPL(p4tc_table_find_byid);
 
 static struct p4tc_table *p4tc_table_find_byname(const char *tblname,
 						 struct p4tc_pipeline *pipeline)
@@ -1322,7 +1324,7 @@ static int p4tc_table_counter_bind(struct p4tc_pipeline *pipeline,
 	*inst = p4tc_ext_inst_table_bind(pipeline, pipe_ext,
 					ext_inst_path, extack);
 	if (IS_ERR(*inst))
-		return PTR_ERR(inst);
+		return PTR_ERR(*inst);
 
 	return 0;
 }
