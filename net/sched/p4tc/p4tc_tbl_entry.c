@@ -333,15 +333,29 @@ static void p4tc_table_entry_tm_dump(struct p4tc_table_entry_tm *dtm,
 
 #define P4TC_ENTRY_MAX_IDS (P4TC_PATH_MAX - 1)
 
-int p4tc_tbl_entry_fill(struct sk_buff *skb, struct p4tc_table *table,
-			struct p4tc_table_entry *entry, u32 tbl_id,
-			u16 who_deleted)
+static bool proc_name_is_empty(const char *proc_name)
 {
+	return !(!!proc_name && strnlen(proc_name, P4TC_TASK_COMM_LEN));
+}
+
+static bool p4tc_tbl_entry_pid_is_valid(const u16 entity, const u32 pid)
+{
+	return pid || (entity == P4TC_ENTITY_KERNEL) ||
+		(entity == P4TC_ENTITY_TIMER);
+}
+
+int p4tc_tbl_entry_fill(struct sk_buff *skb, struct p4tc_table *table,
+			struct p4tc_table_entry *entry,
+			const u16 who_deleted_ent, const char *who_deleted,
+			const u32 who_deleted_pid)
+{
+	struct p4tc_table_entry_value_proc *value_proc;
 	unsigned char *b = nlmsg_get_pos(skb);
 	struct p4tc_table_entry_value *value;
 	struct p4tc_table_entry_tm dtm, *tm;
 	struct nlattr *nest, *nest_acts;
 	u32 ids[P4TC_ENTRY_MAX_IDS];
+	u32 tbl_id = table->tbl_id;
 	int ret = -ENOMEM;
 
 	ids[P4TC_TBLID_IDX - 1] = tbl_id;
@@ -373,20 +387,51 @@ int p4tc_tbl_entry_fill(struct sk_buff *skb, struct p4tc_table *table,
 
 	tm = rcu_dereference_protected(value->tm, 1);
 
-	if (nla_put_u8(skb, P4TC_ENTRY_CREATE_WHODUNNIT, tm->who_created))
+	if (nla_put_u8(skb, P4TC_ENTRY_WHO_CREATED_ENT, tm->who_created))
 		goto out_nlmsg_trim;
 
-	if (tm->who_updated) {
-		if (nla_put_u8(skb, P4TC_ENTRY_UPDATE_WHODUNNIT,
-			       tm->who_updated))
+	value_proc = rcu_dereference_protected(value->value_proc, 1);
+	if (!proc_name_is_empty(value_proc->who_created)) {
+		if (nla_put_string(skb, P4TC_ENTRY_WHO_CREATED,
+				   value_proc->who_created))
 			goto out_nlmsg_trim;
 	}
 
-	if (who_deleted) {
-		if (nla_put_u8(skb, P4TC_ENTRY_DELETE_WHODUNNIT,
-			       who_deleted))
+	if (p4tc_tbl_entry_pid_is_valid(tm->who_created,
+					value_proc->who_created_pid)) {
+		if (nla_put_u32(skb, P4TC_ENTRY_WHO_CREATED_PID,
+				value_proc->who_created_pid))
 			goto out_nlmsg_trim;
 	}
+
+	if (tm->who_updated &&
+	    nla_put_u8(skb, P4TC_ENTRY_WHO_UPDATED_ENT, tm->who_updated))
+		goto out_nlmsg_trim;
+
+	if (!proc_name_is_empty(value_proc->who_updated)) {
+		if (nla_put_string(skb, P4TC_ENTRY_WHO_UPDATED,
+				   value_proc->who_updated))
+			goto out_nlmsg_trim;
+	}
+
+	if (p4tc_tbl_entry_pid_is_valid(tm->who_updated,
+					value_proc->who_updated_pid)) {
+		if (nla_put_u32(skb, P4TC_ENTRY_WHO_UPDATED_PID,
+				value_proc->who_updated_pid))
+			goto out_nlmsg_trim;
+	}
+
+	if (who_deleted_ent &&
+	    nla_put_u8(skb, P4TC_ENTRY_WHO_DELETED_ENT, who_deleted_ent))
+			goto out_nlmsg_trim;
+
+	if (!proc_name_is_empty(who_deleted) &&
+	    nla_put_string(skb, P4TC_ENTRY_WHO_DELETED, who_deleted))
+			goto out_nlmsg_trim;
+
+	if (p4tc_tbl_entry_pid_is_valid(who_deleted_ent, who_deleted_pid) &&
+	    nla_put_u32(skb, P4TC_ENTRY_WHO_DELETED_PID, who_deleted_pid))
+			goto out_nlmsg_trim;
 
 	p4tc_table_entry_tm_dump(&dtm, tm);
 	if (nla_put_64bit(skb, P4TC_ENTRY_TM, sizeof(dtm), &dtm,
@@ -432,9 +477,24 @@ static const struct nla_policy p4tc_entry_policy[P4TC_ENTRY_MAX + 1] = {
 	[P4TC_ENTRY_TM] =
 		NLA_POLICY_EXACT_LEN(sizeof(struct p4tc_table_entry_tm)),
 	[P4TC_ENTRY_WHODUNNIT] = { .type = NLA_U8 },
-	[P4TC_ENTRY_CREATE_WHODUNNIT] = { .type = NLA_U8 },
-	[P4TC_ENTRY_UPDATE_WHODUNNIT] = { .type = NLA_U8 },
-	[P4TC_ENTRY_DELETE_WHODUNNIT] = { .type = NLA_U8 },
+	[P4TC_ENTRY_WHO_CREATED_ENT] = { .type = NLA_U8 },
+	[P4TC_ENTRY_WHO_CREATED] = {
+		.type = NLA_STRING,
+		.len = P4TC_TASK_COMM_LEN
+	},
+	[P4TC_ENTRY_WHO_CREATED_PID] = { .type = NLA_U32 },
+	[P4TC_ENTRY_WHO_UPDATED_ENT] = { .type = NLA_U8 },
+	[P4TC_ENTRY_WHO_UPDATED] = {
+		.type = NLA_STRING,
+		.len = P4TC_TASK_COMM_LEN
+	},
+	[P4TC_ENTRY_WHO_UPDATED_PID] = { .type = NLA_U32 },
+	[P4TC_ENTRY_WHO_DELETED_ENT] = { .type = NLA_U8 },
+	[P4TC_ENTRY_WHO_DELETED] = {
+		.type = NLA_STRING,
+		.len = P4TC_TASK_COMM_LEN
+	},
+	[P4TC_ENTRY_WHO_DELETED_PID] = { .type = NLA_U32 },
 	[P4TC_ENTRY_PERMISSIONS] = NLA_POLICY_MAX(NLA_U16, P4TC_MAX_PERMISSION),
 	[P4TC_ENTRY_TBL_ATTRS] = { .type = NLA_NESTED },
 	[P4TC_ENTRY_DYNAMIC] = NLA_POLICY_RANGE(NLA_U8, 1, 1),
@@ -744,9 +804,11 @@ p4tc_tbl_entry_emit_event(struct p4tc_table_entry_work *entry_work,
 			  const bool echo, const bool lock_rtnl)
 {
 	struct p4tc_pipeline *pipeline = entry_work->pipeline;
+	pid_t who_deleted_pid = entry_work->who_deleted_pid;
 	struct p4tc_table_entry *entry = entry_work->entry;
+	u16 who_deleted_ent = entry_work->who_deleted_ent;
 	struct p4tc_table *table = entry_work->table;
-	u16 who_deleted = entry_work->who_deleted;
+	char *who_deleted = entry_work->who_deleted;
 	struct net *net = pipeline->net;
 	struct nlmsghdr *nlh;
 	struct nlattr *nest;
@@ -764,8 +826,8 @@ p4tc_tbl_entry_emit_event(struct p4tc_table_entry_work *entry_work,
 		goto free_skb;
 
 	nest = nla_nest_start(skb, 1);
-	if (p4tc_tbl_entry_fill(skb, table, entry, table->tbl_id,
-				who_deleted) < 0)
+	if (p4tc_tbl_entry_fill(skb, table, entry, who_deleted_ent,
+				who_deleted, who_deleted_pid) < 0)
 		goto free_skb;
 	nla_nest_end(skb, nest);
 	nla_nest_end(skb, root);
@@ -787,6 +849,7 @@ free_skb:
 
 static void __p4tc_table_entry_put(struct p4tc_table_entry *entry)
 {
+	struct p4tc_table_entry_value_proc *value_proc;
 	struct p4tc_table_entry_value *value;
 	struct p4tc_table_entry_tm *tm;
 
@@ -798,6 +861,8 @@ static void __p4tc_table_entry_put(struct p4tc_table_entry *entry)
 	kfree(value->entry_work);
 	tm = rcu_dereference_protected(value->tm, 1);
 	kfree(tm);
+	value_proc = rcu_dereference_protected(value->value_proc, 1);
+	kfree(value_proc);
 
 	kfree(entry);
 }
@@ -862,10 +927,10 @@ static void p4tc_table_entry_put_rcu(struct rcu_head *rcu)
 	put_net(pipeline->net);
 }
 
-static void __p4tc_table_entry_destroy(struct p4tc_table *table,
-				       struct p4tc_table_entry *entry,
-				       bool remove_from_hash, bool send_event,
-				       u16 who_deleted)
+static void
+__p4tc_table_entry_destroy(struct p4tc_table *table,
+			   struct p4tc_table_entry *entry,
+			   bool remove_from_hash, bool send_event)
 {
 	/* !remove_from_hash and deferred deletion are incompatible
 	 * as entries that defer deletion after a GP __must__
@@ -883,8 +948,6 @@ static void __p4tc_table_entry_destroy(struct p4tc_table *table,
 			p4tc_table_entry_work(entry);
 
 		entry_work->send_event = send_event;
-		entry_work->who_deleted = who_deleted;
-
 		/* get pipeline/net for async task */
 		get_net(entry_work->pipeline->net);
 		p4tc_pipeline_get(entry_work->pipeline);
@@ -916,10 +979,11 @@ static void p4tc_table_entry_free_prio(struct p4tc_table *table, u32 prio)
 		ida_free(&table->tbl_prio_ida, prio);
 }
 
-static int p4tc_table_entry_destroy(struct p4tc_table *table,
-				    struct p4tc_table_entry *entry,
-				    bool remove_from_hash,
-				    bool send_event, u16 who_deleted)
+static int
+p4tc_table_entry_destroy(struct p4tc_table *table,
+			 struct p4tc_table_entry *entry,
+			 bool remove_from_hash,
+			 bool send_event)
 {
 	struct p4tc_table_entry_value *value = p4tc_table_entry_value(entry);
 
@@ -929,8 +993,7 @@ static int p4tc_table_entry_destroy(struct p4tc_table *table,
 
 	p4tc_table_entry_free_prio(table, value->prio);
 
-	__p4tc_table_entry_destroy(table, entry, remove_from_hash, send_event,
-				   who_deleted);
+	__p4tc_table_entry_destroy(table, entry, remove_from_hash, send_event);
 
 	atomic_dec(&table->tbl_nelems);
 
@@ -941,17 +1004,23 @@ static void p4tc_table_entry_destroy_noida(struct p4tc_table *table,
 					   struct p4tc_table_entry *entry)
 {
 	/* Entry refcount was already decremented */
-	__p4tc_table_entry_destroy(table, entry, true, false, 0);
+	__p4tc_table_entry_destroy(table, entry, true, false);
 }
 
 /* Only deletes entries when called from pipeline put */
 void p4tc_table_entry_destroy_hash(void *ptr, void *arg)
 {
+	struct p4tc_table_entry_work *entry_work;
 	struct p4tc_table_entry *entry = ptr;
 	struct p4tc_table *table = arg;
 
-	p4tc_table_entry_destroy(table, entry, false, false,
-				 P4TC_ENTITY_TC);
+	entry_work = p4tc_table_entry_work(entry);
+
+	entry_work->who_deleted_ent = P4TC_ENTITY_TC;
+	entry_work->who_deleted_pid = task_pid_nr(current);
+	get_task_comm(entry_work->who_deleted, current);
+
+	p4tc_table_entry_destroy(table, entry, false, false);
 }
 
 struct p4tc_table_get_state {
@@ -1123,32 +1192,62 @@ static void p4tc_table_entry_build_key(struct p4tc_table *table,
 }
 
 static int
+p4tc_tbl_entry_proc_name_build(char *who_dunnit,
+			       struct p4tc_table_entry_create_bpf_params *params)
+{
+	int size;
+
+	size = snprintf(who_dunnit, P4TC_TASK_COMM_LEN,
+			"filter:h:%u:ch:%u:clid:%u:prio:%u:prot:%u",
+			params->handle, params->chain, params->classid,
+			params->prio, params->proto);
+
+	if (size == P4TC_TASK_COMM_LEN)
+		return -E2BIG;
+
+	return 0;
+}
+
+static int
 ___p4tc_table_entry_del(struct p4tc_table *table,
 			struct p4tc_table_entry *entry,
-			bool from_control)
+			bool from_control,
+			struct p4tc_table_entry_create_bpf_params *params)
 __must_hold(RCU)
 {
+	struct p4tc_table_entry_work *entry_work = p4tc_table_entry_work(entry);
 	struct p4tc_table_entry_value *value = p4tc_table_entry_value(entry);
 
 	if (from_control) {
 		if (!p4tc_ctrl_delete_ok(value->permissions))
 			return -EPERM;
 	} else {
+		int ret;
+
 		if (!p4tc_data_delete_ok(value->permissions))
 			return -EPERM;
+
+		ret = p4tc_tbl_entry_proc_name_build(entry_work->who_deleted,
+						     params);
+		if (ret < 0)
+			pr_warn("Unable to copy kernel proc name for deletion");
+
+		entry_work->who_deleted_ent = P4TC_ENTITY_KERNEL;
+		entry_work->who_deleted_pid = 0;
 	}
 
-	if (p4tc_table_entry_destroy(table, entry, true, !from_control,
-				     P4TC_ENTITY_KERNEL) < 0)
+	if (p4tc_table_entry_destroy(table, entry, true, !from_control) < 0)
 		return -EBUSY;
 
 	return 0;
 }
 
 /* Internal function which will be called by the data path */
-static int __p4tc_table_entry_del(struct p4tc_table *table,
-				  struct p4tc_table_entry_key *key,
-				  struct p4tc_table_entry_mask *mask, u32 prio)
+static int
+__p4tc_table_entry_del(struct p4tc_table *table,
+		       struct p4tc_table_entry_key *key,
+		       struct p4tc_table_entry_mask *mask, u32 prio,
+		       struct p4tc_table_entry_create_bpf_params *params)
 {
 	struct p4tc_table_entry *entry;
 	int ret;
@@ -1162,14 +1261,15 @@ static int __p4tc_table_entry_del(struct p4tc_table *table,
 	if (!entry)
 		return -ENOENT;
 
-	ret = ___p4tc_table_entry_del(table, entry, false);
+	ret = ___p4tc_table_entry_del(table, entry, false, params);
 
 	return ret;
 }
 
 int p4tc_table_entry_del_bpf(struct p4tc_pipeline *pipeline,
 			     struct p4tc_table *table,
-			     struct p4tc_table_entry_key *key)
+			     struct p4tc_table_entry_key *key,
+			     struct p4tc_table_entry_create_bpf_params *params)
 {
 	u8 __mask[sizeof(struct p4tc_table_entry_mask) +
 		  BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
@@ -1182,7 +1282,7 @@ int p4tc_table_entry_del_bpf(struct p4tc_pipeline *pipeline,
 	if (keysz_bytes != P4TC_KEYSZ_BYTES(key->keysz))
 		return -EINVAL;
 
-	return __p4tc_table_entry_del(table, key, mask, 0);
+	return __p4tc_table_entry_del(table, key, mask, 0, params);
 }
 
 #define RET_EVENT_FAILED 1
@@ -1206,7 +1306,7 @@ p4tc_table_entry_gd(struct net *net,
 	bool has_listener = !!portid;
 	struct p4tc_table *table;
 	int cmd = n->nlmsg_type;
-	u16 who_deleted = 0;
+	u16 who_deleted_ent = 0;
 	bool del = !get;
 	u32 keysz_bytes;
 	u32 keysz_bits;
@@ -1314,7 +1414,7 @@ p4tc_table_entry_gd(struct net *net,
 
 	if (del) {
 		if (tb[P4TC_ENTRY_WHODUNNIT])
-			who_deleted = nla_get_u8(tb[P4TC_ENTRY_WHODUNNIT]);
+			who_deleted_ent = nla_get_u8(tb[P4TC_ENTRY_WHODUNNIT]);
 	} else {
 		if (!p4tc_ctrl_read_ok(value->permissions)) {
 			NL_SET_ERR_MSG(extack,
@@ -1330,8 +1430,12 @@ p4tc_table_entry_gd(struct net *net,
 		const bool echo = n->nlmsg_flags & NLM_F_ECHO;
 
 		if (p4tc_ctrl_pub_ok(value->permissions)) {
-			if (del)
-				entry_work->who_deleted = who_deleted;
+			if (del) {
+				entry_work->who_deleted_ent = who_deleted_ent;
+				entry_work->who_deleted_pid =
+					task_pid_nr(current);
+				get_task_comm(entry_work->who_deleted, current);
+			}
 
 			ret = p4tc_tbl_entry_emit_event(entry_work, portid, cmd,
 							n->nlmsg_seq, echo,
@@ -1349,7 +1453,7 @@ p4tc_table_entry_gd(struct net *net,
 	}
 
 	if (del) {
-		ret = ___p4tc_table_entry_del(table, entry, true);
+		ret = ___p4tc_table_entry_del(table, entry, true, NULL);
 		if (ret < 0) {
 			if (ret == -EBUSY)
 				NL_SET_ERR_MSG(extack,
@@ -1452,6 +1556,8 @@ static int p4tc_table_entry_flush(struct net *net,
 
 		while ((entry = rhashtable_walk_next(&iter)) &&
 		       !IS_ERR(entry)) {
+			struct p4tc_table_entry_work *entry_work =
+				p4tc_table_entry_work(entry);
 			struct p4tc_table_entry_value *value =
 				p4tc_table_entry_value(entry);
 
@@ -1464,9 +1570,12 @@ static int p4tc_table_entry_flush(struct net *net,
 			if (!p4tc_filter_exec(filter, entry))
 				continue;
 
+			entry_work->who_deleted_ent = P4TC_ENTITY_TC;
+			entry_work->who_deleted_pid = task_pid_nr(current);
+			get_task_comm(entry_work->who_deleted, current);
+
 			ret = p4tc_table_entry_destroy(table, entry, true,
-						       false,
-						       P4TC_ENTITY_UNSPEC);
+						       false);
 			if (ret < 0) {
 				fails++;
 				continue;
@@ -1584,6 +1693,7 @@ static enum hrtimer_restart entry_timer_handle(struct hrtimer *timer)
 {
 	struct p4tc_table_entry_value *value =
 		container_of(timer, struct p4tc_table_entry_value, entry_timer);
+	struct p4tc_table_entry_work *entry_work = value->entry_work;
 	struct p4tc_table_entry_tm *tm;
 	struct p4tc_table_entry *entry;
 	u64 aging_ms = value->aging_ms;
@@ -1602,11 +1712,12 @@ static enum hrtimer_restart entry_timer_handle(struct hrtimer *timer)
 		return HRTIMER_RESTART;
 	}
 
-	entry = value->entry_work->entry;
-	table = value->entry_work->table;
+	entry = entry_work->entry;
+	table = entry_work->table;
 
-	p4tc_table_entry_destroy(table, entry, true,
-				 true, P4TC_ENTITY_TIMER);
+	entry_work->who_deleted_ent = P4TC_ENTITY_TIMER;
+	strscpy(entry_work->who_deleted, "timer", P4TC_TASK_COMM_LEN);
+	p4tc_table_entry_destroy(table, entry, true, true);
 
 	return HRTIMER_NORESTART;
 }
@@ -1790,6 +1901,7 @@ p4tc_table_entry_init_bpf(struct p4tc_pipeline *pipeline,
 			  struct p4tc_table_entry_create_state *state)
 {
 	const u32 keysz_bytes = P4TC_KEYSZ_BYTES(table->tbl_keysz);
+	struct p4tc_table_entry_value_proc *value_proc;
 	struct p4tc_table_entry_value *entry_value;
 	const u32 keysz_bits = table->tbl_keysz;
 	struct tcf_p4act *p4_act = NULL;
@@ -1835,11 +1947,18 @@ p4tc_table_entry_init_bpf(struct p4tc_pipeline *pipeline,
 	entry_value->permissions = state->permissions;
 	entry_value->aging_ms = state->aging_ms;
 
+	value_proc = kzalloc(sizeof(*value_proc), GFP_ATOMIC);
+	if (!value_proc) {
+		err = -ENOMEM;
+		goto idr_rm;
+	}
+	rcu_assign_pointer(entry_value->value_proc, value_proc);
+
 	if (act) {
 		p4_act = p4a_runt_prealloc_get_next(act);
 		if (!p4_act) {
 			err = -ENOENT;
-			goto idr_rm;
+			goto free_value_proc;
 		}
 
 		if (!p4tc_table_check_entry_act(table, &p4_act->common)) {
@@ -1863,6 +1982,9 @@ free_prealloc:
 	if (p4_act)
 		p4a_runt_prealloc_put(act, p4_act);
 
+free_value_proc:
+	kfree(value_proc);
+
 idr_rm:
 	p4tc_table_entry_free_prio(table, entry_value->prio);
 
@@ -1879,6 +2001,7 @@ static void
 p4tc_table_entry_create_state_put(struct p4tc_table *table,
 				  struct p4tc_table_entry_create_state *state)
 {
+	struct p4tc_table_entry_value_proc *value_proc;
 	struct p4tc_table_entry_value *value;
 
 	if (state->act)
@@ -1886,6 +2009,9 @@ p4tc_table_entry_create_state_put(struct p4tc_table *table,
 
 	value = p4tc_table_entry_value(state->entry);
 	p4tc_table_entry_free_prio(table, value->prio);
+
+	value_proc = rcu_dereference_protected(value->value_proc, 1);
+	kfree(value_proc);
 
 	kfree(state->entry);
 
@@ -1904,6 +2030,8 @@ static int __p4tc_table_entry_update(struct p4tc_pipeline *pipeline,
 __must_hold(RCU)
 {
 	struct p4tc_table_entry_mask *mask_found = NULL;
+	struct p4tc_table_entry_value_proc *value_proc_old;
+	struct p4tc_table_entry_value_proc *value_proc;
 	struct p4tc_table_entry_work *entry_work;
 	struct p4tc_table_entry_value *value_old;
 	struct p4tc_table_entry_value *value;
@@ -1977,6 +2105,12 @@ __must_hold(RCU)
 		value->permissions = value_old->permissions;
 
 	rcu_assign_pointer(value->tm, tm);
+
+	value_proc = rcu_dereference(value->value_proc);
+	value_proc_old = rcu_dereference(value_old->value_proc);
+	value_proc->who_created_pid = value_proc_old->who_created_pid;
+	strscpy(value_proc->who_created, value_proc_old->who_created,
+		P4TC_TASK_COMM_LEN);
 
 	entry_work = kzalloc(sizeof(*(entry_work)), GFP_ATOMIC);
 	if (unlikely(!entry_work)) {
@@ -2059,21 +2193,23 @@ p4tc_table_entry_assign_aging(struct p4tc_table *table,
 	state->aging_ms = timer_profile->aging_ms;
 }
 
-int p4tc_table_entry_create_bpf(struct p4tc_pipeline *pipeline,
-				struct p4tc_table *table,
-				struct p4tc_table_entry_key *key,
-				struct p4tc_table_entry_act_bpf *act_bpf,
-				u32 profile_id)
+int
+p4tc_table_entry_create_bpf(struct p4tc_pipeline *pipeline,
+			    struct p4tc_table *table,
+			    struct p4tc_table_entry_key *key,
+			    struct p4tc_table_entry_act_bpf *act_bpf,
+			    struct p4tc_table_entry_create_bpf_params *params)
 {
 	u16 tblperm = rcu_dereference(table->tbl_permissions)->permissions;
 	u8 __mask[sizeof(struct p4tc_table_entry_mask) +
 		  BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
 	struct p4tc_table_entry_mask *mask = (void *)&__mask;
 	struct p4tc_table_entry_create_state state = {0};
+	struct p4tc_table_entry_value_proc *value_proc;
 	struct p4tc_table_entry_value *value;
 	int err;
 
-	p4tc_table_entry_assign_aging(table, &state, profile_id);
+	p4tc_table_entry_assign_aging(table, &state, params->profile_id);
 
 	state.permissions = p4tc_table_entry_tbl_permcpy(tblperm);
 	err = p4tc_table_entry_init_bpf(pipeline, table, key->keysz,
@@ -2085,6 +2221,12 @@ int p4tc_table_entry_create_bpf(struct p4tc_pipeline *pipeline,
 	value = p4tc_table_entry_value(state.entry);
 	/* Entry is always dynamic when it comes from the data path */
 	value->is_dyn = true;
+
+	value_proc = rcu_dereference(value->value_proc);
+
+	err = p4tc_tbl_entry_proc_name_build(value_proc->who_created, params);
+	if (err < 0)
+		goto put_state;
 
 	err = __p4tc_table_entry_create(pipeline, table, state.entry, mask,
 					P4TC_ENTITY_KERNEL, false);
@@ -2107,13 +2249,14 @@ int p4tc_table_entry_update_bpf(struct p4tc_pipeline *pipeline,
 				struct p4tc_table *table,
 				struct p4tc_table_entry_key *key,
 				struct p4tc_table_entry_act_bpf *act_bpf,
-				u32 profile_id)
+				struct p4tc_table_entry_create_bpf_params *params)
 {
 	struct p4tc_table_entry_create_state state = {0};
+	struct p4tc_table_entry_value_proc *value_proc;
 	struct p4tc_table_entry_value *value;
 	int err;
 
-	p4tc_table_entry_assign_aging(table, &state, profile_id);
+	p4tc_table_entry_assign_aging(table, &state, params->profile_id);
 
 	state.permissions = P4TC_PERMISSIONS_UNINIT;
 	err = p4tc_table_entry_init_bpf(pipeline, table, key->keysz, act_bpf,
@@ -2125,6 +2268,13 @@ int p4tc_table_entry_update_bpf(struct p4tc_pipeline *pipeline,
 
 	value = p4tc_table_entry_value(state.entry);
 	value->is_dyn = !!state.aging_ms;
+
+	value_proc = rcu_dereference(value->value_proc);
+
+	err = p4tc_tbl_entry_proc_name_build(value_proc->who_updated, params);
+	if (err < 0)
+		goto put_state;
+
 	err = __p4tc_table_entry_update(pipeline, table, state.entry, NULL,
 					P4TC_ENTITY_KERNEL, false);
 
@@ -2226,6 +2376,7 @@ __p4tc_table_entry_cu(struct net *net, u8 cu_flags, struct nlattr **tb,
 	u8 __mask[sizeof(struct p4tc_table_entry_mask) +
 		BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
 	struct p4tc_table_entry_mask *mask = (void *)&__mask;
+	struct p4tc_table_entry_value_proc *value_proc;
 	struct p4tc_table_entry_value *value;
 	u8 whodunnit = P4TC_ENTITY_UNSPEC;
 	struct p4tc_table_entry *entry;
@@ -2427,16 +2578,30 @@ __p4tc_table_entry_cu(struct net *net, u8 cu_flags, struct nlattr **tb,
 
 	whodunnit = nla_get_u8(tb[P4TC_ENTRY_WHODUNNIT]);
 
+	value_proc = kzalloc(sizeof(*value_proc), GFP_KERNEL_ACCOUNT);
+	if (!value_proc) {
+		ret = -ENOMEM;
+		goto free_acts;
+	}
+
 	rcu_read_lock();
+	rcu_assign_pointer(value->value_proc, value_proc);
 	if (replace) {
+		get_task_comm(value_proc->who_updated, current);
+		value_proc->who_updated_pid = task_pid_nr(current);
 		ret = __p4tc_table_entry_update(pipeline, table, entry, mask,
 						whodunnit, true);
 	} else {
+		value_proc->who_created_pid = task_pid_nr(current);
+		get_task_comm(value_proc->who_created, current);
 		ret = __p4tc_table_entry_create(pipeline, table, entry, mask,
 						whodunnit, true);
-		if (set && ret == -EEXIST)
+		if (set && ret == -EEXIST) {
+			value_proc->who_updated_pid = task_pid_nr(current);
+			get_task_comm(value_proc->who_updated, current);
 			ret = __p4tc_table_entry_update(pipeline, table, entry,
 							mask, whodunnit, true);
+		}
 	}
 	rcu_read_unlock();
 	if (ret < 0) {
@@ -2449,10 +2614,13 @@ __p4tc_table_entry_cu(struct net *net, u8 cu_flags, struct nlattr **tb,
 		else
 			NL_SET_ERR_MSG(extack, "Failed to create/update entry");
 
-		goto free_acts;
+		goto free_value_proc;
 	}
 
 	return entry;
+
+free_value_proc:
+	kfree(value_proc);
 
 free_acts:
 	p4tc_action_destroy(value->acts);
@@ -2538,6 +2706,7 @@ p4tc_table_entry_cu(struct net *net, struct nlmsghdr *n, struct nlattr *arg,
 				value->entry_work;
 			const bool echo = n->nlmsg_flags & NLM_F_ECHO;
 
+			entry_work->who_deleted_ent = P4TC_ENTITY_UNSPEC;
 			ret = p4tc_tbl_entry_emit_event(entry_work, portid,
 							n->nlmsg_type,
 							n->nlmsg_seq, echo,
@@ -2984,8 +3153,8 @@ static int p4tc_table_entry_dump(struct net *net, struct sk_buff *skb,
 				}
 
 				ret = p4tc_tbl_entry_fill(skb, table, entry,
-							  table->tbl_id,
-							  P4TC_ENTITY_UNSPEC);
+							  P4TC_ENTITY_UNSPEC,
+							  NULL, 0);
 				if (ret == -ENOMEM) {
 					ret = 1;
 					nla_nest_cancel(skb, count);
