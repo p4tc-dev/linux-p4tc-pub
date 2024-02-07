@@ -302,7 +302,7 @@ static int _p4tc_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 
 		entry_nest = nla_nest_start(skb, P4TC_TABLE_ENTRY);
 		if (p4tc_tbl_entry_fill(skb, table, table->tbl_entry,
-					table->tbl_id, P4TC_ENTITY_UNSPEC) < 0)
+					P4TC_ENTITY_UNSPEC, NULL, 0) < 0)
 			goto out_nlmsg_trim;
 
 		nla_nest_end(skb, entry_nest);

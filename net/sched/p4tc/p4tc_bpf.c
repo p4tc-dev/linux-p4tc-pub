@@ -138,7 +138,7 @@ __bpf_p4tc_entry_create(struct net *net,
 		return -EINVAL;
 
 	return p4tc_table_entry_create_bpf(pipeline, table, entry_key, act_bpf,
-					   params->profile_id);
+					   params);
 }
 
 __bpf_kfunc static int
@@ -229,7 +229,7 @@ __bpf_p4tc_entry_update(struct net *net,
 		return -EINVAL;
 
 	return p4tc_table_entry_update_bpf(pipeline, table, entry_key,
-					  act_bpf, params->profile_id);
+					  act_bpf, params);
 }
 
 __bpf_kfunc static int
@@ -290,7 +290,7 @@ __bpf_p4tc_entry_delete(struct net *net,
 	if (entry_key->keysz != table->tbl_keysz)
 		return -EINVAL;
 
-	return p4tc_table_entry_del_bpf(pipeline, table, entry_key);
+	return p4tc_table_entry_del_bpf(pipeline, table, entry_key, params);
 }
 
 __bpf_kfunc static int

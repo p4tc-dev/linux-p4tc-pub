@@ -433,9 +433,27 @@ enum {
 	P4TC_ENTRY_ACT, /* nested actions */
 	P4TC_ENTRY_TM, /* entry data path timestamps */
 	P4TC_ENTRY_WHODUNNIT, /* tells who's modifying the entry */
-	P4TC_ENTRY_CREATE_WHODUNNIT, /* tells who created the entry */
-	P4TC_ENTRY_UPDATE_WHODUNNIT, /* tells who updated the entry last */
-	P4TC_ENTRY_DELETE_WHODUNNIT, /* tells who deleted the entry */
+	P4TC_ENTRY_WHO_CREATED_ENT, /* tells entity who created the entry */
+	P4TC_ENTRY_WHO_CREATED, /* tells name of process who created the
+				 * entry.
+				 */
+	P4TC_ENTRY_WHO_CREATED_PID, /* tells pid of process who created the
+				     * entry
+				     */
+	P4TC_ENTRY_WHO_UPDATED_ENT, /* tells entity who created the entry */
+	P4TC_ENTRY_WHO_UPDATED, /* tells name of process who updated the
+				 * entry.
+				 */
+	P4TC_ENTRY_WHO_UPDATED_PID, /* tells pid of process who updated the
+				     * entry
+				     */
+	P4TC_ENTRY_WHO_DELETED_ENT, /* tells who deleted the entry */
+	P4TC_ENTRY_WHO_DELETED, /* tells name of process who deleted the
+				 * entry.
+				 */
+	P4TC_ENTRY_WHO_DELETED_PID, /* tells pid of process who deleted the
+				     * entry
+				     */
 	P4TC_ENTRY_PERMISSIONS, /* entry CRUDXPS permissions */
 	P4TC_ENTRY_TBL_ATTRS, /* nested table attributes */
 	P4TC_ENTRY_TMPL_CREATED, /* u8 tells whether entry was create by

@@ -385,20 +385,29 @@ struct p4tc_table_entry_create_bpf_params {
 	u32 profile_id;
 	u32 pipeid;
 	u32 tblid;
+	u32 handle;
+	u32 chain;
+	u32 classid;
+	u16 proto;
+	u16 prio;
 };
 
 enum {
-	P4TC_ENTRY_CREATE_BPF_PARAMS_SZ = 144,
+	P4TC_ENTRY_CREATE_BPF_PARAMS_SZ = 160,
 	P4TC_ENTRY_ACT_BPF_PARAMS_SZ = 8,
 };
+
+#define P4TC_TASK_COMM_LEN 64
 
 struct p4tc_table_entry;
 struct p4tc_table_entry_work {
 	struct work_struct   work;
+	char who_deleted[P4TC_TASK_COMM_LEN];
 	struct p4tc_pipeline *pipeline;
 	struct p4tc_table_entry *entry;
 	struct p4tc_table *table;
-	u16 who_deleted;
+	u16 who_deleted_ent;
+	pid_t who_deleted_pid;
 	bool send_event;
 };
 
@@ -407,6 +416,13 @@ struct p4tc_table_entry_key {
 	/* Key start */
 	u32 maskid;
 	unsigned char fa_key[] __aligned(8);
+};
+
+struct p4tc_table_entry_value_proc {
+	char                             who_created[P4TC_TASK_COMM_LEN];
+	char                             who_updated[P4TC_TASK_COMM_LEN];
+	pid_t                            who_created_pid;
+	pid_t                            who_updated_pid;
 };
 
 struct p4tc_table_entry_value {
@@ -422,6 +438,7 @@ struct p4tc_table_entry_value {
 	struct p4tc_table_entry_work             *entry_work;
 	u64                                      aging_ms;
 	struct hrtimer                           entry_timer;
+	struct p4tc_table_entry_value_proc __rcu *value_proc;
 	bool                                     is_dyn;
 	bool                                     tmpl_created;
 };
@@ -485,20 +502,22 @@ struct p4tc_table_entry_act_bpf *
 p4tc_table_entry_create_act_bpf(struct tc_action *action,
 				struct netlink_ext_ack *extack);
 int register_p4tc_tbl_bpf(void);
-int p4tc_table_entry_create_bpf(struct p4tc_pipeline *pipeline,
-				struct p4tc_table *table,
-				struct p4tc_table_entry_key *key,
-				struct p4tc_table_entry_act_bpf *act_bpf,
-				u32 profile_id);
+int
+p4tc_table_entry_create_bpf(struct p4tc_pipeline *pipeline,
+			    struct p4tc_table *table,
+			    struct p4tc_table_entry_key *key,
+			    struct p4tc_table_entry_act_bpf *act_bpf,
+			    struct p4tc_table_entry_create_bpf_params *params);
 int p4tc_table_entry_update_bpf(struct p4tc_pipeline *pipeline,
 				struct p4tc_table *table,
 				struct p4tc_table_entry_key *key,
 				struct p4tc_table_entry_act_bpf *act_bpf,
-				u32 profile_id);
+				struct p4tc_table_entry_create_bpf_params *params);
 
 int p4tc_table_entry_del_bpf(struct p4tc_pipeline *pipeline,
 			     struct p4tc_table *table,
-			     struct p4tc_table_entry_key *key);
+			     struct p4tc_table_entry_key *key,
+			     struct p4tc_table_entry_create_bpf_params *params);
 
 static inline int p4tc_action_init(struct net *net, struct nlattr *nla,
 				   struct tc_action *acts[], u32 pipeid,
@@ -682,8 +701,9 @@ int p4tc_tbl_entry_dumpit(struct net *net, struct sk_buff *skb,
 			  struct netlink_callback *cb,
 			  struct nlattr *arg, char *p_name);
 int p4tc_tbl_entry_fill(struct sk_buff *skb, struct p4tc_table *table,
-			struct p4tc_table_entry *entry, u32 tbl_id,
-			u16 who_deleted);
+			struct p4tc_table_entry *entry,
+			const u16 who_deleted_ent, const char *who_deleted,
+			const u32 who_deleted_pid);
 void p4tc_tbl_entry_mask_key(u8 *masked_key, u8 *key, const u8 *mask,
 			     u32 masksz);
 
