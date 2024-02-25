@@ -115,6 +115,17 @@ enum {
 };
 
 #define P4TC_ACT_MAX (__P4TC_ACT_MAX - 1)
+
+/* Action params value attributes */
+
+enum {
+	P4TC_ACT_PARAMS_VALUE_UNSPEC,
+	P4TC_ACT_PARAMS_VALUE_RAW, /* binary */
+	__P4TC_ACT_PARAMS_VALUE_MAX
+};
+
+#define P4TC_ACT_VALUE_PARAMS_MAX (__P4TC_ACT_PARAMS_VALUE_MAX - 1)
+
 enum {
 	P4TC_ACT_PARAMS_TYPE_UNSPEC,
 	P4TC_ACT_PARAMS_TYPE_BITEND, /* u16 */
@@ -138,6 +149,8 @@ enum {
 	P4TC_ACT_PARAMS_ID, /* u32 */
 	P4TC_ACT_PARAMS_TYPE, /* nested type - mandatory for params create */
 	P4TC_ACT_PARAMS_FLAGS, /* u8 */
+	P4TC_ACT_PARAMS_VALUE, /* bytes - mandatory for runtime params create */
+	P4TC_ACT_PARAMS_MASK, /* bytes */
 	__P4TC_ACT_PARAMS_MAX
 };
 
