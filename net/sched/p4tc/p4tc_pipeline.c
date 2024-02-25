@@ -75,6 +75,8 @@ static const struct nla_policy tc_pipeline_policy[P4TC_PIPELINE_MAX + 1] = {
 
 static void p4tc_pipeline_destroy(struct p4tc_pipeline *pipeline)
 {
+	idr_destroy(&pipeline->p_act_idr);
+
 	kfree(pipeline);
 }
 
@@ -96,6 +98,12 @@ static void p4tc_pipeline_teardown(struct p4tc_pipeline *pipeline,
 	struct net *net = pipeline->net;
 	struct p4tc_pipeline_net *pipe_net = net_generic(net, pipeline_net_id);
 	struct net *pipeline_net = maybe_get_net(net);
+	unsigned long iter_act_id;
+	struct p4tc_act *act;
+	unsigned long tmp;
+
+	idr_for_each_entry_ul(&pipeline->p_act_idr, act, tmp, iter_act_id)
+		act->common.ops->put(pipeline, &act->common, extack);
 
 	/* If we are on netns cleanup we can't touch the pipeline_idr.
 	 * On pre_exit we will destroy the idr but never call into teardown
@@ -152,6 +160,7 @@ static int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 	}
 
 	pipeline->p_state = P4TC_STATE_READY;
+
 	return true;
 }
 
@@ -250,6 +259,10 @@ p4tc_pipeline_create(struct net *net, struct nlmsghdr *n,
 			nla_get_u16(tb[P4TC_PIPELINE_NUMTABLES]);
 	else
 		pipeline->num_tables = P4TC_DEFAULT_NUM_TABLES;
+
+	idr_init(&pipeline->p_act_idr);
+
+	pipeline->num_created_acts = 0;
 
 	pipeline->p_state = P4TC_STATE_NOT_READY;
 
@@ -505,7 +518,8 @@ static int p4tc_pipeline_gd(struct net *net, struct sk_buff *skb,
 		return PTR_ERR(pipeline);
 
 	tmpl = (struct p4tc_template_common *)pipeline;
-	if (p4tc_pipeline_fill_nlmsg(net, skb, tmpl, extack) < 0)
+	ret = p4tc_pipeline_fill_nlmsg(net, skb, tmpl, extack);
+	if (ret < 0)
 		return -1;
 
 	if (!ids[P4TC_PID_IDX])

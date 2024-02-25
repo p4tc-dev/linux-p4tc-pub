@@ -4,6 +4,9 @@
 
 #include <linux/types.h>
 #include <linux/pkt_sched.h>
+#include <linux/pkt_cls.h>
+
+#include <linux/tc_act/tc_p4.h>
 
 /* pipeline header */
 struct p4tcmsg {
@@ -17,9 +20,12 @@ struct p4tcmsg {
 #define P4TC_MSGBATCH_SIZE 16
 
 #define P4TC_MAX_KEYSZ 512
+#define P4TC_DEFAULT_NUM_PREALLOC 16
 
 #define P4TC_TMPL_NAMSZ 32
 #define P4TC_PIPELINE_NAMSIZ P4TC_TMPL_NAMSZ
+#define P4TC_ACT_TMPL_NAMSZ P4TC_TMPL_NAMSZ
+#define P4TC_ACT_PARAM_NAMSIZ P4TC_TMPL_NAMSZ
 
 /* Root attributes */
 enum {
@@ -35,6 +41,7 @@ enum {
 enum {
 	P4TC_OBJ_UNSPEC,
 	P4TC_OBJ_PIPELINE,
+	P4TC_OBJ_ACT,
 	__P4TC_OBJ_MAX,
 };
 
@@ -45,6 +52,7 @@ enum {
 	P4TC_UNSPEC,
 	P4TC_PATH,
 	P4TC_PARAMS,
+	P4TC_COUNT,
 	__P4TC_MAX,
 };
 
@@ -92,6 +100,48 @@ enum {
 };
 
 #define P4TC_T_MAX (__P4TC_T_MAX - 1)
+
+/* Action attributes */
+enum {
+	P4TC_ACT_UNSPEC,
+	P4TC_ACT_NAME, /* string - mandatory for create */
+	P4TC_ACT_PARMS, /* nested params */
+	P4TC_ACT_OPT, /* action opt */
+	P4TC_ACT_TM, /* action tm */
+	P4TC_ACT_ACTIVE, /* u8 */
+	P4TC_ACT_NUM_PREALLOC, /* u32 num preallocated action instances */
+	P4TC_ACT_PAD,
+	__P4TC_ACT_MAX
+};
+
+#define P4TC_ACT_MAX (__P4TC_ACT_MAX - 1)
+enum {
+	P4TC_ACT_PARAMS_TYPE_UNSPEC,
+	P4TC_ACT_PARAMS_TYPE_BITEND, /* u16 */
+	P4TC_ACT_PARAMS_TYPE_CONTAINER_ID, /* u32 */
+	__P4TC_ACT_PARAMS_TYPE_MAX
+};
+
+#define P4TC_ACT_PARAMS_TYPE_MAX (__P4TC_ACT_PARAMS_TYPE_MAX - 1)
+
+enum {
+	P4TC_ACT_PARAMS_FLAGS_RUNT,
+	__P4TC_ACT_PARAMS_FLAGS_MAX
+};
+
+#define P4TC_ACT_PARAMS_FLAGS_MAX (__P4TC_ACT_PARAMS_FLAGS_MAX - 1)
+
+/* Action params attributes */
+enum {
+	P4TC_ACT_PARAMS_UNSPEC,
+	P4TC_ACT_PARAMS_NAME, /* string - mandatory for params create */
+	P4TC_ACT_PARAMS_ID, /* u32 */
+	P4TC_ACT_PARAMS_TYPE, /* nested type - mandatory for params create */
+	P4TC_ACT_PARAMS_FLAGS, /* u8 */
+	__P4TC_ACT_PARAMS_MAX
+};
+
+#define P4TC_ACT_PARAMS_MAX (__P4TC_ACT_PARAMS_MAX - 1)
 
 #define P4TC_RTA(r) \
 	((struct rtattr *)(((char *)(r)) + NLMSG_ALIGN(sizeof(struct p4tcmsg))))
