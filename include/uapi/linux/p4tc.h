@@ -26,6 +26,67 @@ struct p4tcmsg {
 #define P4TC_PIPELINE_NAMSIZ P4TC_TMPL_NAMSZ
 #define P4TC_ACT_TMPL_NAMSZ P4TC_TMPL_NAMSZ
 #define P4TC_ACT_PARAM_NAMSIZ P4TC_TMPL_NAMSZ
+#define P4TC_TABLE_NAMSIZ P4TC_TMPL_NAMSZ
+
+enum {
+	P4TC_TABLE_TYPE_UNSPEC,
+	P4TC_TABLE_TYPE_EXACT = 1,
+	P4TC_TABLE_TYPE_LPM = 2,
+	P4TC_TABLE_TYPE_TERNARY = 3,
+	__P4TC_TABLE_TYPE_MAX,
+};
+
+#define P4TC_TABLE_TYPE_MAX (__P4TC_TABLE_TYPE_MAX - 1)
+
+#define P4TC_CTRL_PERM_C_BIT 13
+#define P4TC_CTRL_PERM_R_BIT 12
+#define P4TC_CTRL_PERM_U_BIT 11
+#define P4TC_CTRL_PERM_D_BIT 10
+#define P4TC_CTRL_PERM_X_BIT 9
+#define P4TC_CTRL_PERM_P_BIT 8
+#define P4TC_CTRL_PERM_S_BIT 7
+
+#define P4TC_DATA_PERM_C_BIT 6
+#define P4TC_DATA_PERM_R_BIT 5
+#define P4TC_DATA_PERM_U_BIT 4
+#define P4TC_DATA_PERM_D_BIT 3
+#define P4TC_DATA_PERM_X_BIT 2
+#define P4TC_DATA_PERM_P_BIT 1
+#define P4TC_DATA_PERM_S_BIT 0
+
+#define P4TC_PERM_MAX_BIT P4TC_CTRL_PERM_C_BIT
+
+#define P4TC_CTRL_PERM_C (1 << P4TC_CTRL_PERM_C_BIT)
+#define P4TC_CTRL_PERM_R (1 << P4TC_CTRL_PERM_R_BIT)
+#define P4TC_CTRL_PERM_U (1 << P4TC_CTRL_PERM_U_BIT)
+#define P4TC_CTRL_PERM_D (1 << P4TC_CTRL_PERM_D_BIT)
+#define P4TC_CTRL_PERM_X (1 << P4TC_CTRL_PERM_X_BIT)
+#define P4TC_CTRL_PERM_P (1 << P4TC_CTRL_PERM_P_BIT)
+#define P4TC_CTRL_PERM_S (1 << P4TC_CTRL_PERM_S_BIT)
+
+#define P4TC_DATA_PERM_C (1 << P4TC_DATA_PERM_C_BIT)
+#define P4TC_DATA_PERM_R (1 << P4TC_DATA_PERM_R_BIT)
+#define P4TC_DATA_PERM_U (1 << P4TC_DATA_PERM_U_BIT)
+#define P4TC_DATA_PERM_D (1 << P4TC_DATA_PERM_D_BIT)
+#define P4TC_DATA_PERM_X (1 << P4TC_DATA_PERM_X_BIT)
+#define P4TC_DATA_PERM_P (1 << P4TC_DATA_PERM_P_BIT)
+#define P4TC_DATA_PERM_S (1 << P4TC_DATA_PERM_S_BIT)
+
+#define p4tc_ctrl_create_ok(perm)   ((perm) & P4TC_CTRL_PERM_C)
+#define p4tc_ctrl_read_ok(perm)     ((perm) & P4TC_CTRL_PERM_R)
+#define p4tc_ctrl_update_ok(perm)   ((perm) & P4TC_CTRL_PERM_U)
+#define p4tc_ctrl_delete_ok(perm)   ((perm) & P4TC_CTRL_PERM_D)
+#define p4tc_ctrl_exec_ok(perm)     ((perm) & P4TC_CTRL_PERM_X)
+#define p4tc_ctrl_pub_ok(perm)      ((perm) & P4TC_CTRL_PERM_P)
+#define p4tc_ctrl_sub_ok(perm)      ((perm) & P4TC_CTRL_PERM_S)
+
+#define p4tc_data_create_ok(perm)   ((perm) & P4TC_DATA_PERM_C)
+#define p4tc_data_read_ok(perm)     ((perm) & P4TC_DATA_PERM_R)
+#define p4tc_data_update_ok(perm)   ((perm) & P4TC_DATA_PERM_U)
+#define p4tc_data_delete_ok(perm)   ((perm) & P4TC_DATA_PERM_D)
+#define p4tc_data_exec_ok(perm)     ((perm) & P4TC_DATA_PERM_X)
+#define p4tc_data_pub_ok(perm)      ((perm) & P4TC_DATA_PERM_P)
+#define p4tc_data_sub_ok(perm)      ((perm) & P4TC_DATA_PERM_S)
 
 /* Root attributes */
 enum {
@@ -42,6 +103,7 @@ enum {
 	P4TC_OBJ_UNSPEC,
 	P4TC_OBJ_PIPELINE,
 	P4TC_OBJ_ACT,
+	P4TC_OBJ_TABLE,
 	__P4TC_OBJ_MAX,
 };
 
@@ -100,6 +162,64 @@ enum {
 };
 
 #define P4TC_T_MAX (__P4TC_T_MAX - 1)
+
+enum {
+	P4TC_TABLE_DEFAULT_ACTION_UNSPEC,
+	P4TC_TABLE_DEFAULT_ACTION,
+	P4TC_TABLE_DEFAULT_ACTION_NOACTION,
+	P4TC_TABLE_DEFAULT_ACTION_PERMISSIONS,
+	__P4TC_TABLE_DEFAULT_ACTION_MAX
+};
+
+#define P4TC_TABLE_DEFAULT_ACTION_MAX (__P4TC_TABLE_DEFAULT_ACTION_MAX - 1)
+
+enum {
+	P4TC_TABLE_ACTS_DEFAULT_ONLY,
+	P4TC_TABLE_ACTS_TABLE_ONLY,
+	__P4TC_TABLE_ACTS_FLAGS_MAX,
+};
+
+#define P4TC_TABLE_ACTS_FLAGS_MAX (__P4TC_TABLE_ACTS_FLAGS_MAX - 1)
+
+enum {
+	P4TC_TABLE_ACT_UNSPEC,
+	P4TC_TABLE_ACT_FLAGS, /* u8 */
+	P4TC_TABLE_ACT_NAME, /* string */
+	__P4TC_TABLE_ACT_MAX
+};
+
+#define P4TC_TABLE_ACT_MAX (__P4TC_TABLE_ACT_MAX - 1)
+
+/* Table type attributes */
+enum {
+	P4TC_TABLE_UNSPEC,
+	P4TC_TABLE_NAME, /* string - mandatory for create and update*/
+	P4TC_TABLE_KEYSZ, /* u32 - mandatory for create*/
+	P4TC_TABLE_MAX_ENTRIES, /* u32 */
+	P4TC_TABLE_MAX_MASKS, /* u32 */
+	P4TC_TABLE_NUM_ENTRIES, /* u32 */
+	P4TC_TABLE_PERMISSIONS, /* u16 */
+	P4TC_TABLE_TYPE, /* u8 */
+	P4TC_TABLE_DEFAULT_HIT, /* nested default hit action attributes */
+	P4TC_TABLE_DEFAULT_MISS, /* nested default miss action attributes */
+	P4TC_TABLE_ACTS_LIST, /* nested table actions list */
+	P4TC_TABLE_NUM_TIMER_PROFILES, /* u32 - number of timer profiles */
+	P4TC_TABLE_TIMER_PROFILES, /* nested timer profiles
+				    * kernel -> user space only
+				    */
+	__P4TC_TABLE_MAX
+};
+
+#define P4TC_TABLE_MAX (__P4TC_TABLE_MAX - 1)
+
+enum {
+	P4TC_TIMER_PROFILE_UNSPEC,
+	P4TC_TIMER_PROFILE_ID, /* u32 */
+	P4TC_TIMER_PROFILE_AGING, /* u64 */
+	__P4TC_TIMER_PROFILE_MAX
+};
+
+#define P4TC_TIMER_PROFILE_MAX (__P4TC_TIMER_PROFILE_MAX - 1)
 
 /* Action attributes */
 enum {

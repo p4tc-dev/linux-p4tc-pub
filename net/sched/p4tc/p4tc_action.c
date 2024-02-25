@@ -678,13 +678,13 @@ p4a_parm_find_byname(struct idr *params_idr, const char *param_name)
 	return NULL;
 }
 
-static struct p4tc_act_param *
+struct p4tc_act_param *
 p4a_parm_find_byid(struct idr *params_idr, const u32 param_id)
 {
 	return idr_find(params_idr, param_id);
 }
 
-static struct p4tc_act_param *
+struct p4tc_act_param *
 p4a_parm_find_byany(struct p4tc_act *act, const char *param_name,
 		    const u32 param_id, struct netlink_ext_ack *extack)
 {
