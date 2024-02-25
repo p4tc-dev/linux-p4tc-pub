@@ -36,10 +36,43 @@
 #define P4TC_AID_IDX 1
 #define P4TC_PARSEID_IDX 1
 
+struct p4tc_filter {
+	struct p4tc_filter_oper *operation;
+	union {
+		struct {
+			u32 tbl_id;
+		};
+	};
+	u32 obj_id;
+};
+
+struct p4tc_filter_context {
+	struct p4tc_pipeline *pipeline;
+	union {
+		struct p4tc_table *table;
+	};
+	int cmd;
+	u32 obj_id;
+};
+
 struct p4tc_dump_ctx {
 	u32 ids[P4TC_PATH_MAX];
 	struct rhashtable_iter *iter;
+	struct p4tc_filter *entry_filter;
 };
+
+enum {
+	P4TC_FILTER_OBJ_UNSPEC,
+	P4TC_FILTER_OBJ_TMPL_PIPELINE,
+	P4TC_FILTER_OBJ_TMPL_ACT,
+	P4TC_FILTER_OBJ_TMPL_TABLE,
+	P4TC_FILTER_OBJ_TMPL_EXT,
+	P4TC_FILTER_OBJ_RUNTIME_TABLE,
+	P4TC_FILTER_OBJ_RUNTIME_EXT,
+	__P4TC_FILTER_OBJ_MAX,
+};
+
+#define P4TC_FILTER_OBJ_MAX (__P4TC_FILTER_OBJ_MAX - 1)
 
 struct p4tc_template_common;
 
@@ -349,6 +382,7 @@ struct p4tc_table_entry_value {
 	struct p4tc_table_entry_work             *entry_work;
 	u64                                      aging_ms;
 	struct hrtimer                           entry_timer;
+	bool                                     is_dyn;
 	bool                                     tmpl_created;
 };
 
@@ -468,6 +502,12 @@ struct p4tc_table *p4tc_table_find_byid(struct p4tc_pipeline *pipeline,
 int p4tc_table_try_set_state_ready(struct p4tc_pipeline *pipeline,
 				   struct netlink_ext_ack *extack);
 void p4tc_table_put_mask_array(struct p4tc_pipeline *pipeline);
+
+static inline int p4tc_table_get(struct p4tc_table *table)
+{
+	return refcount_inc_not_zero(&table->tbl_ctrl_ref);
+}
+
 struct p4tc_table *p4tc_table_find_get(struct p4tc_pipeline *pipeline,
 				       const char *tblname, const u32 tbl_id,
 				       struct netlink_ext_ack *extack);
@@ -532,6 +572,15 @@ p4tc_table_init_permissions(struct p4tc_table *table, u16 permissions,
 void p4tc_table_replace_permissions(struct p4tc_table *table,
 				    struct p4tc_table_perm *tbl_perm,
 				    bool lock_rtnl);
+int p4tc_table_timer_profile_update(struct p4tc_table *table,
+				    struct nlattr *nla,
+				    struct netlink_ext_ack *extack);
+struct p4tc_table_timer_profile *
+p4tc_table_timer_profile_find_byaging(struct p4tc_table *table,
+				      u64 aging_ms);
+struct p4tc_table_timer_profile *
+p4tc_table_timer_profile_find(struct p4tc_table *table, u32 profile_id);
+
 void p4tc_table_entry_destroy_hash(void *ptr, void *arg);
 
 struct p4tc_table_entry *
@@ -546,7 +595,17 @@ int p4tc_tbl_entry_dumpit(struct net *net, struct sk_buff *skb,
 			  struct netlink_callback *cb,
 			  struct nlattr *arg, char *p_name);
 int p4tc_tbl_entry_fill(struct sk_buff *skb, struct p4tc_table *table,
-			struct p4tc_table_entry *entry, u32 tbl_id);
+			struct p4tc_table_entry *entry, u32 tbl_id,
+			u16 who_deleted);
+void p4tc_tbl_entry_mask_key(u8 *masked_key, u8 *key, const u8 *mask,
+			     u32 masksz);
+
+struct p4tc_filter *
+p4tc_filter_build(struct p4tc_filter_context *ctx,
+		  struct nlattr *nla, struct netlink_ext_ack *extack);
+bool p4tc_filter_exec(struct p4tc_filter *filter,
+		      struct p4tc_table_entry *entry);
+void p4tc_filter_destroy(struct p4tc_filter *filter);
 
 struct tcf_p4act *
 p4a_runt_prealloc_get_next(struct p4tc_act *act);

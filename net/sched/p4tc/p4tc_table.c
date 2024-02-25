@@ -106,6 +106,11 @@ free_set_tables:
 	return ret;
 }
 
+static const struct netlink_range_validation aging_range = {
+	.min = 1,
+	.max = P4TC_MAX_T_AGING_MS,
+};
+
 static const struct netlink_range_validation keysz_range = {
 	.min = 1,
 	.max = P4TC_MAX_KEYSZ,
@@ -290,7 +295,7 @@ static int _p4tc_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 
 		entry_nest = nla_nest_start(skb, P4TC_TABLE_ENTRY);
 		if (p4tc_tbl_entry_fill(skb, table, table->tbl_entry,
-					table->tbl_id) < 0)
+					table->tbl_id, P4TC_ENTITY_UNSPEC) < 0)
 			goto out_nlmsg_trim;
 
 		nla_nest_end(skb, entry_nest);
@@ -361,6 +366,112 @@ static void p4tc_table_timer_profiles_destroy(struct p4tc_table *table)
 
 	xa_destroy(&table->tbl_profiles_xa);
 	mutex_unlock(&table->tbl_profiles_xa_lock);
+}
+
+static const struct nla_policy
+p4tc_timer_profile_policy[P4TC_TIMER_PROFILE_MAX + 1] = {
+	[P4TC_TIMER_PROFILE_ID] =
+		NLA_POLICY_RANGE(NLA_U32, 0, P4TC_MAX_NUM_TIMER_PROFILES),
+	[P4TC_TIMER_PROFILE_AGING] =
+		NLA_POLICY_FULL_RANGE(NLA_U64, &aging_range),
+};
+
+struct p4tc_table_timer_profile *
+p4tc_table_timer_profile_find_byaging(struct p4tc_table *table, u64 aging_ms)
+__must_hold(RCU)
+{
+	struct p4tc_table_timer_profile *timer_profile;
+	unsigned long profile_id;
+
+	xa_for_each(&table->tbl_profiles_xa, profile_id, timer_profile) {
+		if (timer_profile->aging_ms == aging_ms)
+			return timer_profile;
+	}
+
+	return NULL;
+}
+
+struct p4tc_table_timer_profile *
+p4tc_table_timer_profile_find(struct p4tc_table *table, u32 profile_id)
+__must_hold(RCU)
+{
+	return xa_load(&table->tbl_profiles_xa, profile_id);
+}
+
+/* This function will be exercised via a runtime command.
+ * Note that two profile IDs can't have the same aging value
+ */
+int p4tc_table_timer_profile_update(struct p4tc_table *table,
+				    struct nlattr *nla,
+				    struct netlink_ext_ack *extack)
+{
+	struct p4tc_table_timer_profile *old_timer_profile;
+	struct p4tc_table_timer_profile *timer_profile;
+	struct nlattr *tb[P4TC_TIMER_PROFILE_MAX + 1];
+	u32 profile_id;
+	u64 aging_ms;
+	int ret;
+
+	ret = nla_parse_nested(tb, P4TC_TIMER_PROFILE_MAX, nla,
+			       p4tc_timer_profile_policy, extack);
+	if (ret < 0)
+		return ret;
+
+	if (!tb[P4TC_TIMER_PROFILE_ID]) {
+		NL_SET_ERR_MSG(extack, "Must specify table profile ID");
+		return -EINVAL;
+	}
+	profile_id = nla_get_u32(tb[P4TC_TIMER_PROFILE_ID]);
+
+	if (!tb[P4TC_TIMER_PROFILE_AGING]) {
+		NL_SET_ERR_MSG(extack, "Must specify table profile aging");
+		return -EINVAL;
+	}
+	aging_ms = nla_get_u64(tb[P4TC_TIMER_PROFILE_AGING]);
+
+	rcu_read_lock();
+	timer_profile = p4tc_table_timer_profile_find_byaging(table,
+							      aging_ms);
+	if (timer_profile && timer_profile->profile_id != profile_id) {
+		NL_SET_ERR_MSG_FMT(extack,
+				   "Aging %llu was already specified by profile ID %u",
+				   aging_ms, timer_profile->profile_id);
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+	rcu_read_unlock();
+
+	timer_profile = kzalloc(sizeof(*timer_profile), GFP_KERNEL);
+	if (unlikely(!timer_profile))
+		return -ENOMEM;
+
+	timer_profile->profile_id = profile_id;
+	timer_profile->aging_ms = aging_ms;
+
+	mutex_lock(&table->tbl_profiles_xa_lock);
+	old_timer_profile = xa_load(&table->tbl_profiles_xa, profile_id);
+	if (!old_timer_profile) {
+		NL_SET_ERR_MSG_FMT(extack,
+				   "Unable to find timer profile with ID %u\n",
+				   profile_id);
+		ret = -ENOENT;
+		goto unlock;
+	}
+
+	old_timer_profile = xa_cmpxchg(&table->tbl_profiles_xa,
+				       timer_profile->profile_id,
+				       old_timer_profile,
+				       timer_profile, GFP_KERNEL);
+	kfree_rcu(old_timer_profile, rcu);
+	mutex_unlock(&table->tbl_profiles_xa_lock);
+
+	return 0;
+
+unlock:
+	mutex_unlock(&table->tbl_profiles_xa_lock);
+
+	kfree(timer_profile);
+	return ret;
 }
 
 /* From the template, the user may only specify the number of timer profiles
@@ -612,11 +723,6 @@ struct p4tc_table *p4tc_table_find_byany(struct p4tc_pipeline *pipeline,
 	return table;
 out:
 	return ERR_PTR(err);
-}
-
-static int p4tc_table_get(struct p4tc_table *table)
-{
-	return refcount_inc_not_zero(&table->tbl_ctrl_ref);
 }
 
 struct p4tc_table *p4tc_table_find_get(struct p4tc_pipeline *pipeline,
