@@ -124,6 +124,11 @@ static inline bool p4tc_pipeline_get(struct p4tc_pipeline *pipeline)
 	return refcount_inc_not_zero(&pipeline->p_ctrl_ref);
 }
 
+static inline void p4tc_pipeline_put_ref(struct p4tc_pipeline *pipeline)
+{
+	refcount_dec(&pipeline->p_ctrl_ref);
+}
+
 void p4tc_pipeline_put(struct p4tc_pipeline *pipeline);
 struct p4tc_pipeline *
 p4tc_pipeline_find_byany_unsealed(struct net *net, const char *p_name,
@@ -221,6 +226,7 @@ struct p4tc_table {
 	struct rhltable                     tbl_entries;
 	/* Mutex that protects tbl_profiles_xa */
 	struct mutex                        tbl_profiles_xa_lock;
+	struct p4tc_table_entry             *tbl_entry;
 	struct p4tc_table_defact __rcu      *tbl_dflt_hitact;
 	struct p4tc_table_defact __rcu      *tbl_dflt_missact;
 	struct p4tc_table_perm __rcu        *tbl_permissions;
@@ -236,6 +242,8 @@ struct p4tc_table {
 	u32                                 tbl_max_masks;
 	u32                                 tbl_curr_num_masks;
 	atomic_t                            tbl_num_timer_profiles;
+	/* Accounts for how many entries this table has */
+	atomic_t                            tbl_nelems;
 	/* Accounts for how many entities refer to this table. Usually just the
 	 * pipeline it belongs to.
 	 */
@@ -308,6 +316,76 @@ struct p4tc_table_timer_profile {
 	u64 aging_ms;
 	u32 profile_id;
 };
+
+extern const struct rhashtable_params entry_hlt_params;
+
+struct p4tc_table_entry;
+struct p4tc_table_entry_work {
+	struct work_struct   work;
+	struct p4tc_pipeline *pipeline;
+	struct p4tc_table_entry *entry;
+	struct p4tc_table *table;
+	u16 who_deleted;
+	bool send_event;
+};
+
+struct p4tc_table_entry_key {
+	u32 keysz;
+	/* Key start */
+	u32 maskid;
+	unsigned char fa_key[] __aligned(8);
+};
+
+struct p4tc_table_entry_value {
+	struct tc_action                         *acts[2];
+	/* Accounts for how many entities are referencing it
+	 * eg: Data path, one or more control path and timer.
+	 */
+	u32                                      prio;
+	refcount_t                               entries_ref;
+	u32                                      permissions;
+	u32                                      __pad0;
+	struct p4tc_table_entry_tm __rcu         *tm;
+	struct p4tc_table_entry_work             *entry_work;
+	u64                                      aging_ms;
+	struct hrtimer                           entry_timer;
+	bool                                     tmpl_created;
+};
+
+struct p4tc_table_entry_mask {
+	struct rcu_head	 rcu;
+	u32              sz;
+	u32              mask_index;
+	/* Accounts for how many entries are using this mask */
+	refcount_t       mask_ref;
+	u32              mask_id;
+	unsigned char fa_value[] __aligned(8);
+};
+
+struct p4tc_table_entry {
+	struct rcu_head rcu;
+	struct rhlist_head ht_node;
+	struct p4tc_table_entry_key key;
+	/* fallthrough: key data + value */
+};
+
+#define P4TC_KEYSZ_BYTES(bits) (round_up(BITS_TO_BYTES(bits), 8))
+
+static inline void *p4tc_table_entry_value(struct p4tc_table_entry *entry)
+{
+	return entry->key.fa_key + P4TC_KEYSZ_BYTES(entry->key.keysz);
+}
+
+static inline struct p4tc_table_entry_work *
+p4tc_table_entry_work(struct p4tc_table_entry *entry)
+{
+	struct p4tc_table_entry_value *value = p4tc_table_entry_value(entry);
+
+	return value->entry_work;
+}
+
+extern const struct nla_policy p4tc_root_policy[P4TC_ROOT_MAX + 1];
+extern const struct nla_policy p4tc_policy[P4TC_MAX + 1];
 
 static inline int p4tc_action_init(struct net *net, struct nlattr *nla,
 				   struct tc_action *acts[], u32 pipeid,
@@ -422,6 +500,21 @@ static inline bool p4tc_table_defact_is_noaction(struct tcf_p4act *p4_defact)
 	return !p4_defact->p_id && !p4_defact->act_id;
 }
 
+static inline void p4tc_table_defact_destroy(struct p4tc_table_defact *defact)
+{
+	if (defact) {
+		if (defact->acts[0]) {
+			struct tcf_p4act *dflt = to_p4act(defact->acts[0]);
+
+			if (p4tc_table_defact_is_noaction(dflt))
+				kfree(dflt);
+			else
+				p4tc_action_destroy(defact->acts);
+		}
+		kfree(defact);
+	}
+}
+
 static inline void p4tc_table_defacts_acts_copy(struct p4tc_table_defact *dst,
 						struct p4tc_table_defact *src)
 {
@@ -439,6 +532,21 @@ p4tc_table_init_permissions(struct p4tc_table *table, u16 permissions,
 void p4tc_table_replace_permissions(struct p4tc_table *table,
 				    struct p4tc_table_perm *tbl_perm,
 				    bool lock_rtnl);
+void p4tc_table_entry_destroy_hash(void *ptr, void *arg);
+
+struct p4tc_table_entry *
+p4tc_tmpl_table_entry_cu(struct net *net, struct nlattr *arg,
+			 struct p4tc_pipeline *pipeline,
+			 struct p4tc_table *table,
+			 struct netlink_ext_ack *extack);
+int p4tc_tbl_entry_root(struct net *net, struct sk_buff *skb,
+			struct nlmsghdr *n, int cmd,
+			struct netlink_ext_ack *extack);
+int p4tc_tbl_entry_dumpit(struct net *net, struct sk_buff *skb,
+			  struct netlink_callback *cb,
+			  struct nlattr *arg, char *p_name);
+int p4tc_tbl_entry_fill(struct sk_buff *skb, struct p4tc_table *table,
+			struct p4tc_table_entry *entry, u32 tbl_id);
 
 struct tcf_p4act *
 p4a_runt_prealloc_get_next(struct p4tc_act *act);
@@ -447,6 +555,11 @@ void p4a_runt_parm_destroy(struct p4tc_act_param *parm);
 struct p4tc_act_param *
 p4a_runt_parm_init(struct net *net, struct p4tc_act *act,
 		   struct nlattr *nla, struct netlink_ext_ack *extack);
+
+static inline bool p4tc_runtime_msg_is_update(struct nlmsghdr *n)
+{
+	return n->nlmsg_type == RTM_P4TC_UPDATE;
+}
 
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
 #define p4tc_to_act(t) ((struct p4tc_act *)t)

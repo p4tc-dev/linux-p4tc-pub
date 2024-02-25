@@ -80,6 +80,9 @@ enum {
 #define p4tc_ctrl_pub_ok(perm)      ((perm) & P4TC_CTRL_PERM_P)
 #define p4tc_ctrl_sub_ok(perm)      ((perm) & P4TC_CTRL_PERM_S)
 
+#define p4tc_ctrl_perm_rm_create(perm) \
+	(((perm) & ~P4TC_CTRL_PERM_C))
+
 #define p4tc_data_create_ok(perm)   ((perm) & P4TC_DATA_PERM_C)
 #define p4tc_data_read_ok(perm)     ((perm) & P4TC_DATA_PERM_R)
 #define p4tc_data_update_ok(perm)   ((perm) & P4TC_DATA_PERM_U)
@@ -87,6 +90,9 @@ enum {
 #define p4tc_data_exec_ok(perm)     ((perm) & P4TC_DATA_PERM_X)
 #define p4tc_data_pub_ok(perm)      ((perm) & P4TC_DATA_PERM_P)
 #define p4tc_data_sub_ok(perm)      ((perm) & P4TC_DATA_PERM_S)
+
+#define p4tc_data_perm_rm_create(perm) \
+	(((perm) & ~P4TC_DATA_PERM_C))
 
 /* Root attributes */
 enum {
@@ -108,6 +114,15 @@ enum {
 };
 
 #define P4TC_OBJ_MAX (__P4TC_OBJ_MAX - 1)
+
+/* P4 runtime Object types */
+enum {
+	P4TC_OBJ_RUNTIME_UNSPEC,
+	P4TC_OBJ_RUNTIME_TABLE,
+	__P4TC_OBJ_RUNTIME_MAX,
+};
+
+#define P4TC_OBJ_RUNTIME_MAX (__P4TC_OBJ_RUNTIME_MAX - 1)
 
 /* P4 attributes */
 enum {
@@ -207,6 +222,7 @@ enum {
 	P4TC_TABLE_TIMER_PROFILES, /* nested timer profiles
 				    * kernel -> user space only
 				    */
+	P4TC_TABLE_ENTRY, /* nested template table entry*/
 	__P4TC_TABLE_MAX
 };
 
@@ -275,6 +291,62 @@ enum {
 };
 
 #define P4TC_ACT_PARAMS_MAX (__P4TC_ACT_PARAMS_MAX - 1)
+
+struct p4tc_table_entry_tm {
+	__u64 created;
+	__u64 lastused;
+	__u64 firstused;
+	__u16 who_created;
+	__u16 who_updated;
+	__u16 who_deleted;
+	__u16 permissions;
+};
+
+enum {
+	P4TC_ENTRY_TBL_ATTRS_UNSPEC,
+	P4TC_ENTRY_TBL_ATTRS_DEFAULT_HIT, /* nested default hit attrs */
+	P4TC_ENTRY_TBL_ATTRS_DEFAULT_MISS, /* nested default miss attrs */
+	P4TC_ENTRY_TBL_ATTRS_PERMISSIONS, /* u16 table permissions */
+	__P4TC_ENTRY_TBL_ATTRS,
+};
+
+#define P4TC_ENTRY_TBL_ATTRS_MAX (__P4TC_ENTRY_TBL_ATTRS - 1)
+
+/* Table entry attributes */
+enum {
+	P4TC_ENTRY_UNSPEC,
+	P4TC_ENTRY_TBLNAME, /* string - mandatory for create */
+	P4TC_ENTRY_KEY_BLOB, /* Key blob - mandatory for create, update, delete,
+			      * and get
+			      */
+	P4TC_ENTRY_MASK_BLOB, /* Mask blob */
+	P4TC_ENTRY_PRIO, /* u32 - mandatory for delete and get for non-exact
+			  * table
+			  */
+	P4TC_ENTRY_ACT, /* nested actions */
+	P4TC_ENTRY_TM, /* entry data path timestamps */
+	P4TC_ENTRY_WHODUNNIT, /* tells who's modifying the entry */
+	P4TC_ENTRY_CREATE_WHODUNNIT, /* tells who created the entry */
+	P4TC_ENTRY_UPDATE_WHODUNNIT, /* tells who updated the entry last */
+	P4TC_ENTRY_DELETE_WHODUNNIT, /* tells who deleted the entry */
+	P4TC_ENTRY_PERMISSIONS, /* entry CRUDXPS permissions */
+	P4TC_ENTRY_TBL_ATTRS, /* nested table attributes */
+	P4TC_ENTRY_TMPL_CREATED, /* u8 tells whether entry was create by
+				  * template
+				  */
+	P4TC_ENTRY_PAD,
+	__P4TC_ENTRY_MAX
+};
+
+#define P4TC_ENTRY_MAX (__P4TC_ENTRY_MAX - 1)
+
+enum {
+	P4TC_ENTITY_UNSPEC,
+	P4TC_ENTITY_KERNEL,
+	P4TC_ENTITY_TC,
+	P4TC_ENTITY_TIMER,
+	P4TC_ENTITY_MAX
+};
 
 #define P4TC_RTA(r) \
 	((struct rtattr *)(((char *)(r)) + NLMSG_ALIGN(sizeof(struct p4tcmsg))))

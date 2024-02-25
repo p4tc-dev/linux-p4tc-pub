@@ -143,6 +143,7 @@ static const struct nla_policy p4tc_table_policy[P4TC_TABLE_MAX + 1] = {
 	[P4TC_TABLE_ACTS_LIST] = { .type = NLA_NESTED },
 	[P4TC_TABLE_NUM_TIMER_PROFILES] =
 		NLA_POLICY_RANGE(NLA_U32, 1, P4TC_MAX_NUM_TIMER_PROFILES),
+	[P4TC_TABLE_ENTRY] = { .type = NLA_NESTED },
 };
 
 static int _p4tc_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
@@ -284,6 +285,18 @@ static int _p4tc_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 	}
 	nla_nest_end(skb, nested_tbl_acts);
 
+	if (table->tbl_entry) {
+		struct nlattr *entry_nest;
+
+		entry_nest = nla_nest_start(skb, P4TC_TABLE_ENTRY);
+		if (p4tc_tbl_entry_fill(skb, table, table->tbl_entry,
+					table->tbl_id) < 0)
+			goto out_nlmsg_trim;
+
+		nla_nest_end(skb, entry_nest);
+	}
+	table->tbl_entry = NULL;
+
 	if (nla_put_u32(skb, P4TC_TABLE_KEYSZ, table->tbl_keysz))
 		goto out_nlmsg_trim;
 
@@ -291,6 +304,10 @@ static int _p4tc_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 		goto out_nlmsg_trim;
 
 	if (nla_put_u32(skb, P4TC_TABLE_MAX_MASKS, table->tbl_max_masks))
+		goto out_nlmsg_trim;
+
+	if (nla_put_u32(skb, P4TC_TABLE_NUM_ENTRIES,
+			atomic_read(&table->tbl_nelems)))
 		goto out_nlmsg_trim;
 
 	tbl_perm = rcu_dereference_rtnl(table->tbl_permissions);
@@ -319,14 +336,6 @@ static int p4tc_table_fill_nlmsg(struct net *net, struct sk_buff *skb,
 	}
 
 	return 0;
-}
-
-static void p4tc_table_defact_destroy(struct p4tc_table_defact *defact)
-{
-	if (defact) {
-		p4tc_action_destroy(defact->acts);
-		kfree(defact);
-	}
 }
 
 static void
@@ -522,6 +531,9 @@ static int _p4tc_table_put(struct net *net, struct nlattr **tb,
 
 	p4tc_table_acts_list_destroy(&table->tbl_acts_list);
 	p4tc_table_timer_profiles_destroy(table);
+
+	rhltable_free_and_destroy(&table->tbl_entries,
+				  p4tc_table_entry_destroy_hash, table);
 
 	idr_destroy(&table->tbl_masks_idr);
 	ida_destroy(&table->tbl_prio_ida);
@@ -1062,17 +1074,60 @@ p4tc_table_find_byanyattr(struct p4tc_pipeline *pipeline,
 
 static const struct p4tc_template_ops p4tc_table_ops;
 
+static bool p4tc_table_entry_create_only(struct nlattr **tb)
+{
+	int i;
+
+	/* Excluding table name on purpose */
+	for (i = P4TC_TABLE_KEYSZ; i < P4TC_TABLE_MAX; i++)
+		if (tb[i] && i != P4TC_TABLE_ENTRY)
+			return false;
+
+	return true;
+}
+
+static struct p4tc_table *
+p4tc_table_entry_create(struct net *net, struct nlattr **tb,
+			u32 tbl_id, struct p4tc_pipeline *pipeline,
+			struct netlink_ext_ack *extack)
+{
+	struct p4tc_table *table;
+
+	table = p4tc_table_find_byanyattr(pipeline, tb[P4TC_TABLE_NAME], tbl_id,
+					  extack);
+	if (IS_ERR(table))
+		return table;
+
+	if (tb[P4TC_TABLE_ENTRY]) {
+		struct p4tc_table_entry *entry;
+
+		entry = p4tc_tmpl_table_entry_cu(net, tb[P4TC_TABLE_ENTRY],
+						 pipeline, table, extack);
+		if (IS_ERR(entry))
+			return (struct p4tc_table *)entry;
+
+		table->tbl_entry = entry;
+	}
+
+	return table;
+}
+
 static struct p4tc_table *p4tc_table_create(struct net *net, struct nlattr **tb,
 					    u32 tbl_id,
 					    struct p4tc_pipeline *pipeline,
 					    struct netlink_ext_ack *extack)
 {
+	struct rhashtable_params table_hlt_params = entry_hlt_params;
 	u32 num_profiles = P4TC_DEFAULT_NUM_TIMER_PROFILES;
 	struct p4tc_table_perm *tbl_init_perms = NULL;
 	struct p4tc_table_defact_params dflt = { 0 };
 	struct p4tc_table *table;
 	char *tblname;
 	int ret;
+
+	if (p4tc_table_entry_create_only(tb))
+		return p4tc_table_entry_create(net, tb, tbl_id, pipeline,
+					       extack);
 
 	if (pipeline->curr_tables == pipeline->num_tables) {
 		NL_SET_ERR_MSG(extack,
@@ -1236,11 +1291,26 @@ static struct p4tc_table *p4tc_table_create(struct net *net, struct nlattr **tb,
 	ida_init(&table->tbl_prio_ida);
 	spin_lock_init(&table->tbl_masks_idr_lock);
 
+	table_hlt_params.max_size = table->tbl_max_entries;
+	if (table->tbl_max_entries > U16_MAX)
+		table_hlt_params.nelem_hint = U16_MAX / 4 * 3;
+	else
+		table_hlt_params.nelem_hint = table->tbl_max_entries / 4 * 3;
+
+	if (rhltable_init(&table->tbl_entries, &table_hlt_params) < 0) {
+		ret = -EINVAL;
+		goto profiles_destroy;
+	}
+
 	pipeline->curr_tables += 1;
 
 	table->common.ops = (struct p4tc_template_ops *)&p4tc_table_ops;
+	atomic_set(&table->tbl_nelems, 0);
 
 	return table;
+
+profiles_destroy:
+	p4tc_table_timer_profiles_destroy(table);
 
 defaultacts_destroy:
 	p4tc_table_defact_destroy(dflt.hitact);
@@ -1274,6 +1344,12 @@ static struct p4tc_table *p4tc_table_update(struct net *net, struct nlattr **tb,
 	struct p4tc_table *table;
 	u8 tbl_type;
 	int ret = 0;
+
+	if (tb[P4TC_TABLE_ENTRY]) {
+		NL_SET_ERR_MSG(extack,
+			       "Entry update not supported from template");
+		return ERR_PTR(-EOPNOTSUPP);
+	}
 
 	table = p4tc_table_find_byanyattr(pipeline, tb[P4TC_TABLE_NAME], tbl_id,
 					  extack);
