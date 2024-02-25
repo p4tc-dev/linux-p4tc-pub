@@ -158,6 +158,11 @@ static int tc_ctl_p4_tmpl_1(struct sk_buff *skb, struct nlmsghdr *n,
 
 	ids[P4TC_PID_IDX] = t->pipeid;
 
+	if (tb[P4TC_PATH]) {
+		const u32 *arg_ids = nla_data(tb[P4TC_PATH]);
+
+		memcpy(&ids[P4TC_PID_IDX + 1], arg_ids, nla_len(tb[P4TC_PATH]));
+	}
 	nl_path_attrs.ids = ids;
 
 	nskb = alloc_skb(NLMSG_GOODSIZE, GFP_KERNEL);
@@ -365,6 +370,11 @@ static int tc_ctl_p4_tmpl_dump_1(struct sk_buff *skb, struct nlattr *arg,
 	root = nla_nest_start(skb, P4TC_ROOT);
 
 	ids[P4TC_PID_IDX] = t->pipeid;
+	if (tb[P4TC_PATH]) {
+		const u32 *arg_ids = nla_data(tb[P4TC_PATH]);
+
+		memcpy(&ids[P4TC_PID_IDX + 1], arg_ids, nla_len(tb[P4TC_PATH]));
+	}
 
 	obj_op = (struct p4tc_template_ops *)p4tc_ops[t->obj];
 	ret = obj_op->dump(skb, ctx, tb[P4TC_PARAMS], &p_name, ids, extack);
