@@ -675,6 +675,17 @@ config NET_EMATCH_IPT
 	  To compile this code as a module, choose M here: the
 	  module will be called em_ipt.
 
+config NET_P4TC
+	bool "P4TC support"
+	select NET_CLS_ACT
+	help
+	  Say Y here if you want to use P4 features on top of TC.
+	  P4 is an open source,  domain-specific programming language for
+	  specifying data plane behavior. By enabling P4TC you will be able to
+	  write a P4 program, use a P4 compiler that supports P4TC backend to
+	  generate all needed artificats, which when loaded allow you to
+	  introduce a new kernel datapath that can be controlled via TC.
+
 config NET_CLS_ACT
 	bool "Actions"
 	select NET_CLS
