@@ -1,0 +1,33 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
+#ifndef __LINUX_P4TC_H
+#define __LINUX_P4TC_H
+
+#define P4TC_MAX_KEYSZ 512
+
+enum {
+	P4TC_T_UNSPEC,
+	P4TC_T_U8,
+	P4TC_T_U16,
+	P4TC_T_U32,
+	P4TC_T_U64,
+	P4TC_T_STRING,
+	P4TC_T_S8,
+	P4TC_T_S16,
+	P4TC_T_S32,
+	P4TC_T_S64,
+	P4TC_T_MACADDR,
+	P4TC_T_IPV4ADDR,
+	P4TC_T_BE16,
+	P4TC_T_BE32,
+	P4TC_T_BE64,
+	P4TC_T_U128,
+	P4TC_T_S128,
+	P4TC_T_BOOL,
+	P4TC_T_DEV,
+	P4TC_T_KEY,
+	__P4TC_T_MAX,
+};
+
+#define P4TC_T_MAX (__P4TC_T_MAX - 1)
+
+#endif
