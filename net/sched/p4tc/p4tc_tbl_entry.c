@@ -143,6 +143,32 @@ p4tc_entry_lookup(struct p4tc_table *table, struct p4tc_table_entry_key *key,
 	return NULL;
 }
 
+static struct p4tc_table_entry *
+__p4tc_entry_lookup(struct p4tc_table *table, struct p4tc_table_entry_key *key)
+	__must_hold(RCU)
+{
+	struct p4tc_table_entry *entry = NULL;
+	struct rhlist_head *tmp, *bucket_list;
+	struct p4tc_table_entry *entry_curr;
+	u32 smallest_prio = U32_MAX;
+
+	bucket_list =
+		rhltable_lookup(&table->tbl_entries, key, entry_hlt_params);
+	if (!bucket_list)
+		return NULL;
+
+	rhl_for_each_entry_rcu(entry_curr, tmp, bucket_list, ht_node) {
+		struct p4tc_table_entry_value *value =
+			p4tc_table_entry_value(entry_curr);
+		if (value->prio <= smallest_prio) {
+			smallest_prio = value->prio;
+			entry = entry_curr;
+		}
+	}
+
+	return entry;
+}
+
 void p4tc_tbl_entry_mask_key(u8 *masked_key, u8 *key, const u8 *mask,
 			     u32 masksz)
 {
@@ -150,6 +176,79 @@ void p4tc_tbl_entry_mask_key(u8 *masked_key, u8 *key, const u8 *mask,
 
 	for (i = 0; i < masksz; i++)
 		masked_key[i] = key[i] & mask[i];
+}
+
+static void update_last_used(struct p4tc_table_entry *entry)
+{
+	struct p4tc_table_entry_tm *entry_tm;
+	struct p4tc_table_entry_value *value;
+
+	value = p4tc_table_entry_value(entry);
+	entry_tm = rcu_dereference(value->tm);
+	WRITE_ONCE(entry_tm->lastused, get_jiffies_64());
+
+	if (value->is_dyn && !hrtimer_active(&value->entry_timer))
+		hrtimer_start(&value->entry_timer, ms_to_ktime(1000),
+			      HRTIMER_MODE_REL);
+}
+
+static struct p4tc_table_entry *
+__p4tc_table_entry_lookup_direct(struct p4tc_table *table,
+				 struct p4tc_table_entry_key *key)
+{
+	struct p4tc_table_entry *entry = NULL;
+	u32 smallest_prio = U32_MAX;
+	int i;
+
+	if (table->tbl_type == P4TC_TABLE_TYPE_EXACT)
+		return __p4tc_entry_lookup_fast(table, key);
+
+	for (i = 0; i < table->tbl_curr_num_masks; i++) {
+		u8 __mkey[sizeof(*key) + BITS_TO_BYTES(P4TC_MAX_KEYSZ)];
+		struct p4tc_table_entry_key *mkey = (void *)&__mkey;
+		struct p4tc_table_entry_mask *mask =
+			rcu_dereference(table->tbl_masks_array[i]);
+		struct p4tc_table_entry *entry_curr = NULL;
+
+		mkey->keysz = key->keysz;
+		mkey->maskid = mask->mask_id;
+		p4tc_tbl_entry_mask_key(mkey->fa_key, key->fa_key,
+					mask->fa_value,
+					BITS_TO_BYTES(mask->sz));
+
+		if (table->tbl_type == P4TC_TABLE_TYPE_LPM) {
+			entry_curr = __p4tc_entry_lookup_fast(table, mkey);
+			if (entry_curr)
+				return entry_curr;
+		} else {
+			entry_curr = __p4tc_entry_lookup(table, mkey);
+
+			if (entry_curr) {
+				struct p4tc_table_entry_value *value =
+					p4tc_table_entry_value(entry_curr);
+				if (value->prio <= smallest_prio) {
+					smallest_prio = value->prio;
+					entry = entry_curr;
+				}
+			}
+		}
+	}
+
+	return entry;
+}
+
+struct p4tc_table_entry *
+p4tc_table_entry_lookup_direct(struct p4tc_table *table,
+			       struct p4tc_table_entry_key *key)
+{
+	struct p4tc_table_entry *entry;
+
+	entry = __p4tc_table_entry_lookup_direct(table, key);
+
+	if (entry)
+		update_last_used(entry);
+
+	return entry;
 }
 
 #define p4tc_table_entry_mask_find_byid(table, id) \
@@ -1031,6 +1130,43 @@ __must_hold(RCU)
 	return 0;
 }
 
+/* Internal function which will be called by the data path */
+static int __p4tc_table_entry_del(struct p4tc_table *table,
+				  struct p4tc_table_entry_key *key,
+				  struct p4tc_table_entry_mask *mask, u32 prio)
+{
+	struct p4tc_table_entry *entry;
+	int ret;
+
+	p4tc_table_entry_build_key(table, key, mask);
+
+	entry = p4tc_entry_lookup(table, key, prio);
+	if (!entry)
+		return -ENOENT;
+
+	ret = ___p4tc_table_entry_del(table, entry, false);
+
+	return ret;
+}
+
+int p4tc_table_entry_del_bpf(struct p4tc_pipeline *pipeline,
+			     struct p4tc_table *table,
+			     struct p4tc_table_entry_key *key)
+{
+	u8 __mask[sizeof(struct p4tc_table_entry_mask) +
+		  BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
+	const u32 keysz_bytes = P4TC_KEYSZ_BYTES(table->tbl_keysz);
+	struct p4tc_table_entry_mask *mask = (void *)&__mask;
+
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT)
+		return -EINVAL;
+
+	if (keysz_bytes != P4TC_KEYSZ_BYTES(key->keysz))
+		return -EINVAL;
+
+	return __p4tc_table_entry_del(table, key, mask, 0);
+}
+
 #define RET_EVENT_FAILED 1
 
 static int
@@ -1378,6 +1514,43 @@ table_put:
 	return ret;
 }
 
+static int
+p4tc_table_tc_act_from_bpf_act(struct tcf_p4act *p4act,
+			       struct p4tc_table_entry_value *value,
+			       struct p4tc_table_entry_act_bpf *act_bpf)
+__must_hold(RCU)
+{
+	struct p4tc_table_entry_act_bpf_kern *new_act_bpf;
+	struct tcf_p4act_params *p4act_params;
+	struct p4tc_act_param *param;
+	unsigned long param_id, tmp;
+	u8 *params_cursor;
+
+	p4act_params = rcu_dereference(p4act->params);
+	params_cursor = act_bpf->params;
+	idr_for_each_entry_ul(&p4act_params->params_idr, param, tmp, param_id) {
+		const struct p4tc_type *type = param->type;
+		const u32 type_bytesz = BITS_TO_BYTES(type->container_bitsz);
+
+		memcpy(param->value, params_cursor, type_bytesz);
+		params_cursor += type_bytesz;
+	}
+
+	new_act_bpf = kzalloc(sizeof(*new_act_bpf), GFP_ATOMIC);
+	if (unlikely(!new_act_bpf))
+		return -ENOMEM;
+
+	new_act_bpf->act_bpf = *act_bpf;
+	new_act_bpf->act_bpf.hit = 1;
+	new_act_bpf->act_bpf.is_default_hit_act = 0;
+	new_act_bpf->act_bpf.is_default_miss_act = 0;
+
+	rcu_assign_pointer(p4act->act_bpf, new_act_bpf);
+	value->acts[0] = (struct tc_action *)p4act;
+
+	return 0;
+}
+
 static enum hrtimer_restart entry_timer_handle(struct hrtimer *timer)
 {
 	struct p4tc_table_entry_value *value =
@@ -1536,6 +1709,163 @@ out:
 	return ret;
 }
 
+static bool p4tc_table_check_entry_act(struct p4tc_table *table,
+				       struct tc_action *entry_act)
+{
+	struct tcf_p4act *entry_p4act = to_p4act(entry_act);
+	struct p4tc_table_act *table_act;
+
+	if (entry_p4act->num_runt_params > 0)
+		return false;
+
+	list_for_each_entry(table_act, &table->tbl_acts_list, node) {
+		if (table_act->act->common.p_id != entry_p4act->p_id ||
+		    table_act->act->a_id != entry_p4act->act_id)
+			continue;
+
+		if (!(table_act->flags &
+		      BIT(P4TC_TABLE_ACTS_DEFAULT_ONLY)))
+			return true;
+	}
+
+	return false;
+}
+
+static bool p4tc_table_check_no_act(struct p4tc_table *table)
+{
+	struct p4tc_table_act *table_act;
+
+	if (list_empty(&table->tbl_acts_list))
+		return false;
+
+	list_for_each_entry(table_act, &table->tbl_acts_list, node) {
+		if (p4tc_table_act_is_noaction(table_act))
+			return true;
+	}
+
+	return false;
+}
+
+struct p4tc_table_entry_create_state {
+	struct p4tc_act *act;
+	struct tcf_p4act *p4_act;
+	struct p4tc_table_entry *entry;
+	u64 aging_ms;
+	u16 permissions;
+};
+
+static int
+p4tc_table_entry_init_bpf(struct p4tc_pipeline *pipeline,
+			  struct p4tc_table *table, u32 entry_key_sz,
+			  struct p4tc_table_entry_act_bpf *act_bpf,
+			  struct p4tc_table_entry_create_state *state)
+{
+	const u32 keysz_bytes = P4TC_KEYSZ_BYTES(table->tbl_keysz);
+	struct p4tc_table_entry_value *entry_value;
+	const u32 keysz_bits = table->tbl_keysz;
+	struct tcf_p4act *p4_act = NULL;
+	struct p4tc_table_entry *entry;
+	struct p4tc_act *act = NULL;
+	int err = -EINVAL;
+	u32 entrysz;
+
+	if (table->tbl_type != P4TC_TABLE_TYPE_EXACT)
+		goto out;
+
+	if (keysz_bytes != P4TC_KEYSZ_BYTES(entry_key_sz))
+		goto out;
+
+	if (atomic_read(&table->tbl_nelems) + 1 > table->tbl_max_entries)
+		goto out;
+
+	if (act_bpf->act_id) {
+		act = p4a_tmpl_get(pipeline, NULL, act_bpf->act_id, NULL);
+		if (IS_ERR(act)) {
+			err = -ENOENT;
+			goto out;
+		}
+	} else {
+		if (!p4tc_table_check_no_act(table)) {
+			err = -EPERM;
+			goto out;
+		}
+	}
+
+	entrysz = sizeof(*entry) + keysz_bytes +
+		  sizeof(struct p4tc_table_entry_value);
+
+	entry = kzalloc(entrysz, GFP_ATOMIC);
+	if (unlikely(!entry)) {
+		err = -ENOMEM;
+		goto act_put;
+	}
+	entry->key.keysz = keysz_bits;
+
+	entry_value = p4tc_table_entry_value(entry);
+	entry_value->prio = p4tc_table_entry_exact_prio();
+	entry_value->permissions = state->permissions;
+	entry_value->aging_ms = state->aging_ms;
+
+	if (act) {
+		p4_act = p4a_runt_prealloc_get_next(act);
+		if (!p4_act) {
+			err = -ENOENT;
+			goto idr_rm;
+		}
+
+		if (!p4tc_table_check_entry_act(table, &p4_act->common)) {
+			err = -EPERM;
+			goto free_prealloc;
+		}
+
+		err = p4tc_table_tc_act_from_bpf_act(p4_act, entry_value,
+						     act_bpf);
+		if (err < 0)
+			goto free_prealloc;
+	}
+
+	state->act = act;
+	state->p4_act = p4_act;
+	state->entry = entry;
+
+	return 0;
+
+free_prealloc:
+	if (p4_act)
+		p4a_runt_prealloc_put(act, p4_act);
+
+idr_rm:
+	p4tc_table_entry_free_prio(table, entry_value->prio);
+
+	kfree(entry);
+
+act_put:
+	if (act)
+		p4tc_action_put_ref(act);
+out:
+	return err;
+}
+
+static void
+p4tc_table_entry_create_state_put(struct p4tc_table *table,
+				  struct p4tc_table_entry_create_state *state)
+{
+	struct p4tc_table_entry_value *value;
+
+	if (state->act)
+		p4a_runt_prealloc_put(state->act, state->p4_act);
+
+	value = p4tc_table_entry_value(state->entry);
+	p4tc_table_entry_free_prio(table, value->prio);
+
+	kfree(state->entry);
+
+	if (state->act) {
+		p4tc_action_put_ref(state->act);
+		atomic_dec(&state->act->num_insts);
+	}
+}
+
 /* Invoked from both control and data path  */
 static int __p4tc_table_entry_update(struct p4tc_pipeline *pipeline,
 				     struct p4tc_table *table,
@@ -1674,41 +2004,111 @@ out:
 	return ret;
 }
 
-static bool p4tc_table_check_entry_act(struct p4tc_table *table,
-				       struct tc_action *entry_act)
+static u16 p4tc_table_entry_tbl_permcpy(const u16 tblperm)
 {
-	struct tcf_p4act *entry_p4act = to_p4act(entry_act);
-	struct p4tc_table_act *table_act;
-
-	if (entry_p4act->num_runt_params > 0)
-		return false;
-
-	list_for_each_entry(table_act, &table->tbl_acts_list, node) {
-		if (table_act->act->common.p_id != entry_p4act->p_id ||
-		    table_act->act->a_id != entry_p4act->act_id)
-			continue;
-
-		if (!(table_act->flags &
-		      BIT(P4TC_TABLE_ACTS_DEFAULT_ONLY)))
-			return true;
-	}
-
-	return false;
+	return p4tc_ctrl_perm_rm_create(p4tc_data_perm_rm_create(tblperm));
 }
 
-static bool p4tc_table_check_no_act(struct p4tc_table *table)
+/* If the profile_id specified by the eBPF program for entry create or update is
+ * invalid, we'll use the default profile ID's aging value
+ */
+static void
+p4tc_table_entry_assign_aging(struct p4tc_table *table,
+			      struct p4tc_table_entry_create_state *state,
+			      u32 profile_id)
 {
-	struct p4tc_table_act *table_act;
+	struct p4tc_table_timer_profile *timer_profile;
 
-	if (list_empty(&table->tbl_acts_list))
-		return false;
+	timer_profile = p4tc_table_timer_profile_find(table, profile_id);
+	if (!timer_profile)
+		timer_profile = p4tc_table_timer_profile_find(table,
+							      P4TC_DEFAULT_TIMER_PROFILE_ID);
 
-	list_for_each_entry(table_act, &table->tbl_acts_list, node) {
-		if (p4tc_table_act_is_noaction(table_act))
-			return true;
-	}
+	state->aging_ms = timer_profile->aging_ms;
+}
 
-	return false;
+int p4tc_table_entry_create_bpf(struct p4tc_pipeline *pipeline,
+				struct p4tc_table *table,
+				struct p4tc_table_entry_key *key,
+				struct p4tc_table_entry_act_bpf *act_bpf,
+				u32 profile_id)
+{
+	u16 tblperm = rcu_dereference(table->tbl_permissions)->permissions;
+	u8 __mask[sizeof(struct p4tc_table_entry_mask) +
+		  BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
+	struct p4tc_table_entry_mask *mask = (void *)&__mask;
+	struct p4tc_table_entry_create_state state = {0};
+	struct p4tc_table_entry_value *value;
+	int err;
+
+	p4tc_table_entry_assign_aging(table, &state, profile_id);
+
+	state.permissions = p4tc_table_entry_tbl_permcpy(tblperm);
+	err = p4tc_table_entry_init_bpf(pipeline, table, key->keysz,
+					act_bpf, &state);
+	if (err < 0)
+		return err;
+	p4tc_table_entry_assign_key_exact(&state.entry->key, key->fa_key);
+
+	value = p4tc_table_entry_value(state.entry);
+	/* Entry is always dynamic when it comes from the data path */
+	value->is_dyn = true;
+
+	err = __p4tc_table_entry_create(pipeline, table, state.entry, mask,
+					P4TC_ENTITY_KERNEL, false);
+	if (err < 0)
+		goto put_state;
+
+	refcount_set(&value->entries_ref, 1);
+	if (state.p4_act)
+		p4a_runt_prealloc_reference(state.act, state.p4_act);
+
+	return 0;
+
+put_state:
+	p4tc_table_entry_create_state_put(table, &state);
+
+	return err;
+}
+
+int p4tc_table_entry_update_bpf(struct p4tc_pipeline *pipeline,
+				struct p4tc_table *table,
+				struct p4tc_table_entry_key *key,
+				struct p4tc_table_entry_act_bpf *act_bpf,
+				u32 profile_id)
+{
+	struct p4tc_table_entry_create_state state = {0};
+	struct p4tc_table_entry_value *value;
+	int err;
+
+	p4tc_table_entry_assign_aging(table, &state, profile_id);
+
+	state.permissions = P4TC_PERMISSIONS_UNINIT;
+	err = p4tc_table_entry_init_bpf(pipeline, table, key->keysz, act_bpf,
+					&state);
+	if (err < 0)
+		return err;
+
+	p4tc_table_entry_assign_key_exact(&state.entry->key, key->fa_key);
+
+	value = p4tc_table_entry_value(state.entry);
+	value->is_dyn = !!state.aging_ms;
+	err = __p4tc_table_entry_update(pipeline, table, state.entry, NULL,
+					P4TC_ENTITY_KERNEL, false);
+
+	if (err < 0)
+		goto put_state;
+
+	refcount_set(&value->entries_ref, 1);
+	if (state.p4_act)
+		p4a_runt_prealloc_reference(state.act, state.p4_act);
+
+	return 0;
+
+put_state:
+	p4tc_table_entry_create_state_put(table, &state);
+
+	return err;
 }
 
 static struct nla_policy
@@ -1778,11 +2178,6 @@ default_acts_free:
 free_tbl_perm:
 	kfree(tbl_perm);
 	return err;
-}
-
-static u16 p4tc_table_entry_tbl_permcpy(const u16 tblperm)
-{
-	return p4tc_ctrl_perm_rm_create(p4tc_data_perm_rm_create(tblperm));
 }
 
 #define P4TC_TBL_ENTRY_CU_FLAG_CREATE 0x1
@@ -1909,6 +2304,11 @@ __p4tc_table_entry_cu(struct net *net, u8 cu_flags, struct nlattr **tb,
 				       "Action not allowed as entry action");
 			goto free_acts;
 		}
+
+		ret = p4tc_table_entry_act_bpf_change_flags(value->acts[0], 1,
+							    0, 0);
+		if (ret < 0)
+			goto free_acts;
 	} else {
 		if (!p4tc_table_check_no_act(table)) {
 			NL_SET_ERR_MSG_FMT(extack,

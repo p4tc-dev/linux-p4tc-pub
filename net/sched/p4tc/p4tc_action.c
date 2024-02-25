@@ -292,16 +292,72 @@ static void p4a_set_num_runtime(struct tcf_p4act *p4act)
 	}
 }
 
+static struct p4tc_table_entry_act_bpf_kern *
+p4a_runt_create_bpf(struct tcf_p4act *p4act,
+		    struct tcf_p4act_params *act_params,
+		    struct netlink_ext_ack *extack)
+{
+	struct p4tc_act_param *params[P4TC_ACT_MAX_NUM_PARAMS];
+	struct p4tc_table_entry_act_bpf_kern *act_bpf;
+	struct p4tc_act_param *param;
+	unsigned long param_id, tmp;
+	size_t tot_params_sz = 0;
+	u8 *params_cursor;
+	int nparams = 0;
+	int i;
+
+	act_bpf = kzalloc(sizeof(*act_bpf), GFP_KERNEL);
+	if (!act_bpf)
+		return ERR_PTR(-ENOMEM);
+
+	idr_for_each_entry_ul(&act_params->params_idr, param, tmp, param_id) {
+		const struct p4tc_type *type = param->type;
+
+		if (tot_params_sz > P4TC_MAX_PARAM_DATA_SIZE) {
+			NL_SET_ERR_MSG(extack,
+				       "Maximum parameter byte size reached");
+			kfree(act_bpf);
+			return ERR_PTR(-EINVAL);
+		}
+
+		tot_params_sz += BITS_TO_BYTES(type->container_bitsz);
+		params[nparams++] = param;
+	}
+
+	act_bpf->act_bpf.act_id = p4act->act_id;
+	params_cursor = act_bpf->act_bpf.params;
+	for (i = 0; i < nparams; i++) {
+		param = params[i];
+		if (!p4a_param_has_runt_flag(param)) {
+			u32 type_bytesz;
+
+			type_bytesz =
+				BITS_TO_BYTES(param->type->container_bitsz);
+			memcpy(params_cursor, param->value, type_bytesz);
+			params_cursor += type_bytesz;
+		}
+	}
+
+	return act_bpf;
+}
+
 static int __p4a_runt_init_set(struct p4tc_act *act, struct tc_action **a,
 			       struct tcf_p4act_params *params,
 			       struct tcf_chain *goto_ch,
 			       struct tc_act_p4 *parm, bool exists,
 			       struct netlink_ext_ack *extack)
 {
+	struct p4tc_table_entry_act_bpf_kern *act_bpf = NULL, *act_bpf_old;
 	struct tcf_p4act_params *params_old;
 	struct tcf_p4act *p;
 
 	p = to_p4act(*a);
+
+	if (!((*a)->tcfa_flags & TCA_ACT_FLAGS_UNREFERENCED)) {
+		act_bpf = p4a_runt_create_bpf(p, params, extack);
+		if (IS_ERR(act_bpf))
+			return PTR_ERR(act_bpf);
+	}
 
 	/* sparse is fooled by lock under conditionals.
 	 * To avoid false positives, we are repeating these statements in
@@ -312,11 +368,13 @@ static int __p4a_runt_init_set(struct p4tc_act *act, struct tc_action **a,
 		goto_ch = tcf_action_set_ctrlact(*a, parm->action, goto_ch);
 		params_old = rcu_replace_pointer(p->params, params, 1);
 		p4a_set_num_runtime(p);
+		act_bpf_old = rcu_replace_pointer(p->act_bpf, act_bpf, 1);
 		spin_unlock_bh(&p->tcf_lock);
 	} else {
 		goto_ch = tcf_action_set_ctrlact(*a, parm->action, goto_ch);
 		params_old = rcu_replace_pointer(p->params, params, 1);
 		p4a_set_num_runtime(p);
+		act_bpf_old = rcu_replace_pointer(p->act_bpf, act_bpf, 1);
 	}
 
 	if (goto_ch)
@@ -324,6 +382,9 @@ static int __p4a_runt_init_set(struct p4tc_act *act, struct tc_action **a,
 
 	if (params_old)
 		call_rcu(&params_old->rcu, p4a_runt_parms_destroy_rcu);
+
+	if (act_bpf_old)
+		kfree_rcu(act_bpf_old, rcu);
 
 	return 0;
 }
@@ -519,6 +580,7 @@ void p4a_runt_prealloc_reference(struct p4tc_act *act, struct tcf_p4act *p4act)
 static void __p4a_runt_prealloc_put(struct p4tc_act *act,
 				    struct tcf_p4act *p4act)
 {
+	struct p4tc_table_entry_act_bpf_kern *act_bpf_old;
 	struct tcf_p4act_params *p4act_params;
 	struct p4tc_act_param *param;
 	unsigned long param_id, tmp;
@@ -540,6 +602,10 @@ static void __p4a_runt_prealloc_put(struct p4tc_act *act,
 	p4act->common.tcfa_flags |= TCA_ACT_FLAGS_UNREFERENCED;
 	atomic_dec(&act->num_insts);
 	spin_unlock_bh(&p4act->tcf_lock);
+
+	act_bpf_old = rcu_replace_pointer(p4act->act_bpf, NULL, 1);
+	if (act_bpf_old)
+		kfree_rcu(act_bpf_old, rcu);
 
 	spin_lock_bh(&act->list_lock);
 	list_add_tail(&p4act->node, &act->prealloc_list);
@@ -1240,10 +1306,12 @@ static int p4a_runt_walker(struct net *net, struct sk_buff *skb,
 static void p4a_runt_cleanup(struct tc_action *a)
 {
 	struct tc_action_ops *ops = (struct tc_action_ops *)a->ops;
+	struct p4tc_table_entry_act_bpf_kern *act_bpf;
 	struct tcf_p4act *m = to_p4act(a);
 	struct tcf_p4act_params *params;
 
 	params = rcu_dereference_protected(m->params, 1);
+	act_bpf = rcu_dereference_protected(m->act_bpf, 1);
 
 	if (!(a->tcfa_flags & TCA_ACT_FLAGS_UNREFERENCED)) {
 		struct net *net = maybe_get_net(a->idrinfo->net);
@@ -1263,6 +1331,9 @@ static void p4a_runt_cleanup(struct tc_action *a)
 
 	if (params)
 		call_rcu(&params->rcu, p4a_runt_parms_destroy_rcu);
+
+	if (act_bpf)
+		kfree_rcu(act_bpf, rcu);
 }
 
 static void p4a_runt_net_exit(struct tc_action_net *tn)

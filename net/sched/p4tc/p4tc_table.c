@@ -28,7 +28,8 @@
 #include <net/netlink.h>
 #include <net/flow_offload.h>
 
-static int __p4tc_table_try_set_state_ready(struct p4tc_table *table,
+static int __p4tc_table_try_set_state_ready(struct net *net,
+					    struct p4tc_table *table,
 					    struct netlink_ext_ack *extack)
 {
 	struct p4tc_table_entry_mask __rcu **masks_array;
@@ -53,10 +54,13 @@ static int __p4tc_table_try_set_state_ready(struct p4tc_table *table,
 	rcu_replace_pointer_rtnl(table->tbl_free_masks_bitmap,
 				 tbl_free_masks_bitmap);
 
+	p4tc_tbl_cache_insert(net, table->common.p_id, table);
+
 	return 0;
 }
 
-static void free_table_cache_array(struct p4tc_table **set_tables,
+static void free_table_cache_array(struct net *net,
+				   struct p4tc_table **set_tables,
 				   int num_tables)
 {
 	int i;
@@ -72,6 +76,8 @@ static void free_table_cache_array(struct p4tc_table **set_tables,
 		free_masks_bitmap =
 			rtnl_dereference(table->tbl_free_masks_bitmap);
 		bitmap_free(free_masks_bitmap);
+
+		p4tc_tbl_cache_remove(net, table);
 	}
 }
 
@@ -90,7 +96,8 @@ int p4tc_table_try_set_state_ready(struct p4tc_pipeline *pipeline,
 		return -ENOMEM;
 
 	idr_for_each_entry_ul(&pipeline->p_tbl_idr, table, tmp, id) {
-		ret = __p4tc_table_try_set_state_ready(table, extack);
+		ret = __p4tc_table_try_set_state_ready(pipeline->net, table,
+						       extack);
 		if (ret < 0)
 			goto free_set_tables;
 		set_tables[i] = table;
@@ -101,7 +108,7 @@ int p4tc_table_try_set_state_ready(struct p4tc_pipeline *pipeline,
 	return 0;
 
 free_set_tables:
-	free_table_cache_array(set_tables, i);
+	free_table_cache_array(pipeline->net, set_tables, i);
 	kfree(set_tables);
 	return ret;
 }
@@ -645,6 +652,8 @@ static int _p4tc_table_put(struct net *net, struct nlattr **tb,
 
 	rhltable_free_and_destroy(&table->tbl_entries,
 				  p4tc_table_entry_destroy_hash, table);
+	if (pipeline->p_state == P4TC_STATE_READY)
+		p4tc_tbl_cache_remove(net, table);
 
 	idr_destroy(&table->tbl_masks_idr);
 	ida_destroy(&table->tbl_prio_ida);
@@ -811,6 +820,7 @@ __p4tc_table_init_defact(struct net *net, struct nlattr **tb, u32 pipeid,
 		if (ret < 0)
 			goto err;
 	} else if (tb[P4TC_TABLE_DEFAULT_ACTION_NOACTION]) {
+		struct p4tc_table_entry_act_bpf_kern *no_action_bpf_kern;
 		struct tcf_p4act *p4_defact;
 
 		if (!p4tc_ctrl_update_ok(perm)) {
@@ -820,11 +830,20 @@ __p4tc_table_init_defact(struct net *net, struct nlattr **tb, u32 pipeid,
 			goto err;
 		}
 
-		p4_defact = kzalloc(sizeof(*p4_defact), GFP_KERNEL);
-		if (!p4_defact) {
+		no_action_bpf_kern = kzalloc(sizeof(*no_action_bpf_kern),
+					     GFP_KERNEL);
+		if (!no_action_bpf_kern) {
 			ret = -ENOMEM;
 			goto err;
 		}
+
+		p4_defact = kzalloc(sizeof(*p4_defact), GFP_KERNEL);
+		if (!p4_defact) {
+			kfree(no_action_bpf_kern);
+			ret = -ENOMEM;
+			goto err;
+		}
+		rcu_assign_pointer(p4_defact->act_bpf, no_action_bpf_kern);
 		p4_defact->p_id = 0;
 		p4_defact->act_id = 0;
 		defact->acts[0] = (struct tc_action *)p4_defact;
@@ -959,6 +978,14 @@ int p4tc_table_init_default_acts(struct net *net,
 		if (IS_ERR(hitact))
 			return PTR_ERR(hitact);
 
+		if (hitact->acts[0]) {
+			struct tc_action *_hitact = hitact->acts[0];
+
+			ret = p4tc_table_entry_act_bpf_change_flags(_hitact, 1,
+								    0, 1);
+			if (ret < 0)
+				goto default_hitacts_free;
+		}
 		dflt->hitact = hitact;
 	}
 
@@ -981,10 +1008,21 @@ int p4tc_table_init_default_acts(struct net *net,
 			goto default_hitacts_free;
 		}
 
+		if (missact->acts[0]) {
+			struct tc_action *_missact = missact->acts[0];
+
+			ret = p4tc_table_entry_act_bpf_change_flags(_missact, 0,
+								    1, 0);
+			if (ret < 0)
+				goto default_missacts_free;
+		}
 		dflt->missact = missact;
 	}
 
 	return 0;
+
+default_missacts_free:
+	p4tc_table_defact_destroy(dflt->missact);
 
 default_hitacts_free:
 	p4tc_table_defact_destroy(dflt->hitact);
@@ -1771,6 +1809,10 @@ static const struct p4tc_template_ops p4tc_table_ops = {
 static int __init p4tc_table_init(void)
 {
 	p4tc_tmpl_register_ops(&p4tc_table_ops);
+
+#if IS_ENABLED(CONFIG_DEBUG_INFO_BTF)
+	register_p4tc_tbl_bpf();
+#endif
 
 	return 0;
 }
