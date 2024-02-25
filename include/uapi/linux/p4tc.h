@@ -7,19 +7,25 @@
 
 /* pipeline header */
 struct p4tcmsg {
+	__u32 pipeid;
 	__u32 obj;
 };
 
+#define P4TC_MAXPIPELINE_COUNT 32
+#define P4TC_MAXTABLES_COUNT 32
+#define P4TC_MINTABLES_COUNT 0
 #define P4TC_MSGBATCH_SIZE 16
 
 #define P4TC_MAX_KEYSZ 512
 
 #define P4TC_TMPL_NAMSZ 32
+#define P4TC_PIPELINE_NAMSIZ P4TC_TMPL_NAMSZ
 
 /* Root attributes */
 enum {
 	P4TC_ROOT_UNSPEC,
 	P4TC_ROOT, /* nested messages */
+	P4TC_ROOT_PNAME, /* string - mandatory for pipeline create */
 	__P4TC_ROOT_MAX,
 };
 
@@ -28,6 +34,7 @@ enum {
 /* P4 Object types */
 enum {
 	P4TC_OBJ_UNSPEC,
+	P4TC_OBJ_PIPELINE,
 	__P4TC_OBJ_MAX,
 };
 
@@ -42,6 +49,23 @@ enum {
 };
 
 #define P4TC_MAX (__P4TC_MAX - 1)
+
+/* PIPELINE attributes */
+enum {
+	P4TC_PIPELINE_UNSPEC,
+	P4TC_PIPELINE_NUMTABLES, /* u16 */
+	P4TC_PIPELINE_STATE, /* u8 */
+	P4TC_PIPELINE_NAME, /* string only used for pipeline dump */
+	__P4TC_PIPELINE_MAX
+};
+
+#define P4TC_PIPELINE_MAX (__P4TC_PIPELINE_MAX - 1)
+
+/* PIPELINE states */
+enum {
+	P4TC_STATE_NOT_READY,
+	P4TC_STATE_READY,
+};
 
 enum {
 	P4TC_T_UNSPEC,
