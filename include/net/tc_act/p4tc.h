@@ -10,7 +10,6 @@ struct tcf_p4act_params {
 	struct p4tc_act_param **params_array;
 	struct rcu_head rcu;
 	u32 num_params;
-	u32 tot_params_sz;
 };
 
 struct tcf_p4act {
@@ -20,6 +19,7 @@ struct tcf_p4act {
 	u32 p_id;
 	u32 act_id;
 	struct list_head node;
+	u32 num_runt_params;
 };
 
 #define to_p4act(a) ((struct tcf_p4act *)a)
