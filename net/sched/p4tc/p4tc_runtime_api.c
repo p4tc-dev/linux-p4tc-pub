@@ -56,6 +56,21 @@ static int tc_ctl_p4_root(struct sk_buff *skb, struct nlmsghdr *n, int cmd,
 	}
 }
 
+static int tc_ctl_p4_get(struct sk_buff *skb, struct nlmsghdr *n,
+			 struct netlink_ext_ack *extack)
+{
+	return tc_ctl_p4_root(skb, n, RTM_P4TC_GET, extack);
+}
+
+static int tc_ctl_p4_delete(struct sk_buff *skb, struct nlmsghdr *n,
+			    struct netlink_ext_ack *extack)
+{
+	if (!netlink_capable(skb, CAP_NET_ADMIN))
+		return -EPERM;
+
+	return tc_ctl_p4_root(skb, n, RTM_P4TC_DEL, extack);
+}
+
 static int tc_ctl_p4_cu(struct sk_buff *skb, struct nlmsghdr *n,
 			struct netlink_ext_ack *extack)
 {
@@ -69,12 +84,60 @@ static int tc_ctl_p4_cu(struct sk_buff *skb, struct nlmsghdr *n,
 	return ret;
 }
 
+static int tc_ctl_p4_dump(struct sk_buff *skb, struct netlink_callback *cb)
+{
+	struct nlattr *tb[P4TC_ROOT_MAX + 1];
+	char *p_name = NULL;
+	struct p4tcmsg *t;
+	int ret = 0;
+
+	/* Dump is always called with the nlk->cb_mutex held.
+	 * In rtnl this mutex is set to rtnl_lock, which makes dump,
+	 * even for table entries, to serialized over the rtnl_lock.
+	 *
+	 * For table entries, it guarantees the net namespace is alive.
+	 * For externs, we don't need to lock the rtnl_lock.
+	 */
+	ASSERT_RTNL();
+
+	ret = nlmsg_parse(cb->nlh, sizeof(struct p4tcmsg), tb, P4TC_ROOT_MAX,
+			  p4tc_root_policy, cb->extack);
+	if (ret < 0)
+		return ret;
+
+	if (NL_REQ_ATTR_CHECK(cb->extack, NULL, tb, P4TC_ROOT)) {
+		NL_SET_ERR_MSG(cb->extack,
+			       "Netlink P4TC Runtime attributes missing");
+		return -EINVAL;
+	}
+
+	if (tb[P4TC_ROOT_PNAME])
+		p_name = nla_data(tb[P4TC_ROOT_PNAME]);
+
+	t = nlmsg_data(cb->nlh);
+
+	switch (t->obj) {
+	case P4TC_OBJ_RUNTIME_TABLE:
+		return p4tc_tbl_entry_dumpit(sock_net(skb->sk), skb, cb,
+					     tb[P4TC_ROOT], p_name);
+	default:
+		NL_SET_ERR_MSG_FMT(cb->extack,
+				   "Unknown p4 runtime object type %u\n",
+				   t->obj);
+		return -ENOENT;
+	}
+}
+
 static const struct rtnl_msg_handler p4tc_runt_rtnl_msg_handlers[] __initconst =
 {
 	{.msgtype = RTM_P4TC_CREATE, .doit = tc_ctl_p4_cu,
 		.flags = RTNL_FLAG_DOIT_UNLOCKED},
 	{.msgtype = RTM_P4TC_UPDATE, .doit = tc_ctl_p4_cu,
 		.flags = RTNL_FLAG_DOIT_UNLOCKED},
+	{.msgtype = RTM_P4TC_DEL, .doit = tc_ctl_p4_delete,
+		.flags = RTNL_FLAG_DOIT_UNLOCKED},
+	{.msgtype = RTM_P4TC_GET, .doit = tc_ctl_p4_get,
+	 .dumpit = tc_ctl_p4_dump, .flags = RTNL_FLAG_DOIT_UNLOCKED},
 };
 
 static int __init p4tc_tbl_init(void)
