@@ -1872,27 +1872,21 @@ err_out:
 	return ret;
 }
 
-int p4tc_ctl_extern(struct sk_buff *skb, struct nlmsghdr *n, int cmd,
+int p4tc_ctl_extern(struct sk_buff *skb, struct nlmsghdr *n, struct nlattr **tb,
 		    struct netlink_ext_ack *extack)
 {
-	struct nlattr *tb[P4TC_ROOT_MAX + 1];
 	struct net *net = sock_net(skb->sk);
 	u32 portid = NETLINK_CB(skb).portid;
 	struct p4tc_pipeline *pipeline;
 	struct nlattr *root;
 	char *pname = NULL;
 	u32 flags = 0;
-	int ret = 0;
 
-	if (cmd != RTM_P4TC_GET && !netlink_capable(skb, CAP_NET_ADMIN)) {
+	if (n->nlmsg_type != RTM_P4TC_GET &&
+	    !netlink_capable(skb, CAP_NET_ADMIN)) {
 		NL_SET_ERR_MSG(extack, "Need CAP_NET_ADMIN to do CUD ops");
 		return -EPERM;
 	}
-
-	ret = nlmsg_parse(n, sizeof(struct p4tcmsg), tb, P4TC_ROOT_MAX,
-			  p4tc_root_policy, extack);
-	if (ret < 0)
-		return ret;
 
 	if (tb[P4TC_ROOT_PNAME])
 		pname = nla_data(tb[P4TC_ROOT_PNAME]);

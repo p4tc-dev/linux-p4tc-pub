@@ -124,7 +124,7 @@ int p4tc_ctl_extern_dump(struct sk_buff *skb, struct netlink_callback *cb,
 void p4tc_ext_purge(struct idr *idr);
 void p4tc_ext_inst_purge(struct p4tc_extern_inst *inst);
 
-int p4tc_ctl_extern(struct sk_buff *skb, struct nlmsghdr *n, int cmd,
+int p4tc_ctl_extern(struct sk_buff *skb, struct nlmsghdr *n, struct nlattr **tb,
 		    struct netlink_ext_ack *extack);
 struct p4tc_extern_tmpl_param *
 p4tc_ext_param_find_byanyattr(struct idr *params_idr,
@@ -786,7 +786,7 @@ p4tc_extern_should_send(struct net *net,
 			struct p4tc_ext_nlmsg_attrs *nlmsg_attrs)
 {
 	return (nlmsg_attrs->cmd != RTM_P4TC_UPDATE ||
-		rtnl_has_listeners(net, RTNLGRP_TC) ||
+		rtnl_has_listeners(net, RTNLGRP_P4TC) ||
 		nlmsg_attrs->flags & NLM_F_ECHO);
 }
 
@@ -838,7 +838,7 @@ p4tc_extern_send(struct p4tc_pipeline *pipeline,
 		bool echo = nlmsg_attrs->flags & NLM_F_ECHO;
 
 		return nlmsg_notify(net->rtnl, skb, nlmsg_attrs->portid,
-				    RTNLGRP_TC, echo, alloc_flags);
+				    RTNLGRP_P4TC, echo, alloc_flags);
 	}
 
 	return rtnl_unicast(skb, net, nlmsg_attrs->portid);

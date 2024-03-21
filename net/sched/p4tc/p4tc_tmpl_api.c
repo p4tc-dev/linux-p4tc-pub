@@ -30,6 +30,7 @@
 const struct nla_policy p4tc_root_policy[P4TC_ROOT_MAX + 1] = {
 	[P4TC_ROOT] = { .type = NLA_NESTED },
 	[P4TC_ROOT_PNAME] = { .type = NLA_STRING, .len = P4TC_PIPELINE_NAMSIZ },
+	[P4TC_ROOT_SUBSCRIBE] = { .type = NLA_NESTED },
 };
 
 const struct nla_policy p4tc_policy[P4TC_MAX + 1] = {
@@ -119,13 +120,27 @@ static int p4tc_template_put(struct net *net,
 }
 
 static int tc_ctl_p4_tmpl_1_send(struct sk_buff *skb, struct net *net,
-				 struct nlmsghdr *n, u32 portid)
+				 struct nlmsghdr *n, u32 portid,
+				 const u32 obj_id)
 {
+	struct p4tc_filter_data filter_data = {};
+	int ret;
+
 	if (n->nlmsg_type == RTM_GETP4TEMPLATE)
 		return rtnl_unicast(skb, net, portid);
 
-	return rtnetlink_send(skb, net, portid, RTNLGRP_TC,
-			      n->nlmsg_flags & NLM_F_ECHO);
+	filter_data.cmd = n->nlmsg_type;
+	filter_data.obj_id = p4tc_obj_to_filter_obj(obj_id, false);
+
+	rcu_read_lock();
+	ret = p4tc_nlmsg_filtered_notify(net, skb, portid, GFP_ATOMIC,
+					 RTNLGRP_P4TC,
+					 n->nlmsg_flags & NLM_F_ECHO,
+					 p4tc_filter_broadcast_cb,
+					 &filter_data);
+	rcu_read_unlock();
+
+	return ret;
 }
 
 static int tc_ctl_p4_tmpl_1(struct sk_buff *skb, struct nlmsghdr *n,
@@ -245,7 +260,7 @@ static int tc_ctl_p4_tmpl_1(struct sk_buff *skb, struct nlmsghdr *n,
 
 	nlmsg_end(nskb, nlh);
 
-	return tc_ctl_p4_tmpl_1_send(nskb, net, nlh, portid);
+	return tc_ctl_p4_tmpl_1_send(nskb, net, nlh, portid, t->obj);
 
 free_skb:
 	kfree_skb(nskb);

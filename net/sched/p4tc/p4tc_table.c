@@ -1590,6 +1590,27 @@ out:
 	return ERR_PTR(ret);
 }
 
+bool p4tc_table_check_act(struct p4tc_table *table,
+			  const u32 p_id, const u32 act_id,
+			  const bool check_default_only)
+{
+	struct p4tc_table_act *table_act;
+
+	list_for_each_entry(table_act, &table->tbl_acts_list, node) {
+		if (table_act->act->common.p_id != p_id ||
+		    table_act->act->a_id != act_id)
+			continue;
+
+		if (check_default_only) {
+			if (!(table_act->flags &
+			      BIT(P4TC_TABLE_ACTS_DEFAULT_ONLY)))
+				return true;
+		}
+	}
+
+	return false;
+}
+
 static struct p4tc_table *p4tc_table_update(struct net *net, struct nlattr **tb,
 					    u32 tbl_id,
 					    struct p4tc_pipeline *pipeline,

@@ -821,6 +821,7 @@ p4tc_tbl_entry_emit_event(struct p4tc_table_entry_work *entry_work,
 	u16 who_deleted_ent = entry_work->who_deleted_ent;
 	struct p4tc_table *table = entry_work->table;
 	char *who_deleted = entry_work->who_deleted;
+	struct p4tc_filter_data filter_data = {};
 	struct net *net = pipeline->net;
 	struct nlmsghdr *nlh;
 	struct nlattr *nest;
@@ -849,8 +850,19 @@ p4tc_tbl_entry_emit_event(struct p4tc_table_entry_work *entry_work,
 	if (cmd == RTM_P4TC_GET)
 		return rtnl_unicast(skb, net, portid);
 
-	err = nlmsg_notify(net->rtnl, skb, portid, RTNLGRP_TC, echo,
-			   GFP_ATOMIC);
+	filter_data.table.entry = entry;
+	filter_data.table.id = table->tbl_id;
+	filter_data.obj_id = P4TC_FILTER_OBJ_RUNTIME_TABLE;
+	filter_data.cmd = cmd;
+
+	if (lock_rtnl)
+		rcu_read_lock();
+	err = p4tc_nlmsg_filtered_notify(net, skb, portid, GFP_ATOMIC,
+					 RTNLGRP_P4TC, echo,
+					 p4tc_filter_broadcast_cb,
+					 &filter_data);
+	if (lock_rtnl)
+		rcu_read_unlock();
 	if (!err)
 		return 0;
 
@@ -1568,6 +1580,12 @@ static int p4tc_table_entry_flush(struct net *net,
 
 		while ((entry = rhashtable_walk_next(&iter)) &&
 		       !IS_ERR(entry)) {
+			struct p4tc_filter_data filter_data = {
+				.table.entry = entry,
+				.table.id = table->tbl_id,
+				.obj_id = P4TC_FILTER_OBJ_RUNTIME_TABLE,
+				.cmd = RTM_P4TC_DEL,
+			};
 			struct p4tc_table_entry_work *entry_work =
 				p4tc_table_entry_work(entry);
 			struct p4tc_table_entry_value *value =
@@ -1579,7 +1597,7 @@ static int p4tc_table_entry_flush(struct net *net,
 				continue;
 			}
 
-			if (!p4tc_filter_exec(filter, entry))
+			if (!p4tc_filter_exec(filter, &filter_data))
 				continue;
 
 			entry_work->who_deleted_ent = P4TC_ENTITY_TC;
@@ -1645,8 +1663,9 @@ static int p4tc_table_entry_flush(struct net *net,
 		nla_nest_end(skb, root);
 		nlmsg_end(skb, nlh);
 
-		ret = nlmsg_notify(pipeline->net->rtnl, skb, portid, RTNLGRP_TC,
-				   n->nlmsg_flags & NLM_F_ECHO, GFP_KERNEL);
+		ret = nlmsg_notify(pipeline->net->rtnl, skb, portid,
+				   RTNLGRP_P4TC, n->nlmsg_flags & NLM_F_ECHO,
+				   GFP_KERNEL);
 		if (ret < 0)
 			NL_SET_ERR_MSG(extack,
 				       "Unable to send flush netlink event");
@@ -1878,22 +1897,12 @@ static bool p4tc_table_check_entry_act(struct p4tc_table *table,
 				       struct tc_action *entry_act)
 {
 	struct tcf_p4act *entry_p4act = to_p4act(entry_act);
-	struct p4tc_table_act *table_act;
 
 	if (entry_p4act->num_runt_params > 0)
 		return false;
 
-	list_for_each_entry(table_act, &table->tbl_acts_list, node) {
-		if (table_act->act->common.p_id != entry_p4act->p_id ||
-		    table_act->act->a_id != entry_p4act->act_id)
-			continue;
-
-		if (!(table_act->flags &
-		      BIT(P4TC_TABLE_ACTS_DEFAULT_ONLY)))
-			return true;
-	}
-
-	return false;
+	return p4tc_table_check_act(table, entry_p4act->p_id,
+				    entry_p4act->act_id, true);
 }
 
 static bool p4tc_table_check_no_act(struct p4tc_table *table)
@@ -3045,25 +3054,15 @@ out:
 }
 
 int p4tc_tbl_entry_root(struct net *net, struct sk_buff *skb,
-			struct nlmsghdr *n, int cmd,
+			struct nlmsghdr *n, struct nlattr **tb,
 			struct netlink_ext_ack *extack)
 {
 	struct nlattr *p4tca[P4TC_MSGBATCH_SIZE + 1];
 	int echo = n->nlmsg_flags & NLM_F_ECHO;
-	struct nlattr *tb[P4TC_ROOT_MAX + 1];
+	int cmd = n->nlmsg_type;
 	char *p_name = NULL;
 	int listeners;
 	int ret = 0;
-
-	ret = nlmsg_parse(n, sizeof(struct p4tcmsg), tb, P4TC_ROOT_MAX,
-			  p4tc_root_policy, extack);
-	if (ret < 0)
-		return ret;
-
-	if (NL_REQ_ATTR_CHECK(extack, NULL, tb, P4TC_ROOT)) {
-		NL_SET_ERR_MSG(extack, "Netlink P4TC table attributes missing");
-		return -EINVAL;
-	}
 
 	ret = nla_parse_nested(p4tca, P4TC_MSGBATCH_SIZE, tb[P4TC_ROOT], NULL,
 			       extack);
@@ -3078,7 +3077,7 @@ int p4tc_tbl_entry_root(struct net *net, struct sk_buff *skb,
 	if (tb[P4TC_ROOT_PNAME])
 		p_name = nla_data(tb[P4TC_ROOT_PNAME]);
 
-	listeners = rtnl_has_listeners(net, RTNLGRP_TC);
+	listeners = rtnl_has_listeners(net, RTNLGRP_P4TC);
 
 	if ((echo || listeners) || cmd == RTM_P4TC_GET)
 		ret = __p4tc_tbl_entry_root(net, skb, n, cmd, p_name, p4tca,
@@ -3086,6 +3085,47 @@ int p4tc_tbl_entry_root(struct net *net, struct sk_buff *skb,
 	else
 		ret = __p4tc_tbl_entry_root_fast(net, n, cmd, p_name, p4tca,
 						 extack);
+	return ret;
+}
+
+int p4tc_tbl_entry_filter_sub(struct sk_buff *skb,
+			      struct p4tc_path_nlattrs *nl_path_attrs,
+			      struct nlattr *nla, u32 cmd,
+			      struct netlink_ext_ack *extack)
+{
+	struct p4tc_table_get_state table_get_state = { NULL };
+	struct nlattr *tb[P4TC_ENTRY_MAX + 1] = { NULL };
+	struct p4tc_filter_context ctx = {0};
+	struct net *net = sock_net(skb->sk);
+	struct p4tc_pipeline *pipeline;
+	struct p4tc_table *table;
+	int ret;
+
+	if (nla) {
+		ret = nla_parse_nested(tb, P4TC_ENTRY_MAX, nla,
+				       p4tc_entry_policy, extack);
+		if (ret < 0)
+			return ret;
+
+		ret = p4tc_table_entry_get_table(net, RTM_P4TC_GET,
+						 &table_get_state, tb,
+						 nl_path_attrs, extack);
+		if (ret < 0)
+			return ret;
+	}
+
+	pipeline = table_get_state.pipeline;
+	table = table_get_state.table;
+
+	ctx.obj_id = P4TC_FILTER_OBJ_RUNTIME_TABLE;
+	ctx.pipeline = pipeline;
+	ctx.table = table;
+	ctx.cmd = cmd;
+
+	ret = p4tc_filter_subscribe(skb, &ctx, tb[P4TC_ENTRY_FILTER],
+				    extack);
+
+	p4tc_table_entry_put_table(&table_get_state);
 	return ret;
 }
 
@@ -3168,12 +3208,18 @@ static int p4tc_table_entry_dump(struct net *net, struct sk_buff *skb,
 		while (i < P4TC_MSGBATCH_SIZE &&
 		       (entry = rhashtable_walk_next(ctx->iter)) &&
 		       !IS_ERR(entry)) {
+			struct p4tc_filter_data filter_data = {
+				.table.entry = entry,
+				.table.id = table->tbl_id,
+				.obj_id = P4TC_FILTER_OBJ_RUNTIME_TABLE,
+				.cmd = RTM_P4TC_GET,
+			};
 			struct p4tc_table_entry_value *value =
 				p4tc_table_entry_value(entry);
 			struct nlattr *count;
 
 			if (p4tc_ctrl_read_ok(value->permissions) &&
-			    p4tc_filter_exec(ctx->entry_filter, entry)) {
+			    p4tc_filter_exec(ctx->entry_filter, &filter_data)) {
 				count = nla_nest_start(skb, i + 1);
 				if (!count) {
 					rhashtable_walk_stop(ctx->iter);

@@ -29,11 +29,67 @@
 #include <net/flow_offload.h>
 #include <net/p4tc_ext_api.h>
 
+static int tc_ctl_p4_root_subscribe(struct sk_buff *skb, struct nlmsghdr *n,
+				    struct p4tc_path_nlattrs *nl_path_attrs,
+				    struct nlattr *nla,
+				    struct netlink_ext_ack *extack)
+
+{
+	struct nlattr *tb[P4TC_MAX + 1];
+	u32 cmd = 0;
+	int ret;
+
+	ret = nla_parse_nested(tb, P4TC_MAX, nla, p4tc_policy, extack);
+	if (ret < 0)
+		return ret;
+
+	if (NL_REQ_ATTR_CHECK(extack, nla, tb, P4TC_PATH)) {
+		NL_SET_ERR_MSG(extack, "Must specify object path");
+		return -EINVAL;
+	}
+
+	return p4tc_tbl_entry_filter_sub(skb, nl_path_attrs, tb[P4TC_PARAMS],
+					 cmd, extack);
+}
+
 static int tc_ctl_p4_root(struct sk_buff *skb, struct nlmsghdr *n, int cmd,
 			  struct netlink_ext_ack *extack)
 {
 	struct p4tcmsg *t = (struct p4tcmsg *)nlmsg_data(n);
+	struct p4tc_path_nlattrs nl_path_attrs = { 0 };
+	struct nlattr *tb[P4TC_ROOT_MAX + 1];
+	u32 ids[P4TC_PATH_MAX] = { 0 };
 	int ret;
+
+	ret = nlmsg_parse(n, sizeof(struct p4tcmsg), tb, P4TC_ROOT_MAX,
+			  p4tc_root_policy, extack);
+	if (ret < 0)
+		return ret;
+
+	if (!tb[P4TC_ROOT] && !tb[P4TC_ROOT_SUBSCRIBE]) {
+		NL_SET_ERR_MSG(extack,
+			       "Must specify either P4TC_ROOT or P4TC_ROOT_SUBSCRIBE");
+		return -EINVAL;
+	}
+
+	if (!!tb[P4TC_ROOT] != !tb[P4TC_ROOT_SUBSCRIBE]) {
+		NL_SET_ERR_MSG(extack,
+			       "P4TC_ROOT and P4TC_ROOT_SUBSCRIBE are mutually exclusive");
+		return -EINVAL;
+	}
+
+	if (tb[P4TC_ROOT_SUBSCRIBE]) {
+		if (tb[P4TC_ROOT_PNAME]) {
+			nl_path_attrs.pname = nla_data(tb[P4TC_ROOT_PNAME]);
+			nl_path_attrs.pname_passed = true;
+		}
+		ids[P4TC_PID_IDX] = t->pipeid;
+		nl_path_attrs.ids = ids;
+
+		return tc_ctl_p4_root_subscribe(skb, n, &nl_path_attrs,
+						tb[P4TC_ROOT_SUBSCRIBE],
+						extack);
+	}
 
 	switch (t->obj) {
 	case P4TC_OBJ_RUNTIME_TABLE: {
@@ -45,7 +101,7 @@ static int tc_ctl_p4_root(struct sk_buff *skb, struct nlmsghdr *n, int cmd,
 			return -EBUSY;
 		}
 
-		ret = p4tc_tbl_entry_root(net, skb, n, cmd, extack);
+		ret = p4tc_tbl_entry_root(net, skb, n, tb, extack);
 
 		put_net(net);
 
@@ -53,7 +109,7 @@ static int tc_ctl_p4_root(struct sk_buff *skb, struct nlmsghdr *n, int cmd,
 	}
 	case P4TC_OBJ_RUNTIME_EXTERN:
 		rtnl_lock();
-		ret = p4tc_ctl_extern(skb, n, cmd, extack);
+		ret = p4tc_ctl_extern(skb, n, tb, extack);
 		rtnl_unlock();
 		return ret;
 	default:
@@ -152,6 +208,7 @@ static int __init p4tc_tbl_init(void)
 {
 	rtnl_register_many(p4tc_runt_rtnl_msg_handlers);
 
+	p4tc_filter_sock_table_init();
 	return 0;
 }
 
