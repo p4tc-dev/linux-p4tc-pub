@@ -437,6 +437,8 @@ p4a_runt_prealloc_init_param(struct idr *params_idr,
 	nparam->id = *param_id;
 	nparam->value = value;
 	nparam->type = param->type;
+	nparam->bitend = param->bitend;
+	nparam->bytesz = param->bytesz;
 
 	return nparam;
 }

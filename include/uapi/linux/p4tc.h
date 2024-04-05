@@ -105,6 +105,8 @@ enum {
 	P4TC_ROOT_UNSPEC,
 	P4TC_ROOT, /* nested messages */
 	P4TC_ROOT_PNAME, /* string - mandatory for pipeline create */
+	P4TC_ROOT_COUNT,
+	P4TC_ROOT_FLAGS,
 	__P4TC_ROOT_MAX,
 };
 
@@ -127,6 +129,7 @@ enum {
 enum {
 	P4TC_OBJ_RUNTIME_UNSPEC,
 	P4TC_OBJ_RUNTIME_TABLE,
+	P4TC_OBJ_RUNTIME_EXTERN,
 	__P4TC_OBJ_RUNTIME_MAX,
 };
 
@@ -435,6 +438,14 @@ enum {
 
 #define P4TC_ENTRY_TBL_ATTRS_MAX (__P4TC_ENTRY_TBL_ATTRS - 1)
 
+enum {
+	P4TC_ENTRY_EXTERN_UNSPEC,
+	P4TC_ENTRY_EXTERN_COUNTER, /* nested extern associated with entry counter */
+	__P4TC_ENTRY_EXTERN_MAX
+};
+
+#define P4TC_ENTRY_EXTERN_MAX (__P4TC_ENTRY_EXTERN_MAX - 1)
+
 /* Table entry attributes */
 enum {
 	P4TC_ENTRY_UNSPEC,
@@ -479,6 +490,7 @@ enum {
 	P4TC_ENTRY_AGING, /* u64 table entry aging */
 	P4TC_ENTRY_PROFILE_ID, /* u32 table entry profile ID */
 	P4TC_ENTRY_FILTER, /* nested filter */
+	P4TC_ENTRY_EXTERNS, /* nested extern associated with entry counter */
 	P4TC_ENTRY_PAD,
 	__P4TC_ENTRY_MAX
 };

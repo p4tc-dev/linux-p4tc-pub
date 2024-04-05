@@ -11,6 +11,7 @@
 #include <linux/rhashtable-types.h>
 #include <net/tc_act/p4tc.h>
 #include <net/p4tc_types.h>
+#include <linux/bpf.h>
 
 #define P4TC_DEFAULT_NUM_TABLES P4TC_MINTABLES_COUNT
 #define P4TC_DEFAULT_MAX_RULES 1
@@ -182,6 +183,9 @@ struct p4tc_pipeline *p4tc_pipeline_find_byid(struct net *net,
 struct p4tc_pipeline *
 p4tc_pipeline_find_get(struct net *net, const char *p_name,
 		       const u32 pipeid, struct netlink_ext_ack *extack);
+struct p4tc_pipeline *
+p4tc_pipeline_find_get_sealed(struct net *net, const char *p_name,
+			      const u32 pipeid, struct netlink_ext_ack *extack);
 
 static inline bool p4tc_pipeline_get(struct p4tc_pipeline *pipeline)
 {
@@ -270,7 +274,32 @@ static inline int p4tc_action_destroy(struct tc_action *acts[])
 
 #define P4TC_MAX_PARAM_DATA_SIZE 124
 
-#define P4TC_EXT_MAX_PARAM_DATA_SIZE 128
+#define P4TC_EXT_MAX_PARAM_DATA_SIZE 64
+
+#define P4TC_EXT_FLAGS_UNSPEC 0x0
+#define P4TC_EXT_FLAGS_CONTROL_READ 0x1
+#define P4TC_EXT_FLAGS_CONTROL_WRITE 0x2
+
+enum {
+	P4TC_EXT_INST_FLAGS_UNSPEC,
+	P4TC_EXT_INST_FLAGS_HAS_CUST_PARAM,
+};
+
+struct p4tc_ext_bpf_params {
+	u32 pipe_id;
+	u32 ext_id;
+	u32 inst_id;
+	u32 index;
+	u32 flags;
+	u8  in_params[P4TC_EXT_MAX_PARAM_DATA_SIZE]; /* extern specific params if any */
+};
+
+struct p4tc_ext_bpf_val {
+	u32 ext_id;
+	u32 index;
+	u32 verdict;
+	u8 out_params[P4TC_EXT_MAX_PARAM_DATA_SIZE]; /* specific values if any */
+};
 
 struct p4tc_table_defact {
 	struct tc_action *acts[2];
@@ -414,6 +443,8 @@ struct p4tc_table_entry_create_bpf_params {
 enum {
 	P4TC_ENTRY_CREATE_BPF_PARAMS_SZ = 160,
 	P4TC_ENTRY_ACT_BPF_PARAMS_SZ = 8,
+	P4TC_EXT_BPF_PARAMS_SZ = 84,
+	P4TC_EXT_BPF_RES_SZ = 76,
 };
 
 #define P4TC_TASK_COMM_LEN 64
@@ -446,6 +477,7 @@ struct p4tc_table_entry_value_proc {
 
 struct p4tc_table_entry_value {
 	struct tc_action                         *acts[2];
+	struct p4tc_extern_common                *counter;
 	/* Accounts for how many entities are referencing it
 	 * eg: Data path, one or more control path and timer.
 	 */
@@ -760,6 +792,12 @@ struct p4tc_tmpl_extern {
 	bool                         has_exec_method;
 };
 
+static inline struct p4tc_tmpl_extern *
+p4tc_tmpl_ext_find_byid(struct p4tc_pipeline *pipeline, const u32 ext_id)
+{
+	return idr_find(&pipeline->p_ext_idr, ext_id);
+}
+
 /* struct p4tc_tmpl_extern is global, however the data of each instances is
  * associated to a pipeline. To do that association we create a per pipeline
  * analagous struct (p4tc_user_pipeline_extern) for p4tc_tmpl_extern that holds
@@ -783,10 +821,21 @@ struct p4tc_extern_inst {
 	struct p4tc_template_common      common;
 	struct p4tc_extern_params        *params;
 	const struct p4tc_extern_ops     *ops;
+	struct idr                       control_elems_idr;
+	struct list_head                 unused_elems;
+	/* Locks the available externs list.
+	 * Which will be used by table entries that reference externs (refer to
+	 * direct counters and meters in P4).
+	 * Note that table entries can be created, update or deleted by both
+	 * control and data path. So this list may be modified from both
+	 * contexts.
+	 */
+	spinlock_t                       available_list_lock;
 	/* Accounts for how many elements refer to this extern. */
 	refcount_t                       inst_ref;
 	struct p4tc_user_pipeline_extern *pipe_ext;
 	char                             *ext_name;
+	atomic_t                         curr_num_elems;
 	u32                              max_num_elems;
 	u32                              ext_id;
 	u32                              ext_inst_id;
@@ -830,6 +879,9 @@ static inline void p4tc_ext_inst_put_ref(struct p4tc_extern_inst *inst)
 }
 
 struct p4tc_extern_inst *
+p4tc_ext_inst_get_byids(struct net *net, struct p4tc_pipeline **pipeline,
+			struct p4tc_ext_bpf_params *params);
+struct p4tc_extern_inst *
 p4tc_ext_find_byids(struct p4tc_pipeline *pipeline,
 		    const u32 ext_id, const u32 inst_id);
 
@@ -855,6 +907,17 @@ struct p4tc_extern_tmpl_param {
 };
 
 void p4tc_ext_tmpl_params_free(struct p4tc_extern_params *params);
+int p4tc_datapath_extern_md_write(struct net *net,
+				  struct p4tc_ext_bpf_params *params,
+				  const u32 params__sz,
+				  struct p4tc_ext_bpf_val *val,
+				  const u32 val__sz);
+struct p4tc_ext_bpf_val *
+p4tc_datapath_extern_md_read(struct net *net,
+			     struct p4tc_ext_bpf_params *params,
+			     const u32 params__sz);
+struct p4tc_extern_params *
+p4tc_ext_params_copy(struct p4tc_extern_params *params_orig);
 
 struct p4tc_extern_param {
 	struct p4tc_extern_tmpl_param   *tmpl_param;
@@ -872,6 +935,9 @@ struct p4tc_extern_param_ops {
 	int (*init_value)(struct net *net,
 			  struct p4tc_extern_param *nparam, void *value,
 			  struct netlink_ext_ack *extack);
+	void (*copy_value)(struct p4tc_extern_param *nparam, const void *value);
+	void (*copy_value_bpf)(void *bpf_mem,
+			       const struct p4tc_extern_param *param);
 	void (*default_value)(struct p4tc_extern_param *nparam);
 	int (*dump_value)(struct sk_buff *skb, struct p4tc_extern_param_ops *op,
 			  struct p4tc_extern_param *param);
@@ -879,6 +945,17 @@ struct p4tc_extern_param_ops {
 	u32 len;
 	u32 alloc_len;
 };
+
+extern const struct p4tc_extern_param_ops ext_param_ops[P4TC_T_MAX + 1];
+
+static inline const struct p4tc_extern_param_ops *
+p4tc_extern_param_type_ops_get(const u32 typeid)
+{
+	if (typeid > P4TC_T_MAX)
+		return NULL;
+
+	return &ext_param_ops[typeid];
+}
 
 #define to_pipeline(t) ((struct p4tc_pipeline *)t)
 #define p4tc_to_act(t) ((struct p4tc_act *)t)

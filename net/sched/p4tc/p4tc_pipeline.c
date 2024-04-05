@@ -27,6 +27,7 @@
 #include <net/netlink.h>
 #include <net/flow_offload.h>
 #include <net/p4tc_types.h>
+#include <net/p4tc_ext_api.h>
 
 static unsigned int pipeline_net_id;
 static struct p4tc_pipeline *root_pipeline;
@@ -229,9 +230,18 @@ static int pipeline_try_set_state_ready(struct p4tc_pipeline *pipeline,
 	if (ret < 0)
 		return ret;
 
+	ret = p4tc_extern_insts_init_elems(&pipeline->user_ext_idr);
+	if (ret < 0)
+		goto unset_table_state_ready;
+
 	pipeline->p_state = P4TC_STATE_READY;
 
 	return true;
+
+unset_table_state_ready:
+	p4tc_table_put_mask_array(pipeline);
+
+	return ret;
 }
 
 struct p4tc_pipeline *p4tc_pipeline_find_byid(struct net *net, const u32 pipeid)
@@ -402,6 +412,26 @@ p4tc_pipeline_find_get(struct net *net, const char *p_name,
 	return pipeline;
 }
 EXPORT_SYMBOL_GPL(p4tc_pipeline_find_get);
+
+struct p4tc_pipeline *
+p4tc_pipeline_find_get_sealed(struct net *net, const char *p_name,
+			      const u32 pipeid, struct netlink_ext_ack *extack)
+{
+	struct p4tc_pipeline *pipeline;
+
+	pipeline = p4tc_pipeline_find_get(net, p_name, pipeid, extack);
+	if (IS_ERR(pipeline))
+		return pipeline;
+
+	if (!p4tc_pipeline_sealed(pipeline)) {
+		__p4tc_pipeline_put(pipeline, &pipeline->common, NULL);
+		NL_SET_ERR_MSG(extack, "Pipeline isn't sealed");
+		return ERR_PTR(-EINVAL);
+	}
+
+	return pipeline;
+}
+EXPORT_SYMBOL_GPL(p4tc_pipeline_find_get_sealed);
 
 void p4tc_pipeline_put(struct p4tc_pipeline *pipeline)
 {

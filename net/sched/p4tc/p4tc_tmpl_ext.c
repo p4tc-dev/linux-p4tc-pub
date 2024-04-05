@@ -80,8 +80,18 @@ static void p4tc_extern_ops_put(const struct p4tc_extern_ops *ops)
 static bool
 p4tc_extern_mod_callbacks_check(const struct p4tc_extern_ops *ext)
 {
-	if ((ext->construct || ext->deconstruct))
+	if ((ext->construct || ext->deconstruct) && !(ext->rctrl || ext->dump))
 		return (ext->construct && ext->deconstruct);
+
+	if (ext->rctrl && !(ext->construct && ext->deconstruct))
+		return false;
+
+	if (ext->dump &&
+	    !(ext->construct && ext->deconstruct && ext->rctrl && ext->dump))
+		return false;
+
+	if (ext->init && !ext->rctrl)
+		return false;
 
 	return true;
 }
@@ -233,6 +243,12 @@ p4tc_user_pipeline_ext_get(struct p4tc_pipeline *pipeline, const u32 ext_id)
 	return pipe_ext;
 }
 
+void p4tc_ext_inst_purge(struct p4tc_extern_inst *inst)
+{
+	p4tc_ext_purge(&inst->control_elems_idr);
+}
+EXPORT_SYMBOL_GPL(p4tc_ext_inst_purge);
+
 void p4tc_ext_tmpl_params_free(struct p4tc_extern_params *params)
 {
 	struct p4tc_extern_tmpl_param *param;
@@ -251,8 +267,10 @@ static void ___p4tc_ext_inst_put(struct p4tc_extern_inst *inst, bool put_params)
 	if (p4tc_ext_inst_has_construct(inst)) {
 		inst->ops->deconstruct(inst);
 	} else {
-		if (inst->params && put_params)
+		if (inst->params && put_params) {
 			p4tc_ext_tmpl_params_free(inst->params);
+			p4tc_ext_inst_purge(inst);
+		}
 		kfree(inst);
 	}
 }
@@ -357,6 +375,57 @@ p4tc_ext_tmpl_param_find_byname(struct idr *params_idr, const char *param_name)
 	return NULL;
 }
 
+static struct p4tc_extern_tmpl_param *
+p4tc_ext_param_find_byany(struct idr *params_idr, const char *param_name,
+			  const u32 param_id, struct netlink_ext_ack *extack)
+{
+	struct p4tc_extern_tmpl_param *param;
+	int err;
+
+	if (param_id) {
+		param = p4tc_ext_tmpl_param_find_byid(params_idr, param_id);
+		if (!param) {
+			NL_SET_ERR_MSG(extack, "Unable to find param by id");
+			err = -EINVAL;
+			goto out;
+		}
+	} else {
+		if (param_name) {
+			param = p4tc_ext_tmpl_param_find_byname(params_idr,
+								param_name);
+			if (!param) {
+				NL_SET_ERR_MSG(extack, "Param name not found");
+				err = -EINVAL;
+				goto out;
+			}
+		} else {
+			NL_SET_ERR_MSG(extack, "Must specify param name or id");
+			err = -EINVAL;
+			goto out;
+		}
+	}
+
+	return param;
+
+out:
+	return ERR_PTR(err);
+}
+
+struct p4tc_extern_tmpl_param *
+p4tc_ext_param_find_byanyattr(struct idr *params_idr,
+			      struct nlattr *name_attr,
+			      const u32 param_id,
+			      struct netlink_ext_ack *extack)
+{
+	char *param_name = NULL;
+
+	if (name_attr)
+		param_name = nla_data(name_attr);
+
+	return p4tc_ext_param_find_byany(params_idr, param_name, param_id,
+					 extack);
+}
+
 static struct p4tc_extern_inst *
 p4tc_ext_inst_find_byid(struct p4tc_user_pipeline_extern *pipe_ext,
 			const u32 inst_id)
@@ -439,12 +508,6 @@ p4tc_tmpl_ext_find_name(struct p4tc_pipeline *pipeline, const char *extern_name)
 			return ext;
 
 	return NULL;
-}
-
-static struct p4tc_tmpl_extern *
-p4tc_tmpl_ext_find_byid(struct p4tc_pipeline *pipeline, const u32 ext_id)
-{
-	return idr_find(&pipeline->p_ext_idr, ext_id);
 }
 
 static struct p4tc_tmpl_extern *
@@ -665,7 +728,7 @@ p4tc_extern_params_value_policy[P4TC_EXT_VALUE_PARAMS_MAX + 1] = {
 	[P4TC_EXT_PARAMS_VALUE_RAW] = { .type = NLA_BINARY },
 };
 
-static void *
+void *
 generic_param_value_parse(struct p4tc_extern_tmpl_param *param,
 			  struct net *net, struct nlattr *nla,
 			  struct p4tc_extern_tmpl_param_ops *tmpl_param_ops,
@@ -731,6 +794,58 @@ generic_param_value_parse(struct p4tc_extern_tmpl_param *param,
 		return ERR_PTR(-EINVAL);
 
 	return value;
+}
+
+static void *generic_init_param_value(void *value_arg, const u32 alloc_len,
+				      const u16 param_bytesz)
+{
+	void *value = kzalloc(alloc_len, GFP_KERNEL);
+
+	if (!value)
+		return ERR_PTR(-ENOMEM);
+
+	memcpy(value, value_arg, param_bytesz);
+
+	return value;
+}
+
+
+int p4tc_ext_param_value_parse_and_init(struct net *net,
+					struct p4tc_extern_param *nparam,
+					struct nlattr **tb, bool value_required,
+					struct netlink_ext_ack *extack)
+{
+	const u32 alloc_len =
+		BITS_TO_BYTES(nparam->tmpl_param->type->container_bitsz);
+	u16 param_bytesz = BITS_TO_BYTES(nparam->tmpl_param->bitsz);
+	bool free_value = !tb[P4TC_EXT_PARAMS_VALUE];
+	struct p4tc_extern_param_ops *ops = NULL;
+	void *value;
+	int ret = 0;
+
+	ops = nparam->ops;
+
+	value = generic_param_value_parse(nparam->tmpl_param,
+					  net, tb[P4TC_EXT_PARAMS_VALUE],
+					  nparam->tmpl_param->ops,
+					  value_required, extack);
+	if (IS_ERR(value))
+		return PTR_ERR(value);
+
+	if (ops && ops->init_value) {
+		ret = ops->init_value(net, nparam, value, extack);
+		goto free;
+	}
+
+	nparam->value = generic_init_param_value(value, alloc_len,
+						 param_bytesz);
+	if (IS_ERR(nparam->value))
+		ret = PTR_ERR(nparam->value);
+
+free:
+	if (free_value)
+		kfree(value);
+	return ret;
 }
 
 static int
@@ -928,7 +1043,7 @@ p4tc_extern_create_params_value(struct net *net, struct nlattr *nla,
 	struct p4tc_extern_params *params;
 	int ret;
 
-	params = p4tc_extern_params_init();
+	params = p4tc_extern_params_init(GFP_KERNEL);
 	if (!params) {
 		ret = -ENOMEM;
 		goto err_out;
@@ -966,7 +1081,7 @@ p4tc_extern_update_params_value(struct net *net, struct nlattr *nla,
 	int ret;
 
 	if (nla) {
-		params = p4tc_extern_params_init();
+		params = p4tc_extern_params_init(GFP_KERNEL);
 		if (!params) {
 			ret = -ENOMEM;
 			goto err_out;
@@ -1261,6 +1376,10 @@ p4tc_ext_inst_alloc(const struct p4tc_extern_ops *ops, const u32 max_num_elems,
 	inst->ops = ops;
 	inst->max_num_elems = max_num_elems;
 	refcount_set(&inst->inst_ref, 1);
+	idr_init(&inst->control_elems_idr);
+	INIT_LIST_HEAD(&inst->unused_elems);
+	spin_lock_init(&inst->available_list_lock);
+	atomic_set(&inst->curr_num_elems, 0);
 	inst->ext_name = ext_name;
 	inst->tbl_bindable = tbl_bindable;
 
@@ -1320,6 +1439,33 @@ free_inst_path:
 	kfree(instname_clone);
 	return ERR_PTR(err);
 }
+
+struct p4tc_extern_inst *
+p4tc_ext_inst_get_byids(struct net *net, struct p4tc_pipeline **pipeline,
+			struct p4tc_ext_bpf_params *params)
+{
+	struct p4tc_extern_inst *inst;
+	int err;
+
+	*pipeline = p4tc_pipeline_find_get_sealed(net, NULL, params->pipe_id,
+						  NULL);
+	if (IS_ERR(*pipeline))
+		return (struct p4tc_extern_inst *)*pipeline;
+
+	inst = p4tc_ext_find_byids(*pipeline, params->ext_id, params->inst_id);
+	if (IS_ERR(inst)) {
+		err = PTR_ERR(inst);
+		goto put_pipeline;
+	}
+
+	return inst;
+
+put_pipeline:
+	p4tc_pipeline_put(*pipeline);
+
+	return ERR_PTR(err);
+}
+EXPORT_SYMBOL(p4tc_ext_inst_get_byids);
 
 static struct p4tc_extern_inst *
 p4tc_ext_inst_update(struct net *net, struct nlmsghdr *n,
@@ -1386,7 +1532,13 @@ p4tc_ext_inst_update(struct net *net, struct nlmsghdr *n,
 	else
 		tbl_bindable = old_inst->tbl_bindable;
 
+	if (tbl_bindable && !ext->ops) {
+		NL_SET_ERR_MSG(extack,
+			       "Table bindable instance must have extern module");
+		return ERR_PTR(-EINVAL);
+	}
 	needs_value_param = !ext->ops;
+
 	new_params = p4tc_extern_update_params_value(net,
 						     tb[P4TC_TMPL_EXT_INST_CONTROL_PARAMS],
 						     &has_scalar_params,
