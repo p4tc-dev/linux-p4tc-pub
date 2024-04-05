@@ -138,6 +138,14 @@ static const struct netlink_range_validation permissions_range = {
 	.max = P4TC_MAX_PERMISSION,
 };
 
+static const struct nla_policy
+p4tc_table_externs_policy[P4TC_TABLE_EXTERN_MAX + 1]= {
+	[P4TC_TABLE_EXTERN_COUNTER] = {
+		.type = NLA_STRING,
+		.len = P4TC_EXTERN_INST_NAMSIZ * 2 + 1
+	},
+};
+
 static const struct nla_policy p4tc_table_policy[P4TC_TABLE_MAX + 1] = {
 	[P4TC_TABLE_NAME] = { .type = NLA_STRING, .len = P4TC_TABLE_NAMSIZ },
 	[P4TC_TABLE_KEYSZ] = NLA_POLICY_FULL_RANGE(NLA_U32, &keysz_range),
@@ -156,7 +164,49 @@ static const struct nla_policy p4tc_table_policy[P4TC_TABLE_MAX + 1] = {
 	[P4TC_TABLE_NUM_TIMER_PROFILES] =
 		NLA_POLICY_RANGE(NLA_U32, 1, P4TC_MAX_NUM_TIMER_PROFILES),
 	[P4TC_TABLE_ENTRY] = { .type = NLA_NESTED },
+	[P4TC_TABLE_EXTERNS] = { .type = NLA_NESTED },
 };
+
+static int
+p4tc_table_counter_fill_nlmsg(struct sk_buff *skb,
+			      struct p4tc_extern_inst *counter)
+{
+	unsigned char *b = nlmsg_get_pos(skb);
+
+	if (nla_put_string(skb, P4TC_TABLE_EXTERN_COUNTER, counter->common.name))
+		goto out_nlmsg_trim;
+
+	return 0;
+
+out_nlmsg_trim:
+	nlmsg_trim(skb, b);
+	return -1;
+}
+
+
+static int
+p4tc_table_externs_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
+{
+	unsigned char *b = nlmsg_get_pos(skb);
+	struct nlattr *nest;
+
+	nest = nla_nest_start(skb, P4TC_TABLE_EXTERNS);
+	if (!nest)
+		goto out_nlmsg_trim;
+
+	if (table->tbl_counter) {
+		if (p4tc_table_counter_fill_nlmsg(skb, table->tbl_counter) < 0)
+			goto out_nlmsg_trim;
+	}
+
+	nla_nest_end(skb, nest);
+
+	return 0;
+
+out_nlmsg_trim:
+	nlmsg_trim(skb, b);
+	return -1;
+}
 
 static int _p4tc_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 {
@@ -181,6 +231,9 @@ static int _p4tc_table_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 		goto out_nlmsg_trim;
 
 	if (nla_put_string(skb, P4TC_TABLE_NAME, table->common.name))
+		goto out_nlmsg_trim;
+
+	if (p4tc_table_externs_fill_nlmsg(skb, table) < 0)
 		goto out_nlmsg_trim;
 
 	if (table->tbl_dflt_hitact) {
@@ -1257,12 +1310,58 @@ p4tc_table_entry_create(struct net *net, struct nlattr **tb,
 	return table;
 }
 
+static int p4tc_table_counter_bind(struct p4tc_pipeline *pipeline,
+				   struct p4tc_table *table,
+				   struct p4tc_user_pipeline_extern **pipe_ext,
+				   struct p4tc_extern_inst **inst,
+				   struct nlattr *counter_nla,
+				   struct netlink_ext_ack *extack)
+{
+	const char *ext_inst_path = nla_data(counter_nla);
+
+	*inst = p4tc_ext_inst_table_bind(pipeline, pipe_ext,
+					ext_inst_path, extack);
+	if (IS_ERR(*inst))
+		return PTR_ERR(inst);
+
+	return 0;
+}
+
+static int p4tc_table_externs_bind(struct p4tc_pipeline *pipeline,
+				   struct p4tc_table *table,
+				   struct p4tc_user_pipeline_extern **pipe_ext,
+				   struct p4tc_extern_inst **insts,
+				   struct nlattr *nla,
+				   struct netlink_ext_ack *extack)
+{
+	const u32 nla_counter_idx = P4TC_TABLE_EXTERN_COUNTER;
+	struct nlattr *tb[P4TC_TABLE_EXTERN_MAX + 1];
+	int ret;
+
+	ret = nla_parse_nested(tb, P4TC_TABLE_EXTERN_MAX, nla,
+			       p4tc_table_externs_policy, extack);
+	if (ret < 0)
+		return ret;
+
+	if (tb[nla_counter_idx])
+		return p4tc_table_counter_bind(pipeline, table,
+					       &pipe_ext[nla_counter_idx -1],
+					       &insts[nla_counter_idx - 1],
+					       tb[nla_counter_idx],
+					       extack);
+
+	return 0;
+}
+
 static struct p4tc_table *p4tc_table_create(struct net *net, struct nlattr **tb,
 					    u32 tbl_id,
 					    struct p4tc_pipeline *pipeline,
 					    struct netlink_ext_ack *extack)
 {
+	struct p4tc_user_pipeline_extern *pipe_ext[P4TC_TABLE_EXTERN_MAX + 1] = {};
 	struct rhashtable_params table_hlt_params = entry_hlt_params;
+	struct p4tc_extern_inst *insts[P4TC_TABLE_EXTERN_MAX] = {};
+	const u32 nla_counter_idx = P4TC_TABLE_EXTERN_COUNTER;
 	u32 num_profiles = P4TC_DEFAULT_NUM_TIMER_PROFILES;
 	struct p4tc_table_perm *tbl_init_perms = NULL;
 	struct p4tc_table_defact_params dflt = { 0 };
@@ -1372,13 +1471,23 @@ static struct p4tc_table *p4tc_table_create(struct net *net, struct nlattr **tb,
 
 	refcount_set(&table->tbl_ctrl_ref, 1);
 
+	if (tb[P4TC_TABLE_EXTERNS]) {
+		ret = p4tc_table_externs_bind(pipeline, table, pipe_ext,
+					      insts, tb[P4TC_TABLE_EXTERNS],
+					      extack);
+		if (ret < 0)
+			goto free_permissions;
+
+		table->tbl_counter = insts[nla_counter_idx - 1];
+	}
+
 	if (tbl_id) {
 		table->tbl_id = tbl_id;
 		ret = idr_alloc_u32(&pipeline->p_tbl_idr, table, &table->tbl_id,
 				    table->tbl_id, GFP_KERNEL);
 		if (ret < 0) {
 			NL_SET_ERR_MSG(extack, "Unable to allocate table id");
-			goto free_permissions;
+			goto put_inst;
 		}
 	} else {
 		table->tbl_id = 1;
@@ -1386,7 +1495,7 @@ static struct p4tc_table *p4tc_table_create(struct net *net, struct nlattr **tb,
 				    UINT_MAX, GFP_KERNEL);
 		if (ret < 0) {
 			NL_SET_ERR_MSG(extack, "Unable to allocate table id");
-			goto free_permissions;
+			goto put_inst;
 		}
 	}
 
@@ -1464,10 +1573,15 @@ defaultacts_destroy:
 idr_rm:
 	idr_remove(&pipeline->p_tbl_idr, table->tbl_id);
 
+	p4tc_table_acts_list_destroy(&table->tbl_acts_list);
+
+put_inst:
+	if (table->tbl_counter)
+		p4tc_ext_inst_table_unbind(table, pipe_ext[nla_counter_idx],
+					   table->tbl_counter);
+
 free_permissions:
 	kfree(tbl_init_perms);
-
-	p4tc_table_acts_list_destroy(&table->tbl_acts_list);
 
 free:
 	kfree(table);
@@ -1482,7 +1596,10 @@ static struct p4tc_table *p4tc_table_update(struct net *net, struct nlattr **tb,
 					    u32 flags,
 					    struct netlink_ext_ack *extack)
 {
+	struct p4tc_user_pipeline_extern *pipe_exts[P4TC_TABLE_EXTERN_MAX] = {};
+	struct p4tc_extern_inst *insts[P4TC_TABLE_EXTERN_MAX] = {};
 	u32 tbl_max_masks = 0, tbl_max_entries = 0, tbl_keysz = 0;
+	const u32 nla_counter_idx = P4TC_TABLE_EXTERN_COUNTER;
 	struct p4tc_table_defact_params dflt = { 0 };
 	struct p4tc_table_perm *perm = NULL;
 	struct list_head *tbl_acts_list;
@@ -1551,6 +1668,14 @@ static struct p4tc_table *p4tc_table_update(struct net *net, struct nlattr **tb,
 		}
 	}
 
+	if (tb[P4TC_TABLE_EXTERNS]) {
+		ret = p4tc_table_externs_bind(pipeline, table, pipe_exts,
+					      insts, tb[P4TC_TABLE_EXTERNS],
+					      extack);
+		if (ret < 0)
+			goto free_perm;
+	}
+
 	if (tb[P4TC_TABLE_TYPE])
 		tbl_type = nla_get_u8(tb[P4TC_TABLE_TYPE]);
 
@@ -1565,11 +1690,17 @@ static struct p4tc_table *p4tc_table_update(struct net *net, struct nlattr **tb,
 		table->tbl_max_masks = tbl_max_masks;
 	table->tbl_type = tbl_type;
 
+	if (insts[nla_counter_idx - 1])
+		table->tbl_counter = insts[nla_counter_idx - 1];
+
 	if (tb[P4TC_TABLE_ACTS_LIST])
 		p4tc_table_acts_list_replace(&table->tbl_acts_list,
 					     tbl_acts_list);
 
 	return table;
+
+free_perm:
+	kfree(perm);
 
 defaultacts_destroy:
 	p4tc_table_defact_destroy(dflt.missact);
