@@ -49,6 +49,7 @@ struct p4tc_filter {
 	union {
 		struct {
 			u32 tbl_id;
+			u32 ext_id;
 		};
 	};
 	u32 obj_id;
@@ -58,6 +59,7 @@ struct p4tc_filter_context {
 	struct p4tc_pipeline *pipeline;
 	union {
 		struct p4tc_table *table;
+		struct p4tc_extern_inst *inst;
 	};
 	int cmd;
 	u32 obj_id;
@@ -75,6 +77,7 @@ struct p4tc_filter_data {
 			u32 id;
 			struct p4tc_table_entry *entry;
 		} table;
+		struct p4tc_extern_common *common;
 	};
 	int cmd;
 	u32 obj_id;
@@ -97,6 +100,8 @@ enum {
 	P4TC_FILTER_OPND_KIND_UNSPEC,
 	P4TC_FILTER_OPND_KIND_ENTRY,
 	P4TC_FILTER_OPND_KIND_CMD,
+	P4TC_FILTER_OPND_KIND_EXT,
+	P4TC_FILTER_OPND_KIND_EXT_PARAM,
 	__P4TC_FILTER_OPND_KIND_MAX,
 };
 

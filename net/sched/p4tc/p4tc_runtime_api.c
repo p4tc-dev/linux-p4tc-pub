@@ -35,6 +35,7 @@ static int tc_ctl_p4_root_subscribe(struct sk_buff *skb, struct nlmsghdr *n,
 				    struct netlink_ext_ack *extack)
 
 {
+	struct p4tcmsg *t = (struct p4tcmsg *)nlmsg_data(n);
 	struct nlattr *tb[P4TC_MAX + 1];
 	u32 cmd = 0;
 	int ret;
@@ -48,8 +49,23 @@ static int tc_ctl_p4_root_subscribe(struct sk_buff *skb, struct nlmsghdr *n,
 		return -EINVAL;
 	}
 
-	return p4tc_tbl_entry_filter_sub(skb, nl_path_attrs, tb[P4TC_PARAMS],
-					 cmd, extack);
+	switch (t->obj) {
+	case P4TC_OBJ_RUNTIME_TABLE:
+		return p4tc_tbl_entry_filter_sub(skb, nl_path_attrs,
+						 tb[P4TC_PARAMS], cmd, extack);
+	case P4TC_OBJ_RUNTIME_EXTERN: {
+		int ret;
+
+		rtnl_lock();
+		ret = p4tc_ext_filter_sub(skb, nl_path_attrs,
+					  tb[P4TC_PARAMS], cmd, extack);
+		rtnl_unlock();
+		return ret;
+	}
+	default:
+		NL_SET_ERR_MSG(extack, "Unknown P4 runtime object type");
+		return -EOPNOTSUPP;
+	}
 }
 
 static int tc_ctl_p4_root(struct sk_buff *skb, struct nlmsghdr *n, int cmd,

@@ -18,8 +18,10 @@
 #include <linux/init.h>
 #include <linux/err.h>
 #include <net/p4tc.h>
+#include <net/p4tc_types.h>
 #include <net/netlink.h>
 #include <net/sock.h>
+#include <net/p4tc_ext_api.h>
 
 enum {
 	P4TC_FILTER_OPND_ENTRY_KIND_UNSPEC,
@@ -48,6 +50,12 @@ struct p4tc_filter_opnd_entry {
 	};
 };
 
+struct p4tc_filter_opnd_ext {
+	struct p4tc_pipeline *pipeline;
+	struct p4tc_extern_inst *inst;
+	struct p4tc_extern_param *param;
+};
+
 struct p4tc_filter_opnd_cmd {
 	u32 cmd;
 };
@@ -56,6 +64,7 @@ struct p4tc_filter_opnd {
 	u32 opnd_kind;
 	union {
 		struct p4tc_filter_opnd_entry opnd_entry;
+		struct p4tc_filter_opnd_ext opnd_ext;
 		struct p4tc_filter_opnd_cmd opnd_cmd;
 	};
 };
@@ -205,6 +214,20 @@ p4tc_filter_opnd_entry_policy[P4TC_FILTER_OPND_ENTRY_MAX + 1] = {
 	[P4TC_FILTER_OPND_ENTRY_TIME_DELTA] = { .type = NLA_U32 },
 };
 
+static const struct nla_policy
+p4tc_filter_opnd_ext_policy[P4TC_FILTER_OPND_EXT_MAX + 1] = {
+	[P4TC_FILTER_OPND_EXT_NAME] = {
+		.type = NLA_STRING,
+		.len = P4TC_EXTERN_NAMSIZ,
+	},
+	[P4TC_FILTER_OPND_EXT_ID] = { .type = NLA_U32 },
+	[P4TC_FILTER_OPND_EXT_INST_NAME] = {
+		.type = NLA_STRING,
+		.len = P4TC_EXTERN_INST_NAMSIZ,
+	},
+	[P4TC_FILTER_OPND_EXT_PARAMS] = { .type = NLA_NESTED },
+};
+
 static struct netlink_range_validation range_filter_op_cmd = {
 	.min = RTM_P4TC_CREATE,
 	.max = RTM_P4TC_UPDATE,
@@ -215,6 +238,7 @@ p4tc_filter_opnd_policy[P4TC_FILTER_OPND_MAX + 1] = {
 	[P4TC_FILTER_OPND_ENTRY] = { .type = NLA_NESTED },
 	[P4TC_FILTER_OPND_CMD] =
 		NLA_POLICY_FULL_RANGE(NLA_U32, &range_filter_op_cmd),
+	[P4TC_FILTER_OPND_EXT] = { .type = NLA_NESTED },
 };
 
 static const struct nla_policy
@@ -345,6 +369,13 @@ p4tc_filter_opnd_entry_destroy(struct p4tc_filter_opnd_entry *opnd_entry)
 	p4tc_pipeline_put_ref(opnd_entry->pipeline);
 }
 
+static void
+p4tc_filter_opnd_ext_destroy(struct p4tc_filter_opnd_ext *opnd_ext)
+{
+	p4tc_ext_inst_put_ref(opnd_ext->inst);
+	p4tc_pipeline_put_ref(opnd_ext->pipeline);
+}
+
 static void p4tc_filter_opnd_destroy(struct p4tc_filter_opnd *opnd)
 {
 	switch (opnd->opnd_kind) {
@@ -352,6 +383,12 @@ static void p4tc_filter_opnd_destroy(struct p4tc_filter_opnd *opnd)
 		p4tc_filter_opnd_entry_destroy(&opnd->opnd_entry);
 		break;
 	case P4TC_FILTER_OPND_KIND_CMD:
+		break;
+	case P4TC_FILTER_OPND_KIND_EXT_PARAM:
+		p4tc_ext_param_free(opnd->opnd_ext.param);
+		fallthrough;
+	case P4TC_FILTER_OPND_KIND_EXT:
+		p4tc_filter_opnd_ext_destroy(&opnd->opnd_ext);
 		break;
 	default:
 		break;
@@ -588,6 +625,58 @@ p4tc_filter_opnd_cmd_build(struct p4tc_filter_opnd *opnd, struct nlattr *nla,
 	return 0;
 }
 
+static int
+p4tc_filter_opnd_ext_build(struct p4tc_filter_context *ctx,
+			   struct p4tc_filter_opnd *opnd,
+			   struct nlattr *nla, struct netlink_ext_ack *extack)
+{
+	struct nlattr *tb[P4TC_FILTER_OPND_EXT_MAX + 1];
+	struct p4tc_extern_param *param;
+	struct p4tc_pipeline *pipeline;
+	struct idr *control_params_idr;
+	struct p4tc_extern_inst *inst;
+	size_t attrs_size = 0;
+	int ret;
+
+	if (ctx->obj_id != P4TC_FILTER_OBJ_RUNTIME_EXT) {
+		NL_SET_ERR_MSG(extack,
+			       "Extern operand specified without extern ctx");
+		return -EINVAL;
+	}
+
+	ret = nla_parse_nested(tb, P4TC_FILTER_OPND_EXT_MAX, nla,
+			       p4tc_filter_opnd_ext_policy, extack);
+	if (ret < 0)
+		return ret;
+
+	pipeline = ctx->pipeline;
+	inst = ctx->inst;
+
+	control_params_idr = &inst->params->params_idr;
+	if (tb[P4TC_FILTER_OPND_EXT_PARAMS]) {
+		struct nlattr *nla_filter_opnd_params =
+			tb[P4TC_FILTER_OPND_EXT_PARAMS];
+
+		param = p4tc_ext_init_filter_param(pipeline->net,
+						   control_params_idr,
+						   nla_filter_opnd_params,
+						   &attrs_size, extack);
+		if (IS_ERR(param))
+			return PTR_ERR(param);
+
+		opnd->opnd_kind = P4TC_FILTER_OPND_KIND_EXT_PARAM;
+		opnd->opnd_ext.param = param;
+	} else {
+		opnd->opnd_kind = P4TC_FILTER_OPND_KIND_EXT;
+	}
+
+	p4tc_pipeline_get(ctx->pipeline);
+	opnd->opnd_ext.pipeline = ctx->pipeline;
+	opnd->opnd_ext.inst = p4tc_ext_inst_get_ref(inst);
+
+	return 0;
+}
+
 static struct p4tc_filter_opnd *
 p4tc_filter_opnd_build(struct p4tc_filter_context *ctx, struct nlattr *nla,
 		       struct netlink_ext_ack *extack)
@@ -621,6 +710,12 @@ p4tc_filter_opnd_build(struct p4tc_filter_context *ctx, struct nlattr *nla,
 		if (ret < 0)
 			goto free_filter_opnd;
 		filter_opnd->opnd_kind = P4TC_FILTER_OPND_KIND_CMD;
+	} else if (tb[P4TC_FILTER_OPND_EXT]) {
+		ret = p4tc_filter_opnd_ext_build(ctx, filter_opnd,
+						 tb[P4TC_FILTER_OPND_EXT],
+						 extack);
+		if (ret < 0)
+			goto free_filter_opnd;
 	} else {
 		NL_SET_ERR_MSG(extack, "Unsupported operand kind");
 		ret = -ENOTSUPP;
@@ -676,6 +771,21 @@ static bool p4tc_filter_oper_rel_opnd_is_comp(struct p4tc_filter_opnd *opnd1,
 	case P4TC_FILTER_OPND_KIND_CMD:
 		NL_SET_ERR_MSG(extack, "Unable to compare command");
 		return false;
+	case P4TC_FILTER_OPND_KIND_EXT:
+		NL_SET_ERR_MSG(extack,
+			       "Compare with ext operand is forbidden");
+		return false;
+	case P4TC_FILTER_OPND_KIND_EXT_PARAM: {
+		struct p4tc_extern_param *param;
+
+		param = opnd1->opnd_ext.param;
+		if (!p4tc_is_type_numeric(param->tmpl_param->type->typeid)) {
+			NL_SET_ERR_MSG(extack,
+				       "May only compare numeric ext parameters");
+			return false;
+		}
+		return true;
+	}
 	default:
 		/* Will never happen */
 		return false;
@@ -885,6 +995,8 @@ static bool p4tc_filter_obj_id_supported(u32 obj_id,
 	switch (obj_id) {
 	case P4TC_FILTER_OBJ_RUNTIME_TABLE:
 		return true;
+	case P4TC_FILTER_OBJ_RUNTIME_EXT:
+		return true;
 	default:
 		NL_SET_ERR_MSG_FMT(extack, "Unsupported runtime object ID %u\n",
 				   obj_id);
@@ -922,6 +1034,12 @@ __p4tc_filter_build(struct p4tc_filter_context *ctx,
 		struct p4tc_table *table = ctx->table;
 
 		filter->tbl_id = table ? table->tbl_id : 0;
+		break;
+	}
+	case P4TC_FILTER_OBJ_RUNTIME_EXT: {
+		struct p4tc_extern_inst *inst = ctx->inst;
+
+		filter->ext_id = inst ? inst->ext_id : 0;
 		break;
 	}
 	default:
@@ -1085,6 +1203,75 @@ p4tc_filter_exec_act(struct p4tc_filter_oper *filter_oper,
 }
 
 static bool
+__p4tc_filter_ext_param(struct p4tc_filter_oper *filter_oper,
+			void *value, struct p4tc_type *type,
+			struct p4tc_extern_param *filter_ext_param)
+{
+	struct p4tc_type *filter_param_type =
+		filter_ext_param->tmpl_param->type;
+	int cmp;
+
+	cmp = p4t_cmp(NULL, type, value,
+		      NULL, filter_param_type, filter_ext_param->value);
+
+	return p4tc_filter_cmp_op(filter_oper->op_value, cmp);
+}
+
+static bool
+p4tc_filter_ext_param(struct p4tc_filter_oper *filter_oper,
+		      struct p4tc_extern_params *ext_params,
+		      struct p4tc_extern_param *filter_ext_param)
+{
+	struct idr *ext_params_idr = &ext_params->params_idr;
+	u32 param_id = filter_ext_param->tmpl_param->id;
+	struct p4tc_extern_param *ext_param;
+	struct p4tc_type *param_type;
+
+
+	ext_param = p4tc_ext_param_find_byid(ext_params_idr, param_id);
+	if (!ext_param)
+		return false;
+
+	param_type = ext_param->tmpl_param->type;
+
+	return __p4tc_filter_ext_param(filter_oper, ext_param->value,
+				       param_type, filter_ext_param);
+}
+
+static bool
+p4tc_filter_exec_ext(struct p4tc_filter_oper *filter_oper,
+		     struct p4tc_extern_common *value,
+		     struct p4tc_filter_opnd *filter_opnd)
+{
+	struct p4tc_filter_opnd_ext *filter_opnd_ext;
+
+	if (!filter_opnd)
+		return true;
+
+	filter_opnd_ext = &filter_opnd->opnd_ext;
+
+	if (filter_opnd_ext->inst != value->inst)
+		return false;
+
+	if (filter_opnd->opnd_kind == P4TC_FILTER_OPND_KIND_EXT_PARAM) {
+		struct p4tc_extern_param *filter_param = filter_opnd_ext->param;
+
+		if (p4tc_ext_param_is_key(filter_param)) {
+			struct p4tc_type *type = filter_param->tmpl_param->type;
+
+			return __p4tc_filter_ext_param(filter_oper,
+						       &value->p4tc_ext_key,
+						       type, filter_param);
+		}
+
+		return p4tc_filter_ext_param(filter_oper, value->params,
+					      filter_param);
+	}
+
+	return true;
+}
+
+static bool
 p4tc_filter_exec_opnd_entry(struct p4tc_filter_oper *filter_oper,
 			    struct p4tc_table_entry *entry,
 			    struct p4tc_filter_opnd_entry *opnd_entry)
@@ -1189,6 +1376,10 @@ p4tc_filter_exec_opnd(struct p4tc_filter_oper *filter_oper,
 		return p4tc_filter_exec_opnd_entry(filter_oper, entry,
 						   &filter_opnd->opnd_entry);
 	}
+	case P4TC_FILTER_OPND_KIND_EXT:
+	case P4TC_FILTER_OPND_KIND_EXT_PARAM:
+		return p4tc_filter_exec_ext(filter_oper, filter_data->common,
+					    filter_opnd);
 	case P4TC_FILTER_OPND_KIND_CMD:
 		return p4tc_filter_exec_opnd_cmd(filter_oper, filter_data->cmd,
 						 &filter_opnd->opnd_cmd);
@@ -1275,6 +1466,7 @@ int p4tc_filter_broadcast_cb(struct sock *dsk, struct sk_buff *skb,
 {
 	struct p4tc_filter_data *filter_data = data;
 	struct p4tc_filter_sock *filter_sock;
+	struct p4tc_filter *filter;
 	int ret;
 
 	filter_sock = p4tc_filter_sock_table_lookup_by_sock(dsk);
@@ -1284,13 +1476,22 @@ int p4tc_filter_broadcast_cb(struct sock *dsk, struct sk_buff *skb,
 	if (filter_data->obj_id != filter_sock->obj_id)
 		return 1;
 
+	filter = filter_sock->p4tc_filter;
+	if (filter->obj_id != filter_data->obj_id)
+		return 1;
+
 	switch (filter_data->obj_id) {
 	case P4TC_FILTER_OBJ_RUNTIME_TABLE: {
-		struct p4tc_filter *filter = filter_sock->p4tc_filter;
 		if (filter->tbl_id != filter_data->table.id)
 			return 1;
 
 		return !p4tc_filter_exec(filter, filter_data);
+	case P4TC_FILTER_OBJ_RUNTIME_EXT: {
+		if (filter->ext_id != filter_data->common->inst->ext_id)
+			return 1;
+
+		return !p4tc_filter_exec(filter, filter_data);
+	}
 	}
 	default:
 		ret = 0;

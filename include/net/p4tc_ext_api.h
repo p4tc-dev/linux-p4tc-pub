@@ -164,9 +164,9 @@ p4tc_ext_elem_update(struct net *net, struct nlattr *nla,
 		     struct netlink_ext_ack *extack);
 
 struct p4tc_extern_param *
-p4tc_ext_init_param(struct net *net, struct idr *control_params_idr,
-		    struct nlattr *nla, size_t *attrs_size,
-		    struct netlink_ext_ack *extack);
+p4tc_ext_init_filter_param(struct net *net, struct idr *control_params_idr,
+			   struct nlattr *nla, size_t *attrs_size,
+			   struct netlink_ext_ack *extack);
 
 static inline int
 __p4tc_ext_runt_copy_bpf(u8 *params_cursor,
@@ -787,7 +787,6 @@ out_nlmsg_trim:
 	return -1;
 }
 
-
 static inline bool
 p4tc_extern_should_send(struct net *net,
 			struct p4tc_ext_nlmsg_attrs *nlmsg_attrs)
@@ -843,11 +842,28 @@ p4tc_extern_send(struct p4tc_pipeline *pipeline,
 
 	if (nlmsg_attrs->cmd == RTM_P4TC_UPDATE) {
 		bool echo = nlmsg_attrs->flags & NLM_F_ECHO;
+		struct p4tc_filter_data filter_data = {};
+		int err;
 
-		return nlmsg_notify(net->rtnl, skb, nlmsg_attrs->portid,
-				    RTNLGRP_P4TC, echo, alloc_flags);
+		filter_data.common = common;
+		filter_data.obj_id = P4TC_FILTER_OBJ_RUNTIME_EXT;
+		filter_data.cmd = nlmsg_attrs->cmd;
+		rcu_read_lock();
+		err = p4tc_nlmsg_filtered_notify(net, skb, nlmsg_attrs->portid,
+						 alloc_flags, RTNLGRP_P4TC,
+						 echo, p4tc_filter_broadcast_cb,
+						 &filter_data);
+		rcu_read_unlock();
+
+		return err;
 	}
 
 	return rtnl_unicast(skb, net, nlmsg_attrs->portid);
 }
+
+int p4tc_ext_filter_sub(struct sk_buff *skb,
+			struct p4tc_path_nlattrs *nl_path_attrs,
+			struct nlattr *nla, u32 cmd,
+			struct netlink_ext_ack *extack);
+
 #endif

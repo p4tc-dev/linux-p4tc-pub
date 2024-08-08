@@ -18,6 +18,79 @@
 #include <net/netlink.h>
 #include <uapi/linux/p4tc.h>
 
+static const struct nla_policy p4tc_extern_policy[P4TC_EXT_MAX + 1] = {
+	[P4TC_EXT_INST_NAME] = {
+		.type = NLA_STRING,
+		.len = P4TC_EXTERN_INST_NAMSIZ
+	},
+	[P4TC_EXT_KIND]		= { .type = NLA_STRING },
+	[P4TC_EXT_PARAMS]	= { .type = NLA_NESTED },
+	[P4TC_EXT_KEY]		= { .type = NLA_NESTED },
+	[P4TC_EXT_FLAGS]	= { .type = NLA_BITFIELD32 },
+	[P4TC_EXT_FILTER]	= { .type = NLA_NESTED },
+};
+
+int p4tc_ext_filter_sub(struct sk_buff *skb,
+			struct p4tc_path_nlattrs *nl_path_attrs,
+			struct nlattr *nla, u32 cmd,
+			struct netlink_ext_ack *extack)
+{
+	struct nlattr *tb[P4TC_EXT_MAX + 1] = { NULL };
+	struct p4tc_filter_context ctx = {0};
+	struct net *net = sock_net(skb->sk);
+	struct p4tc_pipeline *pipeline;
+	struct p4tc_extern_inst *inst;
+	int ret;
+
+	if (nla) {
+		u32 pipeid = nl_path_attrs->ids[P4TC_PID_IDX];
+		struct nlattr *kind_attr;
+		char *instname;
+		char *kind;
+
+		ret = nla_parse_nested(tb, P4TC_EXT_MAX, nla,
+				       p4tc_extern_policy, extack);
+		if (ret < 0)
+			return ret;
+
+		kind_attr = tb[P4TC_EXT_KIND];
+		if (!kind_attr) {
+			NL_SET_ERR_MSG(extack, "TC extern name must be specified");
+			return -EINVAL;
+		}
+		kind = nla_data(kind_attr);
+
+		if (NL_REQ_ATTR_CHECK(extack, NULL, tb, P4TC_EXT_INST_NAME)) {
+			NL_SET_ERR_MSG(extack,
+				       "TC extern inst name must be specified");
+			return -EINVAL;
+		}
+		instname = nla_data(tb[P4TC_EXT_INST_NAME]);
+
+
+		pipeline = p4tc_pipeline_find_byany(net, nl_path_attrs->pname,
+						    pipeid, extack);
+		if (IS_ERR(pipeline))
+			return PTR_ERR(pipeline);
+
+		inst = p4tc_ext_inst_find_bynames(pipeline->net, pipeline, kind,
+						  instname, extack);
+		if (IS_ERR(inst))
+			return PTR_ERR(inst);
+	} else {
+		NL_SET_ERR_MSG(extack, "Must specify filter attributes");
+		return -EINVAL;
+	}
+
+	ctx.obj_id = P4TC_FILTER_OBJ_RUNTIME_EXT;
+	ctx.pipeline = pipeline;
+	ctx.inst = inst;
+	ctx.cmd = cmd;
+
+	return p4tc_filter_subscribe(skb, &ctx, tb[P4TC_EXT_FILTER],
+				     extack);
+}
+
 static void p4tc_extern_put_param(struct p4tc_extern_param *param)
 {
 	if (param->value) {
@@ -267,14 +340,17 @@ struct p4tc_ext_dump_ctx {
 	int s_i;
 	int n_i;
 	u32 ext_flags;
+	struct p4tc_filter *ext_filter;
 };
 
 static int p4tc_ext_dump_walker(struct sk_buff *skb,
 				struct p4tc_ext_dump_ctx *dump_ctx,
 				struct p4tc_pipeline *pipeline,
 				struct p4tc_extern_inst *inst,
+				struct nlattr *filter_nla,
 				struct netlink_callback *cb)
 {
+	struct p4tc_filter *filter_ptr = dump_ctx->ext_filter;
 	struct idr *idr = &inst->control_elems_idr;
 	u32 ext_flags = dump_ctx->ext_flags;
 	int err = 0, s_i = 0, n_i = 0;
@@ -284,6 +360,22 @@ static int p4tc_ext_dump_walker(struct sk_buff *skb,
 	unsigned long tmp;
 	int key = -1;
 
+	if (!dump_ctx->s_i) {
+		struct p4tc_filter_context filter_ctx = {
+			.pipeline = pipeline,
+			.inst = inst,
+			.obj_id = P4TC_FILTER_OBJ_RUNTIME_EXT,
+		};
+		struct p4tc_filter *filter;
+
+		filter = p4tc_filter_build(&filter_ctx, filter_nla, cb->extack);
+		if (IS_ERR(filter))
+			return PTR_ERR(filter);
+
+		filter_ptr = filter;
+		dump_ctx->ext_filter = filter;
+	}
+
 	if (p4tc_ext_inst_has_dump(inst)) {
 		n_i = inst->ops->dump(skb, inst, cb);
 		if (n_i < 0)
@@ -292,6 +384,11 @@ static int p4tc_ext_dump_walker(struct sk_buff *skb,
 		s_i = dump_ctx->s_i;
 
 		idr_for_each_entry_ul(idr, p, tmp, id) {
+			struct p4tc_filter_data filter_data = {
+				.obj_id = P4TC_FILTER_OBJ_RUNTIME_EXT,
+				.cmd = RTM_P4TC_GET,
+			};
+
 			key++;
 			if (key < s_i)
 				continue;
@@ -299,6 +396,10 @@ static int p4tc_ext_dump_walker(struct sk_buff *skb,
 				continue;
 
 			if (p4tc_ext_is_hidden(&p->common))
+				continue;
+
+			filter_data.common = &p->common;
+			if (!p4tc_filter_exec(filter_ptr, &filter_data))
 				continue;
 
 			nest = nla_nest_start(skb, n_i);
@@ -550,17 +651,6 @@ refcount_dec:
 	return val;
 }
 
-static const struct nla_policy p4tc_extern_policy[P4TC_EXT_MAX + 1] = {
-	[P4TC_EXT_INST_NAME] = {
-		.type = NLA_STRING,
-		.len = P4TC_EXTERN_INST_NAMSIZ
-	},
-	[P4TC_EXT_KIND]		= { .type = NLA_STRING },
-	[P4TC_EXT_PARAMS]	= { .type = NLA_NESTED },
-	[P4TC_EXT_KEY]		= { .type = NLA_NESTED },
-	[P4TC_EXT_FLAGS]	= { .type = NLA_BITFIELD32 },
-};
-
 static const struct nla_policy
 p4tc_extern_params_policy[P4TC_EXT_PARAMS_MAX + 1] = {
 	[P4TC_EXT_PARAMS_NAME] = { .type = NLA_STRING, .len = EXTPARAMNAMSIZ },
@@ -574,7 +664,7 @@ p4tc_extern_params_policy[P4TC_EXT_PARAMS_MAX + 1] = {
 static struct p4tc_extern_param *
 __p4tc_ext_init_param(struct net *net, struct idr *control_params_idr,
 		      struct nlattr **tb, size_t *attrs_size,
-		      struct netlink_ext_ack *extack)
+		      bool disallow_key_param, struct netlink_ext_ack *extack)
 {
 	struct p4tc_extern_tmpl_param *tmpl_param;
 	struct p4tc_extern_param *nparam;
@@ -593,7 +683,8 @@ __p4tc_ext_init_param(struct net *net, struct idr *control_params_idr,
 	if (IS_ERR(tmpl_param))
 		return (void *)tmpl_param;
 
-	if (tmpl_param->flags & P4TC_EXT_PARAMS_FLAG_ISKEY) {
+	if (disallow_key_param &&
+	    tmpl_param->flags & P4TC_EXT_PARAMS_FLAG_ISKEY) {
 		NL_SET_ERR_MSG_FMT(extack,
 				   "Key param %s also specified in P4TC_EXT_PARAMS",
 				   tmpl_param->name);
@@ -649,7 +740,7 @@ free:
 	return ERR_PTR(err);
 }
 
-struct p4tc_extern_param *
+static struct p4tc_extern_param *
 p4tc_ext_init_param(struct net *net, struct idr *control_params_idr,
 		    struct nlattr *nla, size_t *attrs_size,
 		    struct netlink_ext_ack *extack)
@@ -663,7 +754,24 @@ p4tc_ext_init_param(struct net *net, struct idr *control_params_idr,
 		return ERR_PTR(err);
 
 	return __p4tc_ext_init_param(net, control_params_idr, tb,
-				     attrs_size, extack);
+				     attrs_size, true, extack);
+}
+
+struct p4tc_extern_param *
+p4tc_ext_init_filter_param(struct net *net, struct idr *control_params_idr,
+			   struct nlattr *nla, size_t *attrs_size,
+			   struct netlink_ext_ack *extack)
+{
+	struct nlattr *tb[P4TC_EXT_PARAMS_MAX + 1];
+	int err;
+
+	err = nla_parse_nested(tb, P4TC_EXT_PARAMS_MAX, nla,
+			       p4tc_extern_params_policy, extack);
+	if (err < 0)
+		return ERR_PTR(err);
+
+	return __p4tc_ext_init_param(net, control_params_idr, tb,
+				     attrs_size, false, extack);
 }
 
 static int p4tc_ext_get_key_param_value(struct nlattr *nla, u32 *key,
@@ -1936,7 +2044,7 @@ int p4tc_ctl_extern_dump(struct sk_buff *skb, struct netlink_callback *cb,
 		goto err_out;
 
 	ret = p4tc_ext_dump_walker(skb, dump_ctx, pipeline, inst,
-				   cb);
+				   tb2[P4TC_EXT_FILTER], cb);
 	if (ret < 0)
 		goto err_out;
 
