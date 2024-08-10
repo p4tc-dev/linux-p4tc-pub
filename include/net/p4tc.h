@@ -385,6 +385,8 @@ struct p4tc_ext_bpf_val {
 
 #define P4TC_EXT_CNT_DIRECT BIT(0)
 #define P4TC_EXT_CNT_INDIRECT BIT(1)
+#define P4TC_EXT_METER_DIRECT BIT(2)
+#define P4TC_EXT_METER_INDIRECT BIT(3)
 
 struct p4tc_table_defact {
 	struct tc_action *acts[2];
@@ -420,6 +422,7 @@ struct p4tc_table {
 	struct p4tc_table_entry_mask __rcu  **tbl_masks_array;
 	unsigned long __rcu                 *tbl_free_masks_bitmap;
 	struct p4tc_extern_inst             *tbl_counter;
+	struct p4tc_extern_inst             *tbl_meter;
 	/* Locks the available masks IDR which will be used when adding and
 	 * deleting table entries.
 	 */
@@ -563,6 +566,7 @@ struct p4tc_table_entry_value_proc {
 struct p4tc_table_entry_value {
 	struct tc_action                         *acts[2];
 	struct p4tc_extern_common                *counter;
+	struct p4tc_extern_common                *meter;
 	/* Accounts for how many entities are referencing it
 	 * eg: Data path, one or more control path and timer.
 	 */

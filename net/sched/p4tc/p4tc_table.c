@@ -28,6 +28,7 @@
 #include <net/netlink.h>
 #include <net/flow_offload.h>
 #include <net/p4tc_ext/ext_counter.h>
+#include <net/p4tc_ext/ext_meter.h>
 
 static int __p4tc_table_try_set_state_ready(struct net *net,
 					    struct p4tc_table *table,
@@ -145,6 +146,10 @@ p4tc_table_externs_policy[P4TC_TABLE_EXTERN_MAX + 1]= {
 		.type = NLA_STRING,
 		.len = P4TC_EXTERN_INST_NAMSIZ * 2 + 1
 	},
+	[P4TC_TABLE_EXTERN_METER] = {
+		.type = NLA_STRING,
+		.len = P4TC_EXTERN_INST_NAMSIZ * 2 + 1
+	},
 };
 
 static const struct nla_policy p4tc_table_policy[P4TC_TABLE_MAX + 1] = {
@@ -169,12 +174,12 @@ static const struct nla_policy p4tc_table_policy[P4TC_TABLE_MAX + 1] = {
 };
 
 static int
-p4tc_table_counter_fill_nlmsg(struct sk_buff *skb,
-			      struct p4tc_extern_inst *counter)
+p4tc_table_extern_fill_nlmsg(struct sk_buff *skb,
+			     struct p4tc_extern_inst *inst, const u32 nla)
 {
 	unsigned char *b = nlmsg_get_pos(skb);
 
-	if (nla_put_string(skb, P4TC_TABLE_EXTERN_COUNTER, counter->common.name))
+	if (nla_put_string(skb, nla, inst->common.name))
 		goto out_nlmsg_trim;
 
 	return 0;
@@ -183,7 +188,6 @@ out_nlmsg_trim:
 	nlmsg_trim(skb, b);
 	return -1;
 }
-
 
 static int
 p4tc_table_externs_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
@@ -196,7 +200,14 @@ p4tc_table_externs_fill_nlmsg(struct sk_buff *skb, struct p4tc_table *table)
 		goto out_nlmsg_trim;
 
 	if (table->tbl_counter) {
-		if (p4tc_table_counter_fill_nlmsg(skb, table->tbl_counter) < 0)
+		if (p4tc_table_extern_fill_nlmsg(skb, table->tbl_counter,
+						 P4TC_TABLE_EXTERN_COUNTER) < 0)
+			goto out_nlmsg_trim;
+	}
+
+	if (table->tbl_meter) {
+		if (p4tc_table_extern_fill_nlmsg(skb, table->tbl_meter,
+						 P4TC_TABLE_EXTERN_METER) < 0)
 			goto out_nlmsg_trim;
 	}
 
@@ -720,6 +731,13 @@ static int _p4tc_table_put(struct net *net, struct nlattr **tb,
 	pipeline->curr_tables -= 1;
 
 	__p4tc_table_put_mask_array(table);
+
+	if (table->tbl_counter)
+		p4tc_ext_inst_table_unbind(table, table->tbl_counter->pipe_ext,
+					   table->tbl_counter);
+	if (table->tbl_meter)
+		p4tc_ext_inst_table_unbind(table, table->tbl_meter->pipe_ext,
+					   table->tbl_meter);
 
 	kfree(table);
 
@@ -1312,14 +1330,14 @@ p4tc_table_entry_create(struct net *net, struct nlattr **tb,
 	return table;
 }
 
-static int p4tc_table_counter_bind(struct p4tc_pipeline *pipeline,
+static int p4tc_table_extern_bind(struct p4tc_pipeline *pipeline,
 				   struct p4tc_table *table,
 				   struct p4tc_user_pipeline_extern **pipe_ext,
 				   struct p4tc_extern_inst **inst,
-				   struct nlattr *counter_nla,
+				   struct nlattr *extern_nla,
 				   struct netlink_ext_ack *extack)
 {
-	const char *ext_inst_path = nla_data(counter_nla);
+	const char *ext_inst_path = nla_data(extern_nla);
 
 	*inst = p4tc_ext_inst_table_bind(pipeline, pipe_ext,
 					ext_inst_path, extack);
@@ -1327,6 +1345,24 @@ static int p4tc_table_counter_bind(struct p4tc_pipeline *pipeline,
 		return PTR_ERR(*inst);
 
 	return 0;
+}
+
+
+static void
+p4tc_table_counter_replace(struct p4tc_table *table,
+			   struct p4tc_extern_inst *counter)
+{
+	p4tc_ext_inst_table_unbind(table, table->tbl_counter->pipe_ext,
+				   counter);
+	table->tbl_counter = counter;
+}
+
+static void
+p4tc_table_meter_replace(struct p4tc_table *table,
+			 struct p4tc_extern_inst *meter)
+{
+	p4tc_ext_inst_table_unbind(table, table->tbl_meter->pipe_ext, meter);
+	table->tbl_meter = meter;
 }
 
 static int p4tc_table_externs_bind(struct p4tc_pipeline *pipeline,
@@ -1337,6 +1373,7 @@ static int p4tc_table_externs_bind(struct p4tc_pipeline *pipeline,
 				   struct netlink_ext_ack *extack)
 {
 	const u32 nla_counter_idx = P4TC_TABLE_EXTERN_COUNTER;
+	const u32 nla_meter_idx = P4TC_TABLE_EXTERN_METER;
 	struct nlattr *tb[P4TC_TABLE_EXTERN_MAX + 1];
 	int ret;
 
@@ -1345,14 +1382,49 @@ static int p4tc_table_externs_bind(struct p4tc_pipeline *pipeline,
 	if (ret < 0)
 		return ret;
 
-	if (tb[nla_counter_idx])
-		return p4tc_table_counter_bind(pipeline, table,
-					       &pipe_ext[nla_counter_idx -1],
-					       &insts[nla_counter_idx - 1],
-					       tb[nla_counter_idx],
-					       extack);
+	if (tb[nla_counter_idx]) {
+		ret = p4tc_table_extern_bind(pipeline, table,
+					     &pipe_ext[nla_counter_idx -1],
+					     &insts[nla_counter_idx - 1],
+					     tb[nla_counter_idx], extack);
+		if (ret < 0)
+			return ret;
+
+		if (pipe_ext[nla_counter_idx - 1]->ext_id !=
+		    P4TC_EXTERN_DIRECT_COUNTER_ID) {
+			NL_SET_ERR_MSG(extack,
+				       "Unable to associate to non direct counter instance");
+			return -EINVAL;
+		}
+
+		return ret;
+	}
+
+	if (tb[nla_meter_idx]) {
+		ret = p4tc_table_extern_bind(pipeline, table,
+					     &pipe_ext[nla_meter_idx -1],
+					     &insts[nla_meter_idx - 1],
+					     tb[nla_meter_idx], extack);
+		if (ret < 0)
+			goto unbind_counter;
+
+		if (pipe_ext[nla_meter_idx - 1]->ext_id !=
+		    P4TC_EXTERN_DIRECT_METER_ID) {
+			NL_SET_ERR_MSG(extack,
+				       "Unable to associate to non direct meter instance");
+			return -EINVAL;
+		}
+
+	}
 
 	return 0;
+
+unbind_counter:
+	if (pipe_ext[nla_counter_idx - 1])
+		p4tc_ext_inst_table_unbind(table,
+					   pipe_ext[nla_counter_idx - 1],
+					   insts[nla_counter_idx - 1]);
+	return ret;
 }
 
 static struct p4tc_table *p4tc_table_create(struct net *net, struct nlattr **tb,
@@ -1365,6 +1437,7 @@ static struct p4tc_table *p4tc_table_create(struct net *net, struct nlattr **tb,
 	struct p4tc_extern_inst *insts[P4TC_TABLE_EXTERN_MAX] = {};
 	const u32 nla_counter_idx = P4TC_TABLE_EXTERN_COUNTER;
 	u32 num_profiles = P4TC_DEFAULT_NUM_TIMER_PROFILES;
+	const u32 nla_meter_idx = P4TC_TABLE_EXTERN_METER;
 	struct p4tc_table_perm *tbl_init_perms = NULL;
 	struct p4tc_table_defact_params dflt = { 0 };
 	struct p4tc_table *table;
@@ -1480,7 +1553,11 @@ static struct p4tc_table *p4tc_table_create(struct net *net, struct nlattr **tb,
 		if (ret < 0)
 			goto free_permissions;
 
-		table->tbl_counter = insts[nla_counter_idx - 1];
+		if (insts[nla_counter_idx - 1])
+			table->tbl_counter = insts[nla_counter_idx - 1];
+
+		if (insts[nla_meter_idx - 1])
+			table->tbl_meter = insts[nla_meter_idx - 1];
 	}
 
 	if (tbl_id) {
@@ -1581,6 +1658,9 @@ put_inst:
 	if (table->tbl_counter)
 		p4tc_ext_inst_table_unbind(table, pipe_ext[nla_counter_idx],
 					   table->tbl_counter);
+	if (table->tbl_meter)
+		p4tc_ext_inst_table_unbind(table, pipe_ext[nla_meter_idx],
+					   table->tbl_meter);
 
 free_permissions:
 	kfree(tbl_init_perms);
@@ -1623,6 +1703,7 @@ static struct p4tc_table *p4tc_table_update(struct net *net, struct nlattr **tb,
 	struct p4tc_extern_inst *insts[P4TC_TABLE_EXTERN_MAX] = {};
 	u32 tbl_max_masks = 0, tbl_max_entries = 0, tbl_keysz = 0;
 	const u32 nla_counter_idx = P4TC_TABLE_EXTERN_COUNTER;
+	const u32 nla_meter_idx = P4TC_TABLE_EXTERN_METER;
 	struct p4tc_table_defact_params dflt = { 0 };
 	struct p4tc_table_perm *perm = NULL;
 	struct list_head *tbl_acts_list;
@@ -1714,7 +1795,10 @@ static struct p4tc_table *p4tc_table_update(struct net *net, struct nlattr **tb,
 	table->tbl_type = tbl_type;
 
 	if (insts[nla_counter_idx - 1])
-		table->tbl_counter = insts[nla_counter_idx - 1];
+		p4tc_table_counter_replace(table, insts[nla_counter_idx - 1]);
+
+	if (insts[nla_meter_idx - 1])
+		p4tc_table_meter_replace(table, insts[nla_meter_idx - 1]);
 
 	if (tb[P4TC_TABLE_ACTS_LIST])
 		p4tc_table_acts_list_replace(&table->tbl_acts_list,

@@ -1569,6 +1569,94 @@ static int p4tc_ext_get_key_param(struct p4tc_extern_inst *inst,
 	return err;
 }
 
+struct p4tc_extern_common *
+p4tc_tbl_entry_meter_build(struct p4tc_pipeline *pipeline,
+			   struct nlattr *nla, struct netlink_ext_ack *extack)
+{
+	const char *kind = p4tc_ext_get_kind(nla, extack);
+	struct p4tc_extern_params *params = NULL;
+	struct nlattr *tb[P4TC_EXT_MAX] = {};
+	struct p4tc_extern_common *common;
+	const struct p4tc_extern_ops *e_o;
+	struct idr *control_params_idr;
+	struct net *net = pipeline->net;
+	struct p4tc_extern_inst *inst;
+	size_t attrs_size = 0;
+	char *instname;
+	u32 key = 0;
+	int err;
+
+	err = nla_parse_nested(tb, P4TC_EXT_MAX, nla, p4tc_extern_policy,
+			       extack);
+	if (err < 0)
+		return ERR_PTR(err);
+
+	if (NL_REQ_ATTR_CHECK(extack, NULL, tb, P4TC_EXT_INST_NAME)) {
+		NL_SET_ERR_MSG(extack,
+			       "TC extern inst name must be specified");
+		return ERR_PTR(-EINVAL);
+	}
+	instname = nla_data(tb[P4TC_EXT_INST_NAME]);
+
+	inst = p4tc_ext_inst_find_bynames(net, pipeline, kind,
+					  instname, extack);
+	if (IS_ERR(inst))
+		return (struct p4tc_extern_common *)inst;
+
+	if (tb[P4TC_EXT_KEY]) {
+		err = p4tc_ext_get_key_param(inst, tb[P4TC_EXT_KEY],
+					     &inst->params->params_idr, &key,
+					     extack);
+		if (err < 0)
+			return ERR_PTR(err);
+	}
+
+	if (tb[P4TC_EXT_PARAMS]) {
+		params = p4tc_extern_params_init(GFP_KERNEL_ACCOUNT);
+		if (!params) {
+			err = -ENOMEM;
+			goto out;
+		}
+		/* Decrement key parameter which comes separately in netlink */
+		params->num_params = inst->params->num_params - 1;
+
+		control_params_idr = &inst->params->params_idr;
+		err = p4tc_ext_extract_params(net, control_params_idr, params,
+					      tb[P4TC_EXT_PARAMS], &attrs_size,
+					      extack);
+		if (err < 0) {
+			kfree(params);
+			goto out;
+		}
+	}
+	e_o = inst->ops;
+
+	err = e_o->rctrl(RTM_P4TC_UPDATE, inst, &common,
+			 params, key, extack);
+	if (params)
+		p4tc_ext_params_free(params);
+	if (err < 0)
+		goto out;
+
+	return common;
+
+out:
+	return ERR_PTR(err);
+}
+
+void p4tc_tbl_entry_meter_destroy(struct p4tc_extern_common *meter)
+{
+
+	p4tc_ext_elem_put_list(meter->inst, meter);
+}
+
+void p4tc_tbl_entry_meter_bind(struct p4tc_table_entry_value *value,
+			       struct p4tc_extern_common *meter)
+{
+	p4tc_ext_hidden_set(meter, 0);
+	value->meter = meter;
+}
+
 static struct p4tc_extern *
 p4tc_ctl_extern_1(struct p4tc_pipeline *pipeline,
 		  struct nlattr *nla, struct nlmsghdr *n,

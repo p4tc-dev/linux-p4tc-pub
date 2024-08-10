@@ -9,4 +9,5 @@ obj-y := p4tc_types.o p4tc_tmpl_api.o p4tc_pipeline.o \
 obj-m += externs/ext_Counter.o
 obj-m += externs/ext_csum.o
 obj-m += externs/ext_Digest.o
+obj-m += externs/ext_Meter.o
 obj-$(CONFIG_DEBUG_INFO_BTF) += p4tc_bpf.o

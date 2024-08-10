@@ -143,6 +143,13 @@ int p4tc_unregister_extern(struct p4tc_extern_ops *ext);
 
 struct p4tc_extern_common *p4tc_ext_elem_next(struct p4tc_extern_inst *inst);
 
+struct p4tc_extern_common *
+p4tc_tbl_entry_meter_build(struct p4tc_pipeline *pipeline,
+			  struct nlattr *nla, struct netlink_ext_ack *extack);
+void p4tc_tbl_entry_meter_destroy(struct p4tc_extern_common *meter);
+void p4tc_tbl_entry_meter_bind(struct p4tc_table_entry_value *value,
+			       struct p4tc_extern_common *meter);
+
 int p4tc_ext_elem_dump_1(struct sk_buff *skb, struct p4tc_extern_common *e,
 			 bool params_lock);
 

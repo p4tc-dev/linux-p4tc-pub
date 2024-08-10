@@ -451,14 +451,25 @@ int p4tc_tbl_entry_fill(struct sk_buff *skb, struct p4tc_table *table,
 		}
 	}
 
-	if (value->counter) {
+	if (value->counter || value->meter) {
 		struct nlattr *nest_externs;
 		struct nlattr *nest_counter;
+		struct nlattr *nest_meter;
 
 		nest_externs = nla_nest_start(skb, P4TC_ENTRY_EXTERNS);
-		nest_counter = nla_nest_start(skb, P4TC_ENTRY_EXTERN_COUNTER);
-		p4tc_ext_elem_dump_1(skb, value->counter, true);
-		nla_nest_end(skb, nest_counter);
+		if (value->counter) {
+			nest_counter = nla_nest_start(skb,
+						      P4TC_ENTRY_EXTERN_COUNTER);
+			p4tc_ext_elem_dump_1(skb, value->counter, true);
+			nla_nest_end(skb, nest_counter);
+		}
+
+		if (value->meter) {
+			nest_meter = nla_nest_start(skb,
+						    P4TC_ENTRY_EXTERN_METER);
+			p4tc_ext_elem_dump_1(skb, value->meter, true);
+			nla_nest_end(skb, nest_meter);
+		}
 		nla_nest_end(skb, nest_externs);
 	}
 
@@ -475,6 +486,12 @@ out_nlmsg_trim:
 	nlmsg_trim(skb, b);
 	return ret;
 }
+
+static const struct nla_policy
+p4tc_entry_exts_policy[P4TC_ENTRY_EXTERN_MAX + 1]= {
+	[P4TC_ENTRY_EXTERN_COUNTER] = { .type = NLA_NESTED },
+	[P4TC_ENTRY_EXTERN_METER] = { .type = NLA_NESTED },
+};
 
 static struct netlink_range_validation range_aging = {
 	.min = 1,
@@ -515,6 +532,7 @@ static const struct nla_policy p4tc_entry_policy[P4TC_ENTRY_MAX + 1] = {
 	[P4TC_ENTRY_PROFILE_ID] =
 		NLA_POLICY_RANGE(NLA_U32, 0, P4TC_MAX_NUM_TIMER_PROFILES - 1),
 	[P4TC_ENTRY_FILTER] = { .type = NLA_NESTED },
+	[P4TC_ENTRY_EXTERNS] = { .type = NLA_NESTED },
 };
 
 static struct p4tc_table_entry_mask *
@@ -886,6 +904,9 @@ static void __p4tc_table_entry_put(struct p4tc_table *table,
 
 	if (value->counter)
 		p4tc_ext_elem_put_list(table->tbl_counter, value->counter);
+
+	if (value->meter)
+		p4tc_tbl_entry_meter_destroy(value->meter);
 
 	kfree(value->entry_work);
 	tm = rcu_dereference_protected(value->tm, 1);
@@ -1884,6 +1905,8 @@ __must_hold(RCU)
 put_ext:
 	if (table->tbl_counter && value->counter)
 		p4tc_ext_elem_put_list(table->tbl_counter, value->counter);
+	if (table->tbl_meter && value->meter)
+		p4tc_ext_elem_put_list(table->tbl_meter, value->meter);
 
 free_work:
 	kfree(entry_work);
@@ -2235,6 +2258,38 @@ p4tc_table_entry_assign_aging(struct p4tc_table *table,
 	state->aging_ms = timer_profile->aging_ms;
 }
 
+static struct p4tc_extern_common *
+p4tc_tbl_entry_externs(struct p4tc_pipeline *pipeline, struct nlattr *nla,
+		       struct netlink_ext_ack *extack)
+{
+	struct nlattr *tb[P4TC_ENTRY_EXTERN_MAX + 1] = { NULL };
+	int ret;
+
+	ret = nla_parse_nested(tb, P4TC_ENTRY_EXTERN_MAX, nla,
+			       p4tc_entry_exts_policy, extack);
+	if (ret < 0)
+		return ERR_PTR(ret);
+
+	if (tb[P4TC_ENTRY_EXTERN_COUNTER]) {
+		NL_SET_ERR_MSG(extack, "Setting counter from control path not allowed");
+		return ERR_PTR(-EPERM);
+	}
+
+	if (tb[P4TC_ENTRY_EXTERN_METER]) {
+		struct p4tc_extern_common *common;
+
+		rtnl_lock();
+		common = p4tc_tbl_entry_meter_build(pipeline,
+						    tb[P4TC_ENTRY_EXTERN_METER],
+						    extack);
+		rtnl_unlock();
+
+		return common;
+	}
+
+	return ERR_PTR(-EINVAL);
+}
+
 int
 p4tc_table_entry_create_bpf(struct p4tc_pipeline *pipeline,
 			    struct p4tc_table *table,
@@ -2419,6 +2474,7 @@ __p4tc_table_entry_cu(struct net *net, u8 cu_flags, struct nlattr **tb,
 		BITS_TO_BYTES(P4TC_MAX_KEYSZ)] = { 0 };
 	struct p4tc_table_entry_mask *mask = (void *)&__mask;
 	struct p4tc_table_entry_value_proc *value_proc;
+	struct p4tc_extern_common *meter = NULL;
 	struct p4tc_table_entry_value *value;
 	u8 whodunnit = P4TC_ENTITY_UNSPEC;
 	struct p4tc_table_entry *entry;
@@ -2618,12 +2674,21 @@ __p4tc_table_entry_cu(struct net *net, u8 cu_flags, struct nlattr **tb,
 		rcu_read_unlock();
 	}
 
+	if (tb[P4TC_ENTRY_EXTERNS]) {
+		meter = p4tc_tbl_entry_externs(pipeline, tb[P4TC_ENTRY_EXTERNS],
+					       extack);
+		if (IS_ERR(meter)) {
+			ret = PTR_ERR(meter);
+			goto free_acts;
+		}
+	}
+
 	whodunnit = nla_get_u8(tb[P4TC_ENTRY_WHODUNNIT]);
 
 	value_proc = kzalloc(sizeof(*value_proc), GFP_KERNEL_ACCOUNT);
 	if (!value_proc) {
 		ret = -ENOMEM;
-		goto free_acts;
+		goto meter_destroy;
 	}
 
 	rcu_read_lock();
@@ -2659,10 +2724,17 @@ __p4tc_table_entry_cu(struct net *net, u8 cu_flags, struct nlattr **tb,
 		goto free_value_proc;
 	}
 
+	if (meter)
+		p4tc_tbl_entry_meter_bind(value, meter);
+
 	return entry;
 
 free_value_proc:
 	kfree(value_proc);
+
+meter_destroy:
+	if (meter)
+		p4tc_tbl_entry_meter_destroy(meter);
 
 free_acts:
 	p4tc_action_destroy(value->acts);

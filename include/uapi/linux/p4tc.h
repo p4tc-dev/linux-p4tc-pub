@@ -231,6 +231,7 @@ enum {
 enum {
 	P4TC_TABLE_EXTERN_UNSPEC,
 	P4TC_TABLE_EXTERN_COUNTER, /* string */
+	P4TC_TABLE_EXTERN_METER, /* string */
 	__P4TC_TABLE_EXTERN_MAX,
 };
 
@@ -453,6 +454,7 @@ enum {
 enum {
 	P4TC_ENTRY_EXTERN_UNSPEC,
 	P4TC_ENTRY_EXTERN_COUNTER, /* nested extern associated with entry counter */
+	P4TC_ENTRY_EXTERN_METER, /* nested extern associated with entry meter */
 	__P4TC_ENTRY_EXTERN_MAX
 };
 
